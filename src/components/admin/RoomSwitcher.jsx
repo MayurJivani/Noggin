@@ -60,7 +60,7 @@ export function RoomSwitcher({ code, onSwitch, onNew, refreshKey }) {
       </button>
 
       {open && (
-        <div className="panel absolute right-0 z-50 mt-1.5 w-72 p-2">
+        <div className="panel absolute right-0 z-50 mt-1.5 w-72 max-w-[calc(100vw-2rem)] p-2 shadow-2xl shadow-black/70">
           <div className="max-h-72 space-y-1 overflow-y-auto">
             {all.length === 0 && <div className="px-2 py-3 text-center text-xs text-faint">This is your only game.</div>}
             {all.map((r) => {

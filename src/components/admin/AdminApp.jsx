@@ -179,7 +179,17 @@ function HostDesk({ auth }) {
     <div className="relative flex h-dvh flex-col overflow-hidden">
       <Backdrop veins={5} glow={3} />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-[2400px] shrink-0 flex-wrap items-center gap-3 px-4 py-2.5">
+      {/*
+        `relative` without a `z-index`, deliberately.
+        `position: relative` alone does not open a stacking context, so the room
+        switcher's dropdown and the import dialog compete in the root context and
+        land where their own z-index says. With `z-10` here, the header became a
+        context of its own: the dropdown's `z-50` only ranked it against its
+        siblings inside the header, and <main> — an equal `z-10` appearing later
+        in the document — painted straight over it. The backdrop stays behind
+        regardless, because it is on a negative layer.
+      */}
+      <header className="relative mx-auto flex w-full max-w-[2400px] shrink-0 flex-wrap items-center gap-3 px-4 py-2.5">
         <BrandMark className="text-lg" />
         <span className="label">host desk</span>
         <span className="hidden text-[0.7rem] text-faint sm:inline">{auth.user.name}</span>
@@ -202,10 +212,10 @@ function HostDesk({ auth }) {
           </button>
         </div>
       </header>
-      <div className="bulbs relative z-10 mx-4 shrink-0" />
+      <div className="bulbs relative mx-4 shrink-0" />
 
       {banner && (
-        <div className="relative z-10 mx-4 mt-2 flex items-center gap-2 rounded-lg border border-bad/50 bg-bad/10 px-3 py-1.5 text-[12px] text-bad">
+        <div className="relative mx-4 mt-2 flex items-center gap-2 rounded-lg border border-bad/50 bg-bad/10 px-3 py-1.5 text-[12px] text-bad">
           {banner}
           <button className="ml-auto" onClick={() => setBanner(null)}>
             ✕
@@ -213,7 +223,7 @@ function HostDesk({ auth }) {
         </div>
       )}
 
-      <main className="relative z-10 mx-auto flex w-full min-h-0 max-w-[2400px] flex-1 flex-col overflow-y-auto p-4">
+      <main className="relative mx-auto flex w-full min-h-0 max-w-[2400px] flex-1 flex-col overflow-y-auto p-4">
         {tab === "build" ? (
           <Builder
             board={board}
