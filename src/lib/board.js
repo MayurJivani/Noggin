@@ -18,6 +18,7 @@ export const DEFAULT_VALUES = [200, 400, 600, 800, 1000]
 export const DEFAULT_SETTINGS = {
   earlyPenaltyMs: 500,
   answerSeconds: 8,
+  autoArm: false,
   readSeconds: 0,
   lifelines: { phone: 1 },
   penaltyForWrong: true,
@@ -210,4 +211,116 @@ export const downloadBoard = (board) => {
   a.download = `${(board.title || "board").replace(/[^\w-]+/g, "-").toLowerCase()}.noggin.json`
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+// ── Spreadsheet import ───────────────────────────────────────────────────────
+
+/**
+ * Split a delimited line, honouring quotes.
+ *
+ * Clue text is prose, and prose contains commas — a naive `split(",")` turns
+ * one good question into three broken columns, which is exactly the failure a
+ * host would not notice until showtime.
+ */
+function splitRow(line, sep) {
+  const out = []
+  let cur = ""
+  let quoted = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (quoted) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"'
+          i++
+        } else quoted = false
+      } else cur += ch
+    } else if (ch === '"') quoted = true
+    else if (ch === sep) {
+      out.push(cur)
+      cur = ""
+    } else cur += ch
+  }
+  out.push(cur)
+  return out.map((c) => c.trim())
+}
+
+/** Tabs win if there are any — a paste out of a spreadsheet is tab-separated. */
+const sniffSeparator = (text) => (text.includes("\t") ? "\t" : ",")
+
+const TRUTHY = new Set(["1", "y", "yes", "true", "dd", "daily", "x", "✓"])
+
+/**
+ * Build a board from CSV or TSV.
+ *
+ * One clue per row: `category, value, clue, answer, daily double?`. Categories
+ * become columns in the order they first appear and values become rows sorted
+ * low to high, which is how people lay a quiz out in a spreadsheet anyway.
+ *
+ * Deliberately forgiving. A header row is optional, a missing answer is a
+ * warning rather than a rejection, and ragged rows are reported by line number
+ * instead of failing the whole file — someone importing forty clues at 11pm
+ * wants to be told which two are wrong, not handed one error.
+ *
+ * @returns {{ board: object|null, issues: string[] }}
+ */
+export function parseBoardCsv(text, title = "Imported Game") {
+  const issues = []
+  const sep = sniffSeparator(text)
+  const lines = String(text ?? "")
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+
+  if (!lines.length) return { board: null, issues: ["The file is empty."] }
+
+  const first = splitRow(lines[0], sep).map((c) => c.toLowerCase())
+  const hasHeader = first[0] === "category" || (first.includes("category") && first.includes("answer"))
+  const rows = hasHeader ? lines.slice(1) : lines
+
+  /** Column order matters, so categories are collected in a Map. */
+  const byCategory = new Map()
+  const values = new Set()
+
+  rows.forEach((line, i) => {
+    const lineNo = i + (hasHeader ? 2 : 1)
+    const cells = splitRow(line, sep)
+    const [category, rawValue, prompt, answer, daily] = cells
+
+    if (cells.length < 3 || !category) {
+      issues.push(`Line ${lineNo}: need at least category, value and clue.`)
+      return
+    }
+    const value = Math.trunc(Number(String(rawValue).replace(/[^0-9.-]/g, "")))
+    if (!Number.isFinite(value) || value === 0) {
+      issues.push(`Line ${lineNo}: "${rawValue}" is not a points value.`)
+      return
+    }
+    if (!answer?.trim()) issues.push(`Line ${lineNo}: no answer for "${(prompt ?? "").slice(0, 30)}".`)
+
+    values.add(value)
+    if (!byCategory.has(category)) byCategory.set(category, new Map())
+    const cat = byCategory.get(category)
+    if (cat.has(value)) issues.push(`Line ${lineNo}: ${category} already has a ${value}.`)
+    cat.set(value, {
+      ...makeClue(value),
+      prompt: prompt ?? "",
+      answer: answer ?? "",
+      dailyDouble: TRUTHY.has(String(daily ?? "").trim().toLowerCase()),
+    })
+  })
+
+  if (!byCategory.size) return { board: null, issues: issues.length ? issues : ["No clues found."] }
+
+  const ladder = [...values].sort((a, b) => a - b)
+  const categories = [...byCategory.entries()].map(([name, clues]) => ({
+    ...makeCategory(name, ladder),
+    // A gap in the grid is a real thing to have — an empty tile is better than
+    // a shifted one, which would silently mislabel every clue below it.
+    clues: ladder.map((v) => clues.get(v) ?? makeClue(v)),
+  }))
+
+  return {
+    board: { ...makeBoard(), title, rounds: [{ ...makeRound("Round 1", ladder, 0), categories }] },
+    issues,
+  }
 }

@@ -363,3 +363,185 @@ test("only privileged roles are told an undo is available", () => {
   assert.equal(G.projectState(room, "display").canUndo, false)
   assert.equal(G.projectState(room, "player").canUndo, false)
 })
+
+// ── The final round ──────────────────────────────────────────────────────────
+
+/** A room parked at the end of the board, with an enabled final and scores. */
+function atFinal(scores = [1200, 800, -200]) {
+  const room = setup(scores.length)
+  room.board.final = {
+    category: "STONE",
+    prompt: "Black, veined with gold",
+    media: null,
+    answer: "marble",
+    answerMedia: null,
+    seconds: 30,
+    enabled: true,
+  }
+  scores.forEach((s, i) => (room.players.get(`p${i}`).score = s))
+  return room
+}
+
+test("the final is wagered blind, then written, then turned over", () => {
+  const room = atFinal()
+  assert.deepEqual(kinds(G.openFinal(room)), ["final-open"])
+  assert.equal(room.phase, G.PHASE.FINAL)
+  assert.equal(room.final.stage, "wager")
+
+  G.setFinalWager(room, "p0", 500)
+  G.setFinalWager(room, "p1", 800)
+  assert.deepEqual(kinds(G.startFinal(room, 1000)), ["final-start"])
+  assert.equal(room.final.stage, "clue")
+  assert.equal(room.timer.endsAt, 1000 + 30_000)
+
+  G.setFinalAnswer(room, "p0", "marble")
+  G.setFinalAnswer(room, "p1", "granite")
+
+  assert.deepEqual(kinds(G.revealFinal(room)), ["final-reveal"])
+  // Poorest first, so the leader's result does not spoil the rest.
+  assert.deepEqual(room.final.order, ["p1", "p0"])
+
+  assert.deepEqual(kinds(G.judgeFinal(room, false)), ["final-wrong", "final-reveal"])
+  assert.equal(room.players.get("p1").score, 0, "800 staked and lost")
+
+  assert.deepEqual(kinds(G.judgeFinal(room, true)), ["final-correct", "game-end"])
+  assert.equal(room.players.get("p0").score, 1700, "1200 + 500")
+  assert.equal(room.phase, G.PHASE.ENDED)
+})
+
+test("you cannot stake more than you have, and a broke player sits it out", () => {
+  const room = atFinal([600, 0, -100])
+  G.openFinal(room)
+
+  G.setFinalWager(room, "p0", 99999)
+  assert.equal(room.final.wagers.p0, 600, "capped at the score")
+
+  assert.equal(G.setFinalWager(room, "p1", 100).length, 0, "nothing to stake on zero")
+  assert.equal(G.setFinalWager(room, "p2", 100).length, 0, "nor in the red")
+  assert.deepEqual(G.finalEligible(room).map((p) => p.id), ["p0"])
+
+  G.startFinal(room)
+  G.revealFinal(room)
+  assert.deepEqual(room.final.order, ["p0"], "only the eligible are turned over")
+})
+
+test("a player who never bets is staked at nothing rather than holding the room up", () => {
+  const room = atFinal([500, 700])
+  G.openFinal(room)
+  G.setFinalWager(room, "p0", 200)
+  G.startFinal(room)
+  assert.equal(room.final.wagers.p1, 0)
+})
+
+test("answers stop being accepted once the clue is locked", () => {
+  const room = atFinal([500, 700])
+  G.openFinal(room)
+  G.startFinal(room)
+  G.setFinalAnswer(room, "p0", "marble")
+
+  G.lockFinal(room)
+  assert.equal(G.setFinalAnswer(room, "p0", "changed my mind").length, 0)
+  assert.equal(room.final.answers.p0.text, "marble")
+  assert.equal(room.timer, null)
+})
+
+test("the final clue is not on the wire before it is shown", () => {
+  const room = atFinal()
+  G.openFinal(room)
+
+  for (const role of ["display", "player"]) {
+    const f = G.projectState(room, role).final
+    assert.equal(f.category, "STONE", "the category is the point of the wager")
+    assert.equal(f.prompt, "", `${role} saw the prompt during wagering`)
+    assert.equal(f.answer, null, `${role} saw the answer`)
+  }
+  assert.equal(G.projectState(room, "host").final.prompt, "Black, veined with gold")
+
+  G.startFinal(room)
+  assert.equal(G.projectState(room, "display").final.prompt, "Black, veined with gold")
+  assert.equal(G.projectState(room, "display").final.answer, null, "the answer waits for the reveal")
+
+  G.revealFinal(room)
+  assert.equal(G.projectState(room, "display").final.answer, "marble")
+})
+
+test("a bet is blind: you see your own and nobody else's", () => {
+  const room = atFinal([1200, 800])
+  G.openFinal(room)
+  G.setFinalWager(room, "p0", 500)
+  G.setFinalWager(room, "p1", 800)
+  G.setFinalAnswer(room, "p0", "marble")
+
+  const mine = G.projectState(room, "player", "p0").final.players
+  const me = mine.find((p) => p.id === "p0")
+  const them = mine.find((p) => p.id === "p1")
+
+  assert.equal(me.wager, 500, "my own bet is mine to see")
+  assert.equal(them.wager, null, "theirs is not")
+  assert.equal(them.wagered, true, "though that they have bet is public")
+  assert.equal(them.answer, null)
+
+  // The big screen is in the room with everyone, so it gets no more than they do.
+  const screen = G.projectState(room, "display").final.players
+  assert.equal(screen.find((p) => p.id === "p0").wager, null)
+  assert.equal(G.projectState(room, "host").final.players.find((p) => p.id === "p0").wager, 500)
+})
+
+test("the reveal opens one player at a time", () => {
+  const room = atFinal([1200, 800])
+  G.openFinal(room)
+  G.setFinalWager(room, "p0", 500)
+  G.setFinalWager(room, "p1", 800)
+  G.startFinal(room)
+  G.setFinalAnswer(room, "p0", "marble")
+  G.setFinalAnswer(room, "p1", "granite")
+  G.revealFinal(room)
+
+  const seen = () => {
+    const f = G.projectState(room, "display").final
+    return Object.fromEntries(f.players.map((p) => [p.id, p.answer]))
+  }
+  assert.deepEqual(seen(), { p1: "granite", p0: null }, "only the player being turned over")
+
+  G.judgeFinal(room, false)
+  assert.deepEqual(seen(), { p1: "granite", p0: "marble" }, "then the next one as well")
+})
+
+test("a final that was never written stays out of the way", () => {
+  const room = atFinal()
+  room.board.final.enabled = false
+  assert.equal(G.openFinal(room).length, 0)
+  assert.equal(G.projectState(room, "host").final, null)
+})
+
+test("auto-arm opens the buzzer with the clue, when asked to", () => {
+  const off = setup()
+  assert.deepEqual(kinds(G.selectClue(off, 0, 0)), ["clue-open"])
+  assert.equal(off.buzzer.armed, false, "off by default — the host still arms")
+
+  const on = setup(3, { autoArm: true })
+  assert.deepEqual(kinds(G.selectClue(on, 0, 0)), ["clue-open", "buzzer-open"])
+  assert.equal(on.buzzer.armed, true)
+})
+
+test("a reading delay holds the buzzer shut until the clock runs out", () => {
+  const room = setup(3, { autoArm: true, readSeconds: 5 })
+  assert.deepEqual(kinds(G.selectClue(room, 0, 0)), ["clue-open", "arm-pending"])
+  assert.equal(room.buzzer.armed, false, "still shut while the host reads")
+  assert.equal(room.timer.kind, "arm")
+  assert.equal(room.timer.duration, 5)
+
+  // Pressing during the read is still jumping the gun.
+  assert.deepEqual(kinds(G.buzz(room, "p0")), ["buzz-early"])
+
+  // The relay fires the deadline, which arms.
+  G.armBuzzer(room)
+  assert.equal(room.buzzer.armed, true)
+})
+
+test("auto-arm leaves a daily double alone", () => {
+  const room = setup(3, { autoArm: true })
+  G.currentRound(room).categories[0].clues[0].dailyDouble = true
+  assert.deepEqual(kinds(G.selectClue(room, 0, 0)), ["daily-double"])
+  assert.equal(room.buzzer.armed, false, "there is no race to open")
+})

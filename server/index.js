@@ -616,10 +616,14 @@ const send = (ws, payload) => {
  * client that can never drift out of sync is worth far more than the bytes.
  */
 function broadcast(room, effects = []) {
+  // Players each see their own final wager and answer and nobody else's, so
+  // the cache key is the viewer, not just the role. Non-players still share
+  // one projection between them.
   const cache = new Map()
   for (const [ws, meta] of room.sockets) {
-    if (!cache.has(meta.role)) cache.set(meta.role, G.projectState(room, meta.role))
-    send(ws, { type: "state", state: cache.get(meta.role), effects })
+    const key = meta.role === "player" ? `p:${meta.playerId}` : meta.role
+    if (!cache.has(key)) cache.set(key, G.projectState(room, meta.role, meta.playerId))
+    send(ws, { type: "state", state: cache.get(key), effects })
   }
 }
 
@@ -700,7 +704,13 @@ function scheduleDeadline(room) {
     if (!room.timer || room.timer.endsAt !== at) return
     const kind = room.timer.kind
     let effects
-    if (kind === "lifeline") {
+    if (kind === "arm") {
+      // The reading time is up; the buzzer opens on its own.
+      room.timer = null
+      effects = G.armBuzzer(room)
+    } else if (kind === "final") {
+      effects = G.lockFinal(room)
+    } else if (kind === "lifeline") {
       effects = G.endLifeline(room)
     } else if (kind === "answer") {
       // Time ran out on a buzzed-in player: that counts as a miss.
@@ -971,6 +981,16 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.judge(room, !!msg.correct, msg.playerId))
     case "judge:undo":
       return apply(room, G.undoJudgement(room))
+    case "final:open":
+      return apply(room, G.openFinal(room))
+    case "final:start":
+      return apply(room, G.startFinal(room))
+    case "final:lock":
+      return apply(room, G.lockFinal(room))
+    case "final:reveal":
+      return apply(room, G.revealFinal(room))
+    case "final:judge":
+      return apply(room, G.judgeFinal(room, !!msg.correct))
     case "clue:reveal":
       return apply(room, G.revealAnswer(room))
     case "clue:close":
@@ -1018,6 +1038,10 @@ function handlePlayerMessage(room, meta, msg) {
   switch (msg.type) {
     case "buzz":
       return apply(room, G.buzz(room, meta.playerId))
+    case "final:wager":
+      return apply(room, G.setFinalWager(room, meta.playerId, msg.amount))
+    case "final:answer":
+      return apply(room, G.setFinalAnswer(room, meta.playerId, msg.text))
     case "lifeline:request": {
       // The player asks; the host still has to grant it, so this is a signal,
       // not a mutation. Nothing about the game changes until the host acts.

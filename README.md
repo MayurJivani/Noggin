@@ -132,6 +132,41 @@ Keys, because the other hand is holding a microphone:
 | <kbd>esc</kbd> | reset the buzzer race |
 | <kbd>⌘/ctrl</kbd>+<kbd>z</kbd> | undo the last ruling |
 
+## The final clue
+
+Off by default; switch it on from the **✦ Final** tab in the builder. It plays
+the way the show does, and nothing like the rest of the game:
+
+1. **Bets.** The category goes up, the clue does not. Everyone still in the
+   black stakes part of their score on their phone. A bet is blind — the relay
+   never shows one player another's, and neither does the big screen.
+2. **Writing.** The clue appears and a clock runs. Answers are typed and locked
+   when the host stops the clock or the time runs out.
+3. **The reveal.** The host turns players over one at a time, poorest first,
+   because revealing the leader early spoils the arithmetic for the room. Each
+   ruling pays or docks that player's own bet.
+
+Anyone on a non-positive score sits it out — there is nothing to stake — and
+anyone who never bets is staked at nothing rather than holding the room up.
+
+## Importing from a spreadsheet
+
+Almost nobody writes forty clues by clicking forty tiles. **CSV** in the builder
+takes a paste or a file:
+
+```
+category,value,clue,answer,daily
+STONE,200,"Black, veined with gold",marble,
+STONE,400,Formed under pressure,diamond,yes
+METALS,200,Au,gold,
+```
+
+Categories become columns in the order they first appear and values become rows,
+low to high. A header row is optional, tabs work as well as commas (which is
+what a spreadsheet paste gives you), and quoted commas inside a clue survive.
+Bad rows are reported by line number rather than failing the file — you get told
+which two of forty are wrong. Nothing is replaced until you confirm the preview.
+
 ## How the buzzer is fair
 
 The relay is the referee. A phone never decides anything — it sends "I pressed"
@@ -141,6 +176,11 @@ jitter against human reaction times of two hundred.
 Pressing **before** the host arms costs a short lockout (500ms by default), so
 mashing the button from the moment a clue appears gains nothing. Losing the race
 by 60ms is *not* the same offence and costs nothing.
+
+**Arm the buzzer automatically** opens it with the clue instead of waiting for
+you. Pair it with a **reading time** so the room hears the question before the
+race starts — at zero it opens the instant the clue appears, which rewards
+whoever is fastest rather than whoever knows it.
 
 Answers are never sent to a client that shouldn't have them. The big screen and
 the players' phones both receive the board with every unplayed clue's text,

@@ -16,6 +16,7 @@ export const PHASE = {
   CLUE: "clue", // clue on screen; buzzer may or may not be armed
   REVEAL: "reveal", // answer shown
   INTERMISSION: "intermission", // between rounds
+  FINAL: "final", // the last clue: wager, write, reveal
   ENDED: "ended",
 }
 
@@ -31,7 +32,17 @@ export const DEFAULTS = {
   earlyPenaltyMs: 500,
   /** How long a player has to answer once they've buzzed in. 0 = untimed. */
   answerSeconds: 8,
-  /** How long the room reads a clue before the buzzer can legally open. */
+  /**
+   * Open the buzzer by itself when a clue goes up, instead of waiting for the
+   * host to arm it. Off by default — arming is the host's cue that the room is
+   * ready, and taking it away surprises anyone used to the classic flow.
+   */
+  autoArm: false,
+  /**
+   * With `autoArm`, how long the room gets to read before the buzzer opens.
+   * Zero opens it the instant the clue appears, which favours whoever is
+   * fastest rather than whoever knows it.
+   */
   readSeconds: 0,
   /** Lifelines each player starts with. */
   lifelines: { phone: 1 },
@@ -72,6 +83,14 @@ export function makeRound(name = "Round 1", values = [200, 400, 600, 800, 1000],
   }
 }
 
+/**
+ * The last clue. Everyone plays it at once, in writing, having bet first —
+ * which is why it lives beside the rounds rather than in one.
+ */
+export function makeFinal() {
+  return { category: "", prompt: "", media: null, answer: "", answerMedia: null, seconds: 30, enabled: false }
+}
+
 export function makeBoard() {
   return {
     id: uid("b"),
@@ -81,6 +100,7 @@ export function makeBoard() {
       makeRound("Round 1", [200, 400, 600, 800, 1000]),
       makeRound("Round 2", [400, 800, 1200, 1600, 2000]),
     ],
+    final: makeFinal(),
   }
 }
 
@@ -95,6 +115,16 @@ export function normaliseBoard(raw) {
   board.id = typeof raw.id === "string" ? raw.id : board.id
   board.title = str(raw.title, 80) || "Untitled Game"
   board.updatedAt = Date.now()
+
+  board.final = {
+    category: str(raw.final?.category, 60),
+    prompt: str(raw.final?.prompt, 600),
+    media: media(raw.final?.media),
+    answer: str(raw.final?.answer, 300),
+    answerMedia: media(raw.final?.answerMedia),
+    seconds: Math.max(5, Math.min(num(raw.final?.seconds, 30), 600)),
+    enabled: !!raw.final?.enabled,
+  }
 
   const rounds = Array.isArray(raw.rounds) ? raw.rounds.slice(0, 8) : []
   if (!rounds.length) return board
@@ -179,6 +209,8 @@ export function createRoom(code, settings = {}) {
     lifeline: null,
     /** Enough of the last ruling to take it back. See `undoJudgement`. */
     lastJudgement: null,
+    /** Live state of the final clue. See the Final round section. */
+    final: null,
     revealed: false,
   }
 }
@@ -251,7 +283,20 @@ export function selectClue(room, catIndex, clueIndex) {
   }
 
   room.phase = PHASE.CLUE
-  return [{ kind: "clue-open", catIndex, clueIndex }]
+  const effects = [{ kind: "clue-open", catIndex, clueIndex }]
+
+  if (room.settings.autoArm) {
+    const wait = Math.max(0, num(room.settings.readSeconds, 0))
+    if (wait > 0) {
+      // The relay fires this and arms; a countdown on the big screen tells the
+      // room how long it has, so nobody is caught mid-sentence.
+      room.timer = { kind: "arm", duration: wait, endsAt: Date.now() + wait * 1000 }
+      effects.push({ kind: "arm-pending", seconds: wait })
+    } else {
+      effects.push(...armBuzzer(room))
+    }
+  }
+  return effects
 }
 
 /** Daily double: name who controls the board and what they're risking. */
@@ -562,6 +607,118 @@ export function resetGame(room) {
   return [{ kind: "reset" }]
 }
 
+// ── The final round ──────────────────────────────────────────────────────────
+
+/**
+ * The last clue works nothing like the rest of the game, which is why it gets
+ * its own machinery rather than another phase of the clue flow: everyone plays
+ * at once, in writing, having committed a bet before seeing the question.
+ *
+ * Three stages, in the order the show does them:
+ *
+ *   wager  – the category is public, the clue is not, and each player stakes
+ *            part of their score in secret.
+ *   clue   – the prompt goes up and a clock runs. Answers are typed and locked.
+ *   reveal – the host walks the answers one at a time, poorest player first,
+ *            because a leader revealed early spoils the arithmetic for the room.
+ */
+
+/** Nobody plays the final on a non-positive score — there is nothing to stake. */
+export const finalEligible = (room) => [...room.players.values()].filter((p) => p.score > 0)
+
+export function openFinal(room) {
+  if (room.phase === PHASE.CLUE || room.phase === PHASE.WAGER) return []
+  if (!room.board.final?.enabled) return []
+  room.phase = PHASE.FINAL
+  room.active = null
+  room.timer = null
+  room.lastJudgement = null
+  resetBuzzerState(room)
+  room.final = {
+    stage: "wager",
+    wagers: {},
+    answers: {},
+    order: [],
+    revealIndex: 0,
+    judged: {},
+  }
+  return [{ kind: "final-open" }]
+}
+
+/** A bet, placed blind. Capped at what the player actually has to lose. */
+export function setFinalWager(room, playerId, amount) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage !== "wager") return []
+  const player = room.players.get(playerId)
+  if (!player || player.score <= 0) return []
+  const capped = Math.max(0, Math.min(num(amount, 0), player.score))
+  room.final.wagers[playerId] = capped
+  return [{ kind: "final-wager", playerId }]
+}
+
+export function startFinal(room, now = Date.now()) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage !== "wager") return []
+  // Anyone who never bet is treated as having staked nothing, so one player
+  // looking at their phone cannot hold the whole room up.
+  for (const p of finalEligible(room)) room.final.wagers[p.id] ??= 0
+  room.final.stage = "clue"
+  const seconds = room.board.final.seconds || 30
+  room.timer = { kind: "final", duration: seconds, endsAt: now + seconds * 1000 }
+  return [{ kind: "final-start", seconds }]
+}
+
+export function setFinalAnswer(room, playerId, text) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage !== "clue") return []
+  const player = room.players.get(playerId)
+  if (!player || player.score <= 0) return []
+  if (room.final.answers[playerId]?.locked) return []
+  room.final.answers[playerId] = { text: str(text, 200), at: Date.now(), locked: false }
+  return [{ kind: "final-answer", playerId }]
+}
+
+/** Time is up, or the host called it. Nothing more is accepted after this. */
+export function lockFinal(room) {
+  if (room.phase !== PHASE.FINAL) return []
+  for (const a of Object.values(room.final.answers)) a.locked = true
+  room.timer = null
+  return [{ kind: "final-locked" }]
+}
+
+export function revealFinal(room) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage === "reveal") return []
+  lockFinal(room)
+  room.final.stage = "reveal"
+  // Poorest first: revealing the leader early tells everyone the result before
+  // the rest have had their moment.
+  room.final.order = finalEligible(room)
+    .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
+    .map((p) => p.id)
+  room.final.revealIndex = 0
+  return [{ kind: "final-reveal", playerId: room.final.order[0] ?? null }]
+}
+
+/** Rule on whoever is currently up, pay or dock the bet, and move along. */
+export function judgeFinal(room, correct) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage !== "reveal") return []
+  const playerId = room.final.order[room.final.revealIndex]
+  const player = playerId && room.players.get(playerId)
+  if (!player) return []
+
+  const wager = room.final.wagers[playerId] ?? 0
+  player.score += correct ? wager : -wager
+  room.final.judged[playerId] = correct
+
+  const effects = [{ kind: correct ? "final-correct" : "final-wrong", playerId, wager, score: player.score }]
+
+  if (room.final.revealIndex >= room.final.order.length - 1) {
+    room.phase = PHASE.ENDED
+    effects.push({ kind: "game-end" })
+  } else {
+    room.final.revealIndex += 1
+    effects.push({ kind: "final-reveal", playerId: room.final.order[room.final.revealIndex] })
+  }
+  return effects
+}
+
 // ── Save / resume ────────────────────────────────────────────────────────────
 
 /**
@@ -627,7 +784,7 @@ export function restoreRoom(code, snapshot) {
  * them. Anyone can open devtools; the fix is to not send the secret, not to
  * hide it in CSS.
  */
-export function projectState(room, role) {
+export function projectState(room, role, viewerId = null) {
   const privileged = role === "host" || role === "controller"
   const round = currentRound(room)
   const active = activeClue(room)
@@ -681,6 +838,7 @@ export function projectState(room, role) {
     clue,
     stake: stake(room),
     canUndo: privileged && !!room.lastJudgement,
+    final: projectFinal(room, privileged, viewerId),
     wager: room.wager,
     revealed: room.revealed,
     timer: room.timer,
@@ -696,5 +854,61 @@ export function projectState(room, role) {
     players: [...room.players.values()]
       .map((p) => ({ id: p.id, name: p.name, score: p.score, connected: p.connected, lifelines: p.lifelines }))
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
+  }
+}
+
+/**
+ * What each role may know about the final clue.
+ *
+ * A wager is a blind bet — showing one player another's before the reveal
+ * hands them the whole strategy. An answer belongs to whoever wrote it until
+ * the host turns it over. Both are therefore projected per viewer, not per
+ * role, which is why this needs the player's own id.
+ */
+function projectFinal(room, privileged, viewerId) {
+  const spec = room.board.final
+  if (!spec?.enabled) return null
+
+  const base = {
+    enabled: true,
+    category: spec.category,
+    seconds: spec.seconds,
+    stage: room.final?.stage ?? null,
+  }
+  if (!room.final) return base
+
+  const showClue = privileged || room.final.stage === "clue" || room.final.stage === "reveal"
+  const revealedIds = room.final.order.slice(0, room.final.revealIndex + 1)
+  const isUp = (id) => room.final.stage === "reveal" && revealedIds.includes(id)
+
+  return {
+    ...base,
+    prompt: showClue ? spec.prompt : "",
+    media: showClue ? spec.media : null,
+    // The answer waits for the reveal even on the big screen — it is the last
+    // secret in the game and the room is looking straight at it.
+    answer: privileged || room.final.stage === "reveal" ? spec.answer : null,
+    answerMedia: privileged || room.final.stage === "reveal" ? spec.answerMedia : null,
+    revealIndex: room.final.revealIndex,
+    order: room.final.order,
+    /** Who is being turned over right now. */
+    current: room.final.order[room.final.revealIndex] ?? null,
+    players: [...room.players.values()]
+      .filter((p) => p.score > 0 || room.final.wagers[p.id] != null)
+      .map((p) => {
+        const mine = p.id === viewerId
+        const open = privileged || isUp(p.id)
+        return {
+          id: p.id,
+          name: p.name,
+          score: p.score,
+          // "They have bet" is public; the number is not.
+          wagered: room.final.wagers[p.id] != null,
+          answered: !!room.final.answers[p.id]?.text,
+          wager: open || mine ? (room.final.wagers[p.id] ?? null) : null,
+          answer: open || mine ? (room.final.answers[p.id]?.text ?? "") : null,
+          judged: room.final.judged[p.id] ?? null,
+        }
+      }),
   }
 }

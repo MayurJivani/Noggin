@@ -4,6 +4,7 @@ import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
+import { FinalPanel } from "./FinalPanel"
 import { VeinLine } from "../ui/Vein"
 
 const STORAGE = "noggin.player"
@@ -240,6 +241,8 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
         </div>
       </div>
 
+      {phase === "final" && <FinalPanel state={state} me={me} send={send} />}
+
       {/* The clue, quietly. Players look at the TV; this is for the person at
           the back who can't, and for audio clues they want in their own ear. */}
       {clue && phase !== "board" && (
@@ -256,7 +259,7 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
         </div>
       )}
 
-      <div className="relative z-10 flex flex-1 items-center justify-center px-6 py-4">
+      <div className={`relative z-10 flex flex-1 items-center justify-center px-6 py-4 ${phase === "final" ? "hidden" : ""}`}>
         <BuzzerButton canBuzz={canBuzz} iHoldIt={iHoldIt} disabled={spent || onPenalty} pressed={pressed} onPress={press} />
       </div>
 

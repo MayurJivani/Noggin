@@ -647,3 +647,127 @@ test("a failing store errors the request instead of hanging it", async () => {
   const me = await (await asHost("/auth/me")).json()
   assert.ok(me.user, "still serving")
 })
+
+// ── The final round, over the wire ───────────────────────────────────────────
+
+const FINAL_BOARD = {
+  ...BOARD,
+  id: "final-board",
+  title: "Final Night",
+  final: { category: "STONE", prompt: "Black, veined with gold", answer: "marble", seconds: 30, enabled: true },
+}
+
+test("the final plays out over real sockets", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+
+  const screen = client("display", { code })
+  const alice = client("player", { code, name: "Alice" })
+  const bob = client("player", { code, name: "Bob" })
+  await Promise.all([screen.ready, alice.ready, bob.ready])
+  const A = alice.identity.playerId
+  const B = bob.identity.playerId
+  t.after(() => [host, screen, alice, bob].forEach((c) => c.ws.close()))
+
+  host.send("board:set", { board: FINAL_BOARD })
+  await settle()
+  host.send("game:start")
+  await settle()
+  host.send("score:set", { playerId: A, score: 1200 })
+  host.send("score:set", { playerId: B, score: 800 })
+  await settle()
+
+  await t.test("bets are placed blind, and stay secret", async () => {
+    host.send("final:open")
+    await settle()
+    assert.equal(screen.state.phase, "final")
+    assert.equal(screen.state.final.category, "STONE")
+    assert.equal(screen.state.final.prompt, "", "the room cannot see the clue while betting")
+
+    alice.send("final:wager", { amount: 500 })
+    bob.send("final:wager", { amount: 800 })
+    await settle()
+
+    const alicesView = alice.state.final.players
+    assert.equal(alicesView.find((p) => p.id === A).wager, 500, "she sees her own bet")
+    assert.equal(alicesView.find((p) => p.id === B).wager, null, "and not his")
+    assert.equal(alicesView.find((p) => p.id === B).wagered, true, "only that he has bet")
+    assert.equal(host.state.final.players.find((p) => p.id === B).wager, 800, "the host sees everything")
+  })
+
+  await t.test("the clue goes up and answers are written", async () => {
+    host.send("final:start")
+    await settle()
+    assert.equal(screen.state.final.prompt, "Black, veined with gold")
+    assert.equal(screen.state.final.answer, null, "the answer is still not on the wire")
+
+    alice.send("final:answer", { text: "marble" })
+    bob.send("final:answer", { text: "granite" })
+    await settle()
+    assert.equal(alice.state.final.players.find((p) => p.id === B).answer, null, "nor is his answer")
+  })
+
+  await t.test("the reveal turns them over poorest first, and pays the bets", async () => {
+    host.send("final:reveal")
+    await settle()
+    assert.deepEqual(host.state.final.order, [B, A], "Bob is behind, so Bob goes first")
+    assert.equal(screen.state.final.answer, "marble", "now the room may see it")
+    assert.equal(screen.state.final.players.find((p) => p.id === A).answer, null, "Alice is still face down")
+
+    host.send("final:judge", { correct: false })
+    await settle()
+    assert.equal(host.state.players.find((p) => p.id === B).score, 0, "800 staked and lost")
+    assert.equal(screen.state.final.players.find((p) => p.id === A).answer, "marble", "Alice is up now")
+
+    host.send("final:judge", { correct: true })
+    await settle()
+    assert.equal(host.state.players.find((p) => p.id === A).score, 1700)
+    assert.equal(screen.state.phase, "ended")
+  })
+})
+
+test("the final is skipped entirely on a board that has none", async (t) => {
+  const host = client("host")
+  await host.ready
+  t.after(() => host.ws.close())
+
+  host.send("board:set", { board: BOARD })
+  await settle()
+  assert.equal(host.state.final, null, "no final, nothing offered")
+
+  host.send("final:open")
+  await settle()
+  assert.notEqual(host.state.phase, "final", "and it cannot be forced open")
+})
+
+test("auto-arm opens the buzzer on its own, after the reading time", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  const alice = client("player", { code, name: "Alice" })
+  await alice.ready
+  t.after(() => [host, alice].forEach((c) => c.ws.close()))
+
+  host.send("board:set", { board: BOARD })
+  host.send("settings:set", { settings: { autoArm: true, readSeconds: 1 } })
+  await settle()
+  assert.equal(host.state.settings.autoArm, true, "the setting reaches the room")
+
+  host.send("game:start")
+  await settle()
+  host.send("clue:select", { catIndex: 0, clueIndex: 0 })
+  await settle()
+
+  assert.equal(host.state.buzzer.armed, false, "still shut while the host reads")
+  assert.equal(host.state.timer.kind, "arm")
+
+  // The relay's own deadline should arm it without anyone pressing anything.
+  await sleep(1400)
+  assert.equal(host.state.buzzer.armed, true, "opened by itself")
+  assert.equal(host.state.timer, null)
+
+  alice.send("buzz")
+  await settle()
+  assert.equal(host.state.buzzer.winner, alice.identity.playerId, "and a press now counts")
+})

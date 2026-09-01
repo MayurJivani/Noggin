@@ -46,7 +46,12 @@ function shutdown(code = 0) {
 process.on("SIGINT", () => shutdown(0))
 process.on("SIGTERM", () => shutdown(0))
 
-run("relay", "35", process.execPath, ["server/index.js"])
+// `--watch` restarts the relay when anything it imports changes. Astro has
+// always hot-reloaded the pages; the relay did not, so a change to the game
+// rules appeared to do nothing and the obvious conclusion was that the new code
+// was broken rather than simply not running. Live rooms are lost on restart,
+// which is the right trade in development and never happens in the container.
+run("relay", "35", process.execPath, ["--watch", "server/index.js"])
 run("astro", "33", process.execPath, [astroBin, "dev", "--host"])
 
 const ip = Object.values(networkInterfaces())

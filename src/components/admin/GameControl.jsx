@@ -161,6 +161,8 @@ function StagePanel({ state, send, now }) {
     )
   }
 
+  if (phase === "final") return <FinalControls state={state} send={send} />
+
   if (phase === "intermission" || phase === "ended") {
     const winner = players[0]
     return (
@@ -173,11 +175,18 @@ function StagePanel({ state, send, now }) {
               <span className="text-ink">{winner.name}</span> on <span className="font-value text-gold">{winner.score}</span>
             </div>
           )}
-          {phase === "intermission" && (
-            <button className="btn btn-gold mt-4 px-6 py-2.5" onClick={() => send("round:next")}>
-              Start next round
-            </button>
-          )}
+          <div className="mt-4 flex justify-center gap-2">
+            {phase === "intermission" && (
+              <button className="btn btn-gold px-6 py-2.5" onClick={() => send("round:next")}>
+                Start next round
+              </button>
+            )}
+            {state.final?.enabled && (
+              <button className="btn btn-gold px-6 py-2.5" onClick={() => send("final:open")}>
+                ✦ Play the final
+              </button>
+            )}
+          </div>
         </div>
       </Empty>
     )
@@ -522,6 +531,103 @@ function TimerControls({ send, timer, now }) {
       </div>
       {left != null && <div className="mt-1.5 text-center font-value text-xl text-gold tabular-nums">{Math.ceil(left / 1000)}</div>}
     </div>
+  )
+}
+
+
+/**
+ * Driving the final.
+ *
+ * Deliberately one button at a time: the stages are strictly ordered and the
+ * host is talking while they press, so the panel offers only the next step
+ * rather than a row of alternatives to pick wrong from.
+ */
+function FinalControls({ state, send }) {
+  const f = state.final
+  if (!f) return null
+  const waiting = (f.players ?? []).filter((p) => !p.wagered).length
+  const unanswered = (f.players ?? []).filter((p) => !p.answered).length
+  const current = (f.players ?? []).find((p) => p.id === f.current)
+
+  if (f.stage === "wager") {
+    return (
+      <Empty>
+        <div className="w-full max-w-md text-center">
+          <div className="label">Final · {f.category || "no category"}</div>
+          <div className="mt-1 font-display text-xl text-gold">Bets are open</div>
+          <p className="mt-2 text-[12px] text-muted">
+            {waiting === 0 ? "Everyone has bet." : `Waiting on ${waiting} player${waiting === 1 ? "" : "s"}.`}
+          </p>
+          <div className="mt-3 space-y-1 text-left">
+            {(f.players ?? []).map((p) => (
+              <div key={p.id} className="flex items-center gap-2 rounded-lg border border-edge px-2.5 py-1.5 text-[12px]">
+                <span className="flex-1 truncate">{p.name}</span>
+                <span className="font-value text-gold">{p.wager ?? "—"}</span>
+                <span className={p.wagered ? "text-good" : "text-faint"}>{p.wagered ? "in" : "…"}</span>
+              </div>
+            ))}
+          </div>
+          <button className="btn btn-gold mt-4 px-6 py-2.5" onClick={() => send("final:start")}>
+            Show the clue{waiting > 0 ? ` (${waiting} not in)` : ""}
+          </button>
+        </div>
+      </Empty>
+    )
+  }
+
+  if (f.stage === "clue") {
+    return (
+      <Empty>
+        <div className="w-full max-w-md text-center">
+          <div className="label">Final · {f.category}</div>
+          <div className="mt-2 font-display text-[15px] leading-snug text-ink">{f.prompt}</div>
+          <div className="mt-2 rounded-lg border border-good/40 bg-good/10 px-3 py-2 text-left">
+            <div className="label" style={{ color: "var(--color-good)" }}>
+              Answer
+            </div>
+            <div className="text-[14px] font-semibold text-ink">{f.answer}</div>
+          </div>
+          <p className="mt-2 text-[12px] text-muted">
+            {unanswered === 0 ? "Everyone has written something." : `${unanswered} still writing.`}
+          </p>
+          <div className="mt-3 flex justify-center gap-2">
+            <button className="btn" onClick={() => send("final:lock")}>
+              Stop the clock
+            </button>
+            <button className="btn btn-gold px-5" onClick={() => send("final:reveal")}>
+              Start revealing
+            </button>
+          </div>
+        </div>
+      </Empty>
+    )
+  }
+
+  return (
+    <Empty>
+      <div className="w-full max-w-md text-center">
+        <div className="label">Final · turning over</div>
+        <div className="mt-1 font-display text-xl text-gold">{current?.name ?? "—"}</div>
+        <div className="mt-2 rounded-lg border border-edge bg-black/25 px-3 py-2">
+          <div className="font-display text-lg text-ink">{current?.answer || <span className="text-faint">nothing written</span>}</div>
+          <div className="mt-1 text-[12px] text-muted">
+            staked <span className="font-value text-gold">{current?.wager ?? 0}</span> · correct answer{" "}
+            <span className="text-ink">{f.answer}</span>
+          </div>
+        </div>
+        <div className="mt-3 flex justify-center gap-2">
+          <button className="btn btn-good px-6 py-2.5" onClick={() => send("final:judge", { correct: true })}>
+            Correct
+          </button>
+          <button className="btn btn-bad px-6 py-2.5" onClick={() => send("final:judge", { correct: false })}>
+            Wrong
+          </button>
+        </div>
+        <div className="mt-2 text-[11px] text-faint">
+          {f.revealIndex + 1} of {f.order.length}
+        </div>
+      </div>
+    </Empty>
   )
 }
 

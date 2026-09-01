@@ -120,7 +120,7 @@ function Console({ state, send, connected, auth, viaKey }) {
       <div className="bulbs relative z-10 mx-4" />
 
       <main className="relative z-10 mx-auto w-full max-w-3xl space-y-3 p-4 lg:max-w-6xl lg:columns-2 lg:gap-3 lg:space-y-0 [&>*]:mb-3 lg:[&>*]:break-inside-avoid">
-        <ClueStatus state={state} holder={holder} now={now} />
+        {phase === "final" ? <FinalConsole state={state} send={send} /> : <ClueStatus state={state} holder={holder} now={now} />}
 
         <Grid round={round} state={state} send={send} />
 
@@ -173,6 +173,11 @@ function Console({ state, send, connected, auth, viaKey }) {
             >
               Next round
             </button>
+            {state.final?.enabled && phase !== "final" && (
+              <button className="btn col-span-2 py-2 text-xs" onClick={() => send("final:open")}>
+                ✦ Play the final clue
+              </button>
+            )}
           </div>
         </Panel>
       </main>
@@ -220,6 +225,69 @@ function Console({ state, send, connected, auth, viaKey }) {
         </div>
       </footer>
     </div>
+  )
+}
+
+/** The final, driven from the controller: one step at a time, same as the desk. */
+function FinalConsole({ state, send }) {
+  const f = state.final
+  if (!f) return null
+  const current = (f.players ?? []).find((p) => p.id === f.current)
+
+  if (f.stage === "wager") {
+    const waiting = (f.players ?? []).filter((p) => !p.wagered).length
+    return (
+      <Panel title={`Final · ${f.category || "bets open"}`}>
+        <div className="space-y-1">
+          {(f.players ?? []).map((p) => (
+            <div key={p.id} className="flex items-center gap-2 rounded-lg border border-edge px-2.5 py-1.5 text-xs">
+              <span className="min-w-0 flex-1 truncate">{p.name}</span>
+              <span className="font-value text-gold">{p.wager ?? "—"}</span>
+            </div>
+          ))}
+        </div>
+        <button className="btn btn-gold mt-2 w-full py-2.5 text-xs" onClick={() => send("final:start")}>
+          Show the clue{waiting > 0 ? ` (${waiting} not in)` : ""}
+        </button>
+      </Panel>
+    )
+  }
+
+  if (f.stage === "clue") {
+    return (
+      <Panel title={`Final · ${f.category}`}>
+        <div className="font-display text-sm text-ink">{f.prompt}</div>
+        <div className="mt-2 rounded-lg border border-good/40 bg-good/10 px-2.5 py-1.5 text-sm text-ink">{f.answer}</div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button className="btn py-2 text-xs" onClick={() => send("final:lock")}>
+            Stop clock
+          </button>
+          <button className="btn btn-gold py-2 text-xs" onClick={() => send("final:reveal")}>
+            Start revealing
+          </button>
+        </div>
+      </Panel>
+    )
+  }
+
+  return (
+    <Panel title={`Final · ${f.revealIndex + 1} of ${f.order.length}`}>
+      <div className="font-display text-lg text-gold">{current?.name ?? "—"}</div>
+      <div className="mt-1 rounded-lg border border-edge bg-black/25 px-2.5 py-2">
+        <div className="font-display text-sm text-ink">{current?.answer || <span className="text-faint">nothing written</span>}</div>
+        <div className="mt-1 text-xs text-muted">
+          staked <span className="font-value text-gold">{current?.wager ?? 0}</span> · answer <span className="text-ink">{f.answer}</span>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button className="btn btn-good py-3 text-sm" onClick={() => send("final:judge", { correct: true })}>
+          ✓ Correct
+        </button>
+        <button className="btn btn-bad py-3 text-sm" onClick={() => send("final:judge", { correct: false })}>
+          ✕ Wrong
+        </button>
+      </div>
+    </Panel>
   )
 }
 

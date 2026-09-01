@@ -6,6 +6,7 @@ import { Brand, BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
 import { VeinLine } from "../ui/Vein"
 import { BoardGrid } from "./BoardGrid"
+import { FinalStage } from "./FinalStage"
 import { ClueCard } from "./ClueCard"
 import { ScoreBar } from "./ScoreBar"
 import { BuzzerBanner, BuzzOverlay, DailyDoubleSplash, LifelineOverlay, TimerRing } from "./Overlays"
@@ -121,6 +122,7 @@ export function DisplayStage({ code: initialCode }) {
 
       <main className="relative z-10 min-h-0 flex-1">
         {phase === "lobby" && <Lobby code={state.code} players={players} title={board.title} />}
+        {phase === "final" && <FinalStage state={state} now={() => Date.now()} />}
         {phase === "intermission" && <Interlude title="Round cleared" players={players} sub={board.round?.name} />}
         {phase === "ended" && <Interlude title="Final scores" players={players} final />}
 

@@ -13,6 +13,13 @@ What exists, and what is deliberately left for later.
   ones; deleting a game ends it live and removes the saved copy.
 - **Undo the last ruling** — one deep, restoring score, spent player, buzzer and
   tile together.
+- **The final clue** — blind wagers, written answers against a clock, and a
+  reveal that turns players over poorest first. Wagers and answers are projected
+  per viewer, so no player sees another's before the host opens it.
+- **Spreadsheet import** — CSV or a tab-separated paste, previewed before it
+  replaces anything, with bad rows reported by line.
+- **Auto-arm** — the buzzer opens with the clue, optionally after a reading
+  delay.
 - **Board housekeeping** — duplicate and delete from the builder's list.
 - **Front door** (`/`) — pick a role, join by code, and resume any unfinished
   game of your own. Live rooms are marked as such.
@@ -49,11 +56,12 @@ What exists, and what is deliberately left for later.
 
 ## Later, unranked
 
-- **Final round.** A wager-and-write-it-down finale: every player stakes part of
-  their score, answers on their phone, and the screen reveals them one at a
-  time. The board data model already carries multiple rounds; this needs a new
-  phase, per-player wagers and submitted answers, and a reveal sequence.
-- **Teams.** Several phones sharing one score and one buzzer.
+- **Teams.** Several phones sharing one score and one buzzer. Every comparable
+  tool has this and pub quizzes are team-based, but it reaches into the player
+  model, the buzzer, scoring and all three screens — worth doing deliberately
+  rather than bolted onto a working buzzer.
+- **Question bank.** Boards can be duplicated; individual clues cannot be reused
+  across games without copying the whole thing.
 - **Board library.** The relay stores boards; the builder lists them. Missing:
   duplicate, rename, delete, and folders once there are more than a dozen.
 - **Answer checking.** Optionally let players type an answer and have the host
@@ -61,7 +69,6 @@ What exists, and what is deliberately left for later.
   a fast one.
 - **Spectator view.** A read-only `/display` variant for people watching from
   another room.
-- **Board CSV/TSV import.** Most people write their quiz in a spreadsheet.
 - **Persisted game history.** Who won, what was missed, which clues nobody got.
 
 ## Known limits

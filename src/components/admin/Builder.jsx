@@ -16,6 +16,7 @@ import {
 } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
 import { MediaField } from "../ui/MediaField"
+import { ImportCsv } from "./ImportCsv"
 
 /**
  * Part one of the host's night: writing the game.
@@ -28,9 +29,11 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
   const [selected, setSelected] = useState(null) // { catIndex, clueIndex }
   const [saved, setSaved] = useState("idle")
   const [boards, setBoards] = useState([])
+  const [importing, setImporting] = useState(false)
   const firstRun = useRef(true)
 
   const round = board.rounds[roundIndex] ?? board.rounds[0]
+  const onFinal = roundIndex === -1
   const stats = useMemo(() => boardStats(board), [board])
   const issues = useMemo(() => boardIssues(board), [board])
 
@@ -100,10 +103,23 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
     }
   }
 
-  const clue = selected ? round?.categories[selected.catIndex]?.clues[selected.clueIndex] : null
+  const clue = selected && !onFinal ? round?.categories[selected.catIndex]?.clues[selected.clueIndex] : null
   const patch = (p) => setBoard(patchClue(board, roundIndex, selected.catIndex, selected.clueIndex, p))
 
   return (
+    <>
+    {importing && (
+      <ImportCsv
+        onClose={() => setImporting(false)}
+        onImport={(b) => {
+          // Keep the final clue: it is written separately and an import of the
+          // grid should not quietly discard it.
+          setBoard({ ...b, id: board.id, final: board.final })
+          setRoundIndex(0)
+          setSelected(null)
+        }}
+      />
+    )}
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_minmax(380px,24%)]">
       <div className="min-w-0 space-y-4">
         <div className="panel p-4">
@@ -139,12 +155,25 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 >
                   +
                 </button>
+                <button
+                  className={`btn ml-1 ${roundIndex === -1 ? "btn-gold" : ""} ${board.final?.enabled ? "" : "opacity-60"}`}
+                  title="The last clue — everyone wagers, writes, and is turned over one at a time"
+                  onClick={() => {
+                    setRoundIndex(-1)
+                    setSelected(null)
+                  }}
+                >
+                  ✦ Final
+                </button>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <SaveDot state={saved} />
               <button className="btn" onClick={() => downloadBoard(board)}>
                 Export
+              </button>
+              <button className="btn" onClick={() => setImporting(true)} title="Bring a quiz in from CSV or a spreadsheet paste">
+                CSV
               </button>
               <ImportButton
                 onImport={(b) => {
@@ -157,6 +186,9 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
           </div>
         </div>
 
+        {roundIndex === -1 ? (
+          <FinalEditor board={board} setBoard={setBoard} />
+        ) : (
         <div className="panel overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-edge px-4 py-2.5">
             <input
@@ -262,6 +294,8 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
           </div>
         </div>
 
+        )}
+
         {issues.length > 0 && (
           <details className="panel px-4 py-3 text-[12px]">
             <summary className="cursor-pointer text-muted">
@@ -342,6 +376,28 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
               min={0}
               max={120}
             />
+            <label className="flex cursor-pointer items-start gap-2 text-[12px] text-muted">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={!!settings.autoArm}
+                onChange={(e) => onSettings({ autoArm: e.target.checked })}
+              />
+              <span>
+                Arm the buzzer automatically
+                <span className="block text-[10px] text-faint">opens when the clue appears, without waiting for you</span>
+              </span>
+            </label>
+            {settings.autoArm && (
+              <Rule
+                label="Reading time"
+                hint="seconds before it opens · 0 = instantly"
+                value={settings.readSeconds ?? 0}
+                onChange={(v) => onSettings({ readSeconds: v })}
+                min={0}
+                max={60}
+              />
+            )}
             <Rule
               label="Early-buzz penalty"
               hint="ms locked out for jumping the gun"
@@ -416,6 +472,79 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
         <button className="btn btn-gold w-full py-3 text-base" onClick={onPush} disabled={pushState === "pushing"}>
           {pushState === "pushed" ? "Board is live ✓" : "Push board to the room"}
         </button>
+      </div>
+    </div>
+    </>
+  )
+}
+
+/**
+ * The last clue.
+ *
+ * Off by default: plenty of quizzes just end when the board is cleared, and a
+ * blank final appearing on the projector would be worse than none at all.
+ */
+function FinalEditor({ board, setBoard }) {
+  const final = board.final ?? {}
+  const patch = (p) => setBoard({ ...board, final: { ...final, ...p } })
+
+  return (
+    <div className="panel p-4">
+      <label className="flex cursor-pointer items-center gap-2">
+        <input type="checkbox" checked={!!final.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
+        <span className="font-display text-base text-gold">Play a final clue</span>
+      </label>
+      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+        Everyone still in the black bets part of their score before seeing it, writes an answer on their phone, and is turned over one at a
+        time — poorest first.
+      </p>
+
+      <div className={`mt-4 space-y-3 ${final.enabled ? "" : "pointer-events-none opacity-40"}`}>
+        <div className="flex gap-3">
+          <label className="min-w-0 flex-1">
+            <div className="label mb-1">Category</div>
+            <input
+              className="field font-display uppercase"
+              placeholder="Shown while everyone bets"
+              value={final.category ?? ""}
+              onChange={(e) => patch({ category: e.target.value })}
+            />
+          </label>
+          <label className="w-28">
+            <div className="label mb-1">Clock</div>
+            <input
+              type="number"
+              min={5}
+              max={600}
+              className="field"
+              value={final.seconds ?? 30}
+              onChange={(e) => patch({ seconds: Math.max(5, Math.min(600, +e.target.value || 30)) })}
+            />
+          </label>
+        </div>
+
+        <label className="block">
+          <div className="label mb-1">Clue</div>
+          <textarea
+            className="field min-h-[92px] resize-y font-display text-[14px] leading-snug"
+            placeholder="Nobody sees this until the bets are locked"
+            value={final.prompt ?? ""}
+            onChange={(e) => patch({ prompt: e.target.value })}
+          />
+        </label>
+
+        <MediaField value={final.media ?? null} onChange={(media) => patch({ media })} label="Clue media" />
+
+        <label className="block">
+          <div className="label mb-1">Answer</div>
+          <textarea
+            className="field min-h-[56px] resize-y"
+            value={final.answer ?? ""}
+            onChange={(e) => patch({ answer: e.target.value })}
+          />
+        </label>
+
+        <MediaField value={final.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
       </div>
     </div>
   )
