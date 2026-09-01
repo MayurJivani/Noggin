@@ -32,7 +32,27 @@ const MAX_UPLOAD_BYTES = Number(process.env.NOGGIN_MAX_UPLOAD ?? 25 * 1024 * 102
 
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true })
 
+/**
+ * The built site, when there is one.
+ *
+ * In dev, Astro serves the pages on 4331 and this is absent. In production the
+ * relay serves `dist/` as well, so the whole app is one container on one port
+ * behind one reverse proxy — which also means the browser can resolve the API
+ * and the socket against its own origin instead of guessing a port.
+ */
+const DIST_DIR = path.resolve(process.env.NOGGIN_DIST_DIR ?? path.join(ROOT, "dist"))
+const SERVE_STATIC = existsSync(DIST_DIR)
+
 const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ico": "image/x-icon",
+  ".txt": "text/plain; charset=utf-8",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -168,6 +188,57 @@ function handleUpload(req, res, url) {
   req.on("aborted", () => out.destroy())
 }
 
+/**
+ * Map a request path onto a file in `dist/`, or null.
+ *
+ * Astro's static build writes `/host` as `host/index.html`, so a directory hit
+ * falls through to its index. The containment check is on the *resolved* path,
+ * so no amount of `..` in a URL can read outside the build.
+ */
+function resolveStatic(pathname) {
+  if (!SERVE_STATIC) return null
+  let rel
+  try {
+    rel = decodeURIComponent(pathname).replace(/^\/+/, "").replace(/\/+$/, "")
+  } catch {
+    return null
+  }
+  const full = rel ? path.resolve(DIST_DIR, rel) : DIST_DIR
+  if (full !== DIST_DIR && !full.startsWith(DIST_DIR + path.sep)) return null
+
+  try {
+    const stat = statSync(full)
+    if (stat.isFile()) return full
+    if (stat.isDirectory()) {
+      const index = path.join(full, "index.html")
+      return statSync(index).isFile() ? index : null
+    }
+  } catch {
+    /* not there */
+  }
+  return null
+}
+
+function serveStatic(req, res, file) {
+  const type = MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream"
+  // Astro fingerprints everything under _astro/, so those can be cached hard.
+  // HTML must not be, or a deploy leaves stale pages pinned in browsers.
+  const immutable = file.includes(`${path.sep}_astro${path.sep}`)
+  let size
+  try {
+    size = statSync(file).size
+  } catch {
+    res.writeHead(404, CORS).end("not found")
+    return
+  }
+  res.writeHead(200, {
+    "Content-Type": type,
+    "Content-Length": size,
+    "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+  })
+  createReadStream(file).pipe(res)
+}
+
 function readBody(req, limit = 4 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0
@@ -262,6 +333,13 @@ const http = createServer(async (req, res) => {
       return
     }
     return serveFile(req, res, file)
+  }
+
+  // Last: the built site. Checked after the API routes so a page can never
+  // shadow /upload, /files, /boards, /rooms or /net.
+  if (req.method === "GET" || req.method === "HEAD") {
+    const page = resolveStatic(url.pathname)
+    if (page) return serveStatic(req, res, page)
   }
 
   res.writeHead(404, CORS).end("not found")

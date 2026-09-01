@@ -1,0 +1,28 @@
+services:
+  noggin:
+    build: .
+    container_name: noggin
+    restart: unless-stopped
+    # Optional: Noggin runs on file storage and default ports with no .env at
+    # all, so a first deploy does not have to wait on a database.
+    env_file:
+      - path: .env
+        required: false
+    # Postgres on this host listens on 127.0.0.1:5432 only, which a
+    # bridge-networked container cannot reach (its 127.0.0.1 is its own
+    # loopback). Sharing the host network lets DATABASE_URL point at
+    # 127.0.0.1:5432 directly, with no Postgres config changes — the same
+    # arrangement Chorus uses on this box.
+    #
+    # `ports:` is not valid alongside network_mode: host — the relay binds
+    # NOGGIN_PORT (4332) on the host itself, which is where Caddy proxies to.
+    network_mode: host
+    volumes:
+      # Clue media has to outlive the container; boards and saved games only
+      # land here if DATABASE_URL is unset.
+      - noggin-uploads:/app/uploads
+      - noggin-data:/app/data
+
+volumes:
+  noggin-uploads:
+  noggin-data:

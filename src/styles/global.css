@@ -108,6 +108,8 @@
   0%, 100% { transform: translateY(0) rotate(0deg); }
   50%      { transform: translateY(-5%) rotate(1.6deg); }
 }
+/* Gold running down a seam, like a river finding its channel. */
+@keyframes vein-flow { to { stroke-dashoffset: -100; } }
 
 /**
  * All of this must live in `@layer base`.
@@ -263,6 +265,25 @@
     opacity: 0.5;
     animation: var(--animate-chase);
   }
+
+  /**
+   * A bright length of gold running along a seam.
+   *
+   * Reserved for the veins *inside* something — the ring in the wordmark, the
+   * flourish on a card. The long dividers ripple in place instead; a whole
+   * page of seams all running the same direction reads as a loading bar.
+   *
+   * Goes on a duplicate of the seam path laid over the original, so the vein
+   * keeps its own body and only the highlight travels. Every path it is used
+   * on carries `pathLength="100"`, which normalises the dash maths — one
+   * duration then reads the same on a 40px flourish and a 900px seam.
+   */
+  .vein-flow {
+    stroke-dasharray: 16 84;
+    animation: vein-flow 7s linear infinite;
+  }
+  .vein-flow-slow { animation-duration: 12s; }
+  .vein-flow-fast { animation-duration: 4.5s; }
 
   /* Sweeping highlight for anything that should look lit rather than painted. */
   .sheen {

@@ -85,6 +85,8 @@ export function Backdrop({ veins = 7, glow = 4, seed = 11, className = "" }) {
           ))}
         </g>
 
+
+
         {/* Flecks — gold spatter tends to collect alongside a seam. */}
         <g fill={`url(#${id}-vein)`}>
           {flecks.map((f, i) => (

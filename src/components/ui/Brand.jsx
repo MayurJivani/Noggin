@@ -43,6 +43,13 @@ export function Brand({ size = 44, sub = null, className = "" }) {
  */
 const RING = "M9,50a41,43 0 1,0 82,0a41,43 0 1,0 -82,0 M30,50a20,22 0 1,0 40,0a20,22 0 1,0 -40,0"
 
+/** Seams across the ring: along it, across it, and a hairline. */
+const SEAMS = [
+  "M-10 74 C 22 62, 34 44, 62 30 S 96 8, 118 -6",
+  "M-6 30 C 22 44, 42 50, 60 66 S 90 88, 106 100",
+  "M26 100 C 38 78, 44 62, 60 42 S 82 16, 92 2",
+]
+
 function RingO({ size }) {
   const id = useId()
   // Righteous sits its bowls a touch above the line box centre, so the ring is
@@ -88,10 +95,17 @@ function RingO({ size }) {
 
           <g clipPath={`url(#${id}-metal)`}>
             {/* Veining, the same material as the backdrop: one seam running the
-                length of the ring, one crossing it, one hairline. */}
-            <path d="M-10 74 C 22 62, 34 44, 62 30 S 96 8, 118 -6" fill="none" stroke={`url(#${id}-seam)`} strokeWidth="2.4" opacity="0.85" />
-            <path d="M-6 30 C 22 44, 42 50, 60 66 S 90 88, 106 100" fill="none" stroke={`url(#${id}-seam)`} strokeWidth="1.5" opacity="0.6" />
-            <path d="M26 100 C 38 78, 44 62, 60 42 S 82 16, 92 2" fill="none" stroke={`url(#${id}-seam)`} strokeWidth="0.9" opacity="0.45" />
+                length of the ring, one crossing it, one hairline — with gold
+                running down them. A seam inside something is exactly where the
+                river reading works; the long dividers ripple in place instead. */}
+            <path d={SEAMS[0]} fill="none" stroke={`url(#${id}-seam)`} strokeWidth="2.4" opacity="0.85" />
+            <path d={SEAMS[1]} fill="none" stroke={`url(#${id}-seam)`} strokeWidth="1.5" opacity="0.6" />
+            <path d={SEAMS[2]} fill="none" stroke={`url(#${id}-seam)`} strokeWidth="0.9" opacity="0.45" />
+            <g fill="none" stroke="#fff6dd" strokeLinecap="round">
+              <path d={SEAMS[0]} pathLength="100" strokeWidth="2.6" opacity="0.9" className="vein-flow" />
+              <path d={SEAMS[1]} pathLength="100" strokeWidth="1.6" opacity="0.55" className="vein-flow vein-flow-slow" />
+              <path d={SEAMS[2]} pathLength="100" strokeWidth="1" opacity="0.4" className="vein-flow vein-flow-fast" />
+            </g>
 
             {/* Specular arc, upper left, where the gradient is already lightest. */}
             <path d="M20 36 A 39 41 0 0 1 50 8" fill="none" stroke="#fff6dd" strokeWidth="3.5" strokeLinecap="round" opacity="0.45" />

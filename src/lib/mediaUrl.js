@@ -5,6 +5,8 @@
  */
 
 const RELAY_PORT = 4332
+/** Where Astro's dev server lives. Seeing this port means we are in dev. */
+const DEV_PORT = "4331"
 
 function wsUrlToHttp(wsUrl) {
   if (wsUrl.startsWith("wss://")) return "https://" + wsUrl.slice(6)
@@ -18,13 +20,27 @@ function httpUrlToWs(httpUrl) {
   return httpUrl
 }
 
-/** HTTP origin of the relay (upload, /files, /boards, /net). */
+/**
+ * HTTP origin of the relay (upload, /files, /boards, /rooms, /net).
+ *
+ * Two deployments, two answers:
+ *
+ * - **Dev** runs Astro on 4331 and the relay on 4332, so the page has to reach
+ *   across to the other port.
+ * - **Production** is one container behind one reverse proxy: the relay serves
+ *   the built site *and* the API *and* the socket on a single origin. Guessing
+ *   `hostname:4332` there would point at a port nothing exposes.
+ *
+ * Seeing the dev port is what tells the two apart, and `PUBLIC_WS_URL` still
+ * overrides both for tunnels and odd proxy setups.
+ */
 export function getRelayOrigin() {
   if (import.meta.env.PUBLIC_WS_URL) return wsUrlToHttp(import.meta.env.PUBLIC_WS_URL)
   if (typeof window !== "undefined") {
     // Match the page's scheme so an https tunnel doesn't trip mixed-content blocking.
     const scheme = window.location.protocol === "https:" ? "https" : "http"
-    return `${scheme}://${window.location.hostname}:${RELAY_PORT}`
+    if (window.location.port === DEV_PORT) return `${scheme}://${window.location.hostname}:${RELAY_PORT}`
+    return window.location.origin
   }
   return `http://localhost:${RELAY_PORT}`
 }
