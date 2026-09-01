@@ -20,19 +20,26 @@ import { useId, useSyncExternalStore } from "react"
  * an id means the second one silently adopts the first one's fill.
  */
 
+/**
+ * The colour of the running highlight. Warm gold rather than the near-white it
+ * started as — over a gold seam a white glint reads as a reflection sliding
+ * across metal, where this reads as the metal itself moving.
+ */
+export const RIVER = "#f6d688"
+
 const SPAN = 600
 const MID = 10
 const FRAMES = 12
 
 /** `[cycles across the span, amplitude, spatial phase, temporal phase]` */
 const MAIN_HARMONICS = [
-  [2, 3.6, 0.0, 0.0],
-  [3, 1.6, 1.1, 1.9],
-  [5, 0.8, 2.3, 3.4]
+  [2, 4.8, 0.0, 0.0],
+  [3, 2.0, 1.1, 1.9],
+  [5, 0.9, 2.3, 3.4]
 ]
 const BRANCH_HARMONICS = [
-  [2, 2.4, 0.6, 1.2],
-  [4, 1.2, 2.0, 2.8]
+  [2, 3.4, 0.6, 1.2],
+  [4, 1.6, 2.0, 2.8]
 ]
 
 /**
@@ -163,10 +170,10 @@ export function CornerVein({ className = "", flip = false, flow = true }) {
 
       {/* The river: a bright length running down the seam it is laid over. */}
       {!still && (
-        <g fill="none" stroke="#fff6dd" strokeLinecap="round" vectorEffect="non-scaling-stroke">
-          <path d={CORNER[0]} pathLength="100" strokeWidth="1.8" opacity="0.8" className="vein-flow" />
-          <path d={CORNER[1]} pathLength="100" strokeWidth="1" opacity="0.45" className="vein-flow vein-flow-slow" />
-          <path d={CORNER[2]} pathLength="100" strokeWidth="0.9" opacity="0.35" className="vein-flow vein-flow-fast" />
+        <g fill="none" stroke={RIVER} strokeLinecap="round" vectorEffect="non-scaling-stroke">
+          <path d={CORNER[0]} pathLength="100" strokeWidth="1.15" opacity="0.85" className="vein-flow" />
+          <path d={CORNER[1]} pathLength="100" strokeWidth="0.65" opacity="0.5" className="vein-flow vein-flow-slow" />
+          <path d={CORNER[2]} pathLength="100" strokeWidth="0.55" opacity="0.4" className="vein-flow vein-flow-fast" />
         </g>
       )}
 

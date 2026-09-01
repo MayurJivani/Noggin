@@ -1,4 +1,5 @@
 import { useId } from "react"
+import { RIVER } from "./Vein"
 
 /**
  * The wordmark: NOGGIN with the first O struck as a gold ring.
@@ -101,10 +102,10 @@ function RingO({ size }) {
             <path d={SEAMS[0]} fill="none" stroke={`url(#${id}-seam)`} strokeWidth="2.4" opacity="0.85" />
             <path d={SEAMS[1]} fill="none" stroke={`url(#${id}-seam)`} strokeWidth="1.5" opacity="0.6" />
             <path d={SEAMS[2]} fill="none" stroke={`url(#${id}-seam)`} strokeWidth="0.9" opacity="0.45" />
-            <g fill="none" stroke="#fff6dd" strokeLinecap="round">
-              <path d={SEAMS[0]} pathLength="100" strokeWidth="2.6" opacity="0.9" className="vein-flow" />
-              <path d={SEAMS[1]} pathLength="100" strokeWidth="1.6" opacity="0.55" className="vein-flow vein-flow-slow" />
-              <path d={SEAMS[2]} pathLength="100" strokeWidth="1" opacity="0.4" className="vein-flow vein-flow-fast" />
+            <g fill="none" stroke={RIVER} strokeLinecap="round">
+              <path d={SEAMS[0]} pathLength="100" strokeWidth="1.7" opacity="0.95" className="vein-flow" />
+              <path d={SEAMS[1]} pathLength="100" strokeWidth="1.05" opacity="0.6" className="vein-flow vein-flow-slow" />
+              <path d={SEAMS[2]} pathLength="100" strokeWidth="0.65" opacity="0.45" className="vein-flow vein-flow-fast" />
             </g>
 
             {/* Specular arc, upper left, where the gradient is already lightest. */}
