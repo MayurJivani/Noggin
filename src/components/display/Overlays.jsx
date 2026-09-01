@@ -16,11 +16,11 @@ export function BuzzOverlay({ name, verdict }) {
       <div className={`rounded-[2vmin] border-2 bg-void/85 px-[6vmin] py-[3vmin] shadow-2xl backdrop-blur-sm animate-slam ${tone} ${verdict === "wrong" ? "animate-shake" : ""}`}>
         {/* `gleam` rather than `brass` — the verdict colour has to survive, and
             brass paints every glyph gold regardless of what it is told. */}
-        <div className="font-display leading-none gleam" style={{ fontSize: "clamp(30px, 7vw, 110px)" }}>
+        <div className="font-display leading-none gleam" style={{ fontSize: "max(30px, calc(var(--stage) * 7))" }}>
           {name}
         </div>
         {verdict && (
-          <div className="mt-[1vmin] text-center font-display uppercase tracking-[0.4em]" style={{ fontSize: "clamp(12px, 1.6vw, 26px)" }}>
+          <div className="mt-[1vmin] text-center font-display uppercase tracking-[0.4em]" style={{ fontSize: "max(12px, calc(var(--stage) * 1.6))" }}>
             {verdict === "correct" ? "correct" : "no"}
           </div>
         )}
@@ -36,10 +36,10 @@ export function DailyDoubleSplash({ show }) {
     <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center overflow-hidden bg-void/70 backdrop-blur-sm">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(242,201,107,0.26),transparent_62%)] animate-flare" />
       <div className="text-center animate-slam">
-        <div className="font-display leading-[0.9] brass" style={{ fontSize: "clamp(40px, 11vw, 180px)" }}>
+        <div className="font-display leading-[0.9] brass" style={{ fontSize: "max(40px, calc(var(--stage) * 11))" }}>
           DAILY
         </div>
-        <div className="font-display leading-[0.9] brass" style={{ fontSize: "clamp(40px, 11vw, 180px)" }}>
+        <div className="font-display leading-[0.9] brass" style={{ fontSize: "max(40px, calc(var(--stage) * 11))" }}>
           DOUBLE
         </div>
       </div>
@@ -60,10 +60,10 @@ export function LifelineOverlay({ lifeline, playerName, now }) {
 
   return (
     <div className="pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-center gap-[2vmin] bg-void/80 backdrop-blur-sm">
-      <div className="font-display uppercase tracking-[0.35em] text-amethyst" style={{ fontSize: "clamp(13px, 2vw, 30px)" }}>
+      <div className="font-display uppercase tracking-[0.35em] text-amethyst" style={{ fontSize: "max(13px, calc(var(--stage) * 2))" }}>
         Phone a Friend
       </div>
-      <div className="font-display text-gold brass" style={{ fontSize: "clamp(26px, 5vw, 78px)" }}>
+      <div className="font-display text-gold brass" style={{ fontSize: "max(26px, calc(var(--stage) * 5))" }}>
         {playerName}
       </div>
 
@@ -84,7 +84,7 @@ export function LifelineOverlay({ lifeline, playerName, now }) {
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`font-value tabular-nums ${seconds <= 5 ? "text-bad" : "text-gold"}`} style={{ fontSize: "clamp(30px, 7vw, 96px)" }}>
+          <span className={`font-value tabular-nums ${seconds <= 5 ? "text-bad" : "text-gold"}`} style={{ fontSize: "max(30px, calc(var(--stage) * 7))" }}>
             {seconds}
           </span>
         </div>
@@ -136,7 +136,7 @@ export function BuzzerBanner({ armed }) {
   if (!visible) return null
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center pb-[1vmin]">
-      <div className="rounded-full border border-good/50 bg-good/12 px-[4vmin] py-[0.8vmin] font-display uppercase tracking-[0.4em] text-good animate-glow" style={{ fontSize: "clamp(10px, 1.3vw, 20px)" }}>
+      <div className="rounded-full border border-good/50 bg-good/12 px-[4vmin] py-[0.8vmin] font-display uppercase tracking-[0.4em] text-good animate-glow" style={{ fontSize: "max(10px, calc(var(--stage) * 1.3))" }}>
         Buzzers open
       </div>
     </div>

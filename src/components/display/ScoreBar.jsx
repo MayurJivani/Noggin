@@ -29,10 +29,10 @@ export function ScoreBar({ players, buzzer, lifeline }) {
           >
             <div className="flex items-center justify-center gap-[0.6vmin]">
               {!p.connected && <span className="h-[0.8vmin] w-[0.8vmin] rounded-full bg-faint" title="away" />}
-              <div className="truncate font-display uppercase tracking-wide text-ink/90" style={{ fontSize: "clamp(10px, 1.5vw, 24px)" }}>
+              <div className="truncate font-display uppercase tracking-wide text-ink/90" style={{ fontSize: "max(10px, calc(var(--stage) * 1.5))" }}>
                 {p.name}
               </div>
-              {(p.lifelines?.phone ?? 0) > 0 && <span className="text-gold-dim" style={{ fontSize: "clamp(8px, 1vw, 14px)" }}>☎</span>}
+              {(p.lifelines?.phone ?? 0) > 0 && <span className="text-gold-dim" style={{ fontSize: "max(8px, calc(var(--stage) * 1))" }}>☎</span>}
             </div>
             <Rolling value={p.score} />
           </div>
@@ -70,7 +70,7 @@ function Rolling({ value }) {
   return (
     <div
       className={`font-value tabular-nums leading-none ${shown < 0 ? "text-bad" : "text-gold"} ${moving ? "" : "brass-sm"}`}
-      style={{ fontSize: "clamp(20px, 3.4vw, 56px)" }}
+      style={{ fontSize: "max(20px, calc(var(--stage) * 3.4))" }}
     >
       {shown}
     </div>

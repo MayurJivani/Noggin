@@ -103,15 +103,15 @@ export function DisplayStage({ code: initialCode }) {
       <Backdrop veins={9} glow={4} />
 
       <header className="relative z-10 flex shrink-0 items-center gap-[2vmin] px-[2.5vmin] pt-[2vmin] pb-[1vmin]">
-        <BrandMark className="text-[clamp(14px,2vw,32px)]" />
+        <BrandMark className="text-[max(14px, calc(var(--stage) * 2))]" />
         <VeinLine className="hidden min-w-0 flex-1 sm:block" height={14} />
-        <div className="font-display uppercase tracking-[0.2em] text-gold/80" style={{ fontSize: "clamp(10px, 1.4vw, 22px)" }}>
+        <div className="font-display uppercase tracking-[0.2em] text-gold/80" style={{ fontSize: "max(10px, calc(var(--stage) * 1.4))" }}>
           {board.round?.name}
         </div>
         <VeinLine className="hidden min-w-0 flex-1 sm:block" height={14} />
         <div className="text-right">
           <div className="label leading-none">Room</div>
-          <div className="font-display brass-sm leading-none tracking-[0.2em]" style={{ fontSize: "clamp(14px, 2vw, 30px)" }}>
+          <div className="font-display brass-sm leading-none tracking-[0.2em]" style={{ fontSize: "max(14px, calc(var(--stage) * 2))" }}>
             {state.code}
           </div>
         </div>
@@ -156,7 +156,7 @@ function Lobby({ code, players, title }) {
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[4vmin]">
       <Brand size={Math.min(120, Math.max(48, window.innerWidth / 12))} />
       <VeinLine className="w-[46vmin]" height={18} />
-      <div className="text-center font-display text-gold/85" style={{ fontSize: "clamp(16px, 2.6vw, 40px)" }}>
+      <div className="text-center font-display text-gold/85" style={{ fontSize: "max(16px, calc(var(--stage) * 2.6))" }}>
         {title}
       </div>
 
@@ -167,7 +167,7 @@ function Lobby({ code, players, title }) {
           <div
             key={p.id}
             className="rounded-full border border-gold-deep/40 bg-royal/40 px-[2.4vmin] py-[0.9vmin] font-display text-ink animate-tile-in"
-            style={{ fontSize: "clamp(12px, 1.7vw, 26px)", animationDelay: `${i * 60}ms` }}
+            style={{ fontSize: "max(12px, calc(var(--stage) * 1.7))", animationDelay: `${i * 60}ms` }}
           >
             {p.name}
           </div>
@@ -183,20 +183,20 @@ function Interlude({ title, players, sub, final = false }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin]">
       {sub && <div className="label" style={{ letterSpacing: "0.4em" }}>{sub}</div>}
-      <div className="font-display text-gold brass" style={{ fontSize: "clamp(30px, 6vw, 96px)" }}>
+      <div className="font-display text-gold brass" style={{ fontSize: "max(30px, calc(var(--stage) * 6))" }}>
         {title}
       </div>
       <VeinLine className="w-[40vmin]" height={18} />
       <div className="flex flex-col items-center gap-[1.4vmin]">
         {players.slice(0, 8).map((p, i) => (
           <div key={p.id} className="flex items-baseline gap-[2.5vmin] animate-rise" style={{ animationDelay: `${i * 110}ms` }}>
-            <span className="font-value tabular-nums text-muted" style={{ fontSize: "clamp(14px, 2vw, 30px)" }}>
+            <span className="font-value tabular-nums text-muted" style={{ fontSize: "max(14px, calc(var(--stage) * 2))" }}>
               {i + 1}
             </span>
-            <span className="font-display" style={{ fontSize: "clamp(18px, 3.4vw, 56px)", color: final && i < 3 ? medal[i] : "var(--color-ink)" }}>
+            <span className="font-display" style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))", color: final && i < 3 ? medal[i] : "var(--color-ink)" }}>
               {p.name}
             </span>
-            <span className="font-value tabular-nums text-gold" style={{ fontSize: "clamp(18px, 3.4vw, 56px)" }}>
+            <span className="font-value tabular-nums text-gold" style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))" }}>
               {p.score}
             </span>
           </div>

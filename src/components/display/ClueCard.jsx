@@ -48,14 +48,14 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName }) {
     >
       <CornerVein className="opacity-45" />
       <div className="relative flex items-center gap-[1.5vmin] border-b border-gold-deep/25 px-[3vmin] py-[1.6vmin]">
-        <span className="font-display uppercase tracking-[0.14em] text-gold/85" style={{ fontSize: "clamp(12px, 1.7vw, 24px)" }}>
+        <span className="font-display uppercase tracking-[0.14em] text-gold/85" style={{ fontSize: "max(12px, calc(var(--stage) * 1.7))" }}>
           {clue.category}
         </span>
-        <span className="ml-auto font-value tabular-nums text-gold brass-sm" style={{ fontSize: "clamp(20px, 3vw, 46px)" }}>
+        <span className="ml-auto font-value tabular-nums text-gold brass-sm" style={{ fontSize: "max(20px, calc(var(--stage) * 3))" }}>
           {stake}
         </span>
         {clue.dailyDouble && (
-          <span className="rounded-full border border-live/60 px-[1.4vmin] py-[0.4vmin] font-display text-live animate-glow" style={{ fontSize: "clamp(9px, 1vw, 15px)" }}>
+          <span className="rounded-full border border-live/60 px-[1.4vmin] py-[0.4vmin] font-display text-live animate-glow" style={{ fontSize: "max(9px, calc(var(--stage) * 1))" }}>
             ✦ DAILY DOUBLE{wagerName ? ` · ${wagerName}` : ""}
           </span>
         )}
@@ -65,7 +65,7 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName }) {
         {clue.prompt && (
           <p
             className="max-w-[46ch] text-center font-display leading-[1.16] text-ink animate-rise"
-            style={{ fontSize: `clamp(20px, ${Math.max(2.1, 5.4 - clue.prompt.length / 90)}vw, 76px)`, animationDelay: "220ms" }}
+            style={{ fontSize: `max(20px, calc(var(--stage) * ${Math.max(2.1, 5.4 - clue.prompt.length / 90)}))`, animationDelay: "220ms" }}
           >
             {clue.prompt}
           </p>
@@ -78,7 +78,7 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName }) {
             <div className="label" style={{ letterSpacing: "0.4em" }}>
               Answer
             </div>
-            <p className="max-w-[40ch] text-center font-display leading-tight text-gold brass" style={{ fontSize: "clamp(22px, 4vw, 62px)" }}>
+            <p className="max-w-[40ch] text-center font-display leading-tight text-gold brass" style={{ fontSize: "max(22px, calc(var(--stage) * 4))" }}>
               {clue.answer}
             </p>
             {clue.answerMedia && <Media media={clue.answerMedia} compact />}
@@ -145,7 +145,7 @@ function AudioClue({ src, label, compact }) {
       </div>
       <button
         className="rounded-full border border-gold-deep/50 px-[2.5vmin] py-[0.9vmin] font-display text-gold"
-        style={{ fontSize: "clamp(11px, 1.2vw, 18px)" }}
+        style={{ fontSize: "max(11px, calc(var(--stage) * 1.2))" }}
         onClick={() => (playing ? audio.current?.pause() : audio.current?.play())}
       >
         {playing ? "❚❚ pause" : "▶ play"} {label ? <span className="ml-2 text-[0.75em] text-muted">{label}</span> : null}

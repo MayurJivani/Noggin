@@ -15,12 +15,19 @@ import { RIVER } from "./Vein"
  * with a clipped gradient, and a clipped background does not reach into a
  * transformed or blockified child, which leaves that child invisible.
  */
+/**
+ * @param {object} props
+ * @param {number|string} [props.size] – any CSS length. The ring sizes itself in
+ *   `em`, so a fluid value like `clamp(56px, 7vw, 240px)` works exactly as well
+ *   as a number, and the hero can scale with a 4K panel instead of sitting at a
+ *   fixed 96px in the middle of it.
+ */
 export function Brand({ size = 44, sub = null, className = "" }) {
   return (
     <div className={`select-none ${className}`}>
       <div className="flex items-center leading-none font-display" style={{ fontSize: size, letterSpacing: "0.005em" }}>
         <span className="brass">N</span>
-        <RingO size={size} />
+        <RingO />
         {/* A right single quote, not a straight typewriter tick — this is
             display type, and the straight one reads as a stray mark at size. */}
         <span className="brass">GGIN’</span>
@@ -51,18 +58,18 @@ const SEAMS = [
   "M26 100 C 38 78, 44 62, 60 42 S 82 16, 92 2",
 ]
 
-function RingO({ size }) {
+function RingO() {
   const id = useId()
-  // Righteous sits its bowls a touch above the line box centre, so the ring is
-  // nudged up to share an optical centre with the letters either side.
-  const box = size * 0.82
-
+  // Everything is in `em`, so the ring tracks whatever font-size the wordmark
+  // was given — including a fluid one. Righteous sits its bowls a touch above
+  // the line box centre, so the ring is nudged up to share an optical centre
+  // with the letters either side.
   return (
-    <span className="relative inline-block animate-float align-middle" style={{ width: box * 0.86, height: size }}>
+    <span className="relative inline-block animate-float align-middle" style={{ width: "0.705em", height: "1em" }}>
       <svg
         viewBox="0 0 100 100"
-        width={box}
-        height={box}
+        width="0.82em"
+        height="0.82em"
         className="absolute left-1/2 top-1/2"
         style={{ transform: "translate(-50%, -56%) rotate(-12deg)", overflow: "visible" }}
       >

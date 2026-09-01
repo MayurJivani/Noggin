@@ -34,7 +34,7 @@ export function GameControl({ state, send, now, requests, code, savedAt }) {
   }, [send, buzzer.armed])
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)_290px]">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)_290px] 2xl:grid-cols-[minmax(260px,18%)_minmax(0,1fr)_minmax(330px,22%)]">
       <MiniBoard state={state} send={send} />
 
       <div className="flex min-h-0 flex-col gap-3">

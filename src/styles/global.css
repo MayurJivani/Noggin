@@ -123,6 +123,36 @@
 @layer base {
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  :root {
+    /**
+     * The big screen's unit of size.
+     *
+     * On a 16:9 display this is exactly `1vw`, so it scales linearly with the
+     * panel — a 4K TV gets type twice the size of a 1080p one, which is the
+     * whole point. `clamp(…, Nvw, MAXpx)` could not do that: the ceiling that
+     * keeps a phone sane is the same ceiling that leaves a 4K board rendering
+     * at half size, marooned in black.
+     *
+     * The `vh` term is what stops it running away on anything wider than 16:9.
+     * On an ultrawide, plain `vw` would size type off the bottom of the screen;
+     * here the height takes over and the board still fits.
+     */
+    --stage: min(1vw, 1.78vh);
+  }
+
+  /**
+   * Very large monitors, where the OS is often *not* scaling for you. Bumping
+   * the root size carries every rem-based utility — spacing, containers, type
+   * scale — up with the screen instead of leaving a 900px column of 13px text
+   * stranded in the middle of a 4K panel.
+   */
+  @media (min-width: 2560px) {
+    html { font-size: 19px; }
+  }
+  @media (min-width: 3400px) {
+    html { font-size: 23px; }
+  }
+
   html, body {
     width: 100%;
     min-height: 100%;

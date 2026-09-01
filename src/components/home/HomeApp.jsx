@@ -56,19 +56,19 @@ export function HomeApp() {
     <div className="relative min-h-dvh">
       <Backdrop veins={8} glow={4} />
 
-      <main className="relative z-10 mx-auto flex min-h-dvh w-full max-w-4xl flex-col px-4 py-10 sm:px-8 sm:py-16">
+      <main className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[min(92vw,max(64rem,74vw))] flex-col justify-center px-4 py-10 sm:px-8 sm:py-14">
         <header className="flex flex-col items-center text-center">
-          {/* Two sizes rather than one fluid one: the ring in the wordmark has a
-              specular arc and a seam that stop reading below about 60px. */}
-          <Brand size={58} className="sm:hidden" />
-          <Brand size={96} className="hidden sm:block" />
-          <VeinLine className="mt-2 max-w-xs" height={16} />
-          <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted">
+          {/* One fluid size: the ring is drawn in `em`, so the whole wordmark
+              tracks the viewport rather than sitting at a fixed 96px in the
+              middle of a 4K panel. */}
+          <Brand size="clamp(3.25rem, 7vw, 11rem)" />
+          <VeinLine className="mt-2 w-[min(22rem,60%)]" height={18} />
+          <p className="mt-3 max-w-[42ch] text-sm leading-relaxed text-muted">
             A quiz board for a room with a screen and a pile of phones. Write it, put it on the wall, let everyone buzz in.
           </p>
         </header>
 
-        <div className="mt-10 grid gap-3 sm:mt-14 sm:grid-cols-3">
+        <div className="mt-10 grid gap-3 sm:mt-14 sm:grid-cols-3 2xl:gap-5">
           <Door href="/host" eyebrow="I'm running it" title="Host a game" body="Write the board, then run the night from one desk." primary />
           <Door href="/display" eyebrow="This is the TV" title="Big screen" body="The board everyone watches. Needs a room code." />
           <JoinDoor />
@@ -92,7 +92,7 @@ export function HomeApp() {
 
         {loaded && hasRooms && (
           <Section title="Pick up where you left off">
-            <ul className="grid gap-2.5 sm:grid-cols-2">
+            <ul className="grid gap-2.5 sm:grid-cols-2 2xl:grid-cols-3">
               {orphanLive.map((l) => (
                 <RoomRow key={l.code} room={{ ...l, players: [], progress: null }} live />
               ))}
@@ -110,10 +110,10 @@ export function HomeApp() {
                 <li key={b.id}>
                   <a
                     href={`/host?board=${encodeURIComponent(b.id)}`}
-                    className="flex items-center gap-2 rounded-lg border border-edge bg-panel-2/60 px-3 py-2 text-[12px] transition-colors hover:border-gold-dim hover:bg-panel-2"
+                    className="flex items-center gap-2 rounded-lg border border-edge bg-panel-2/60 px-3 py-2 text-xs transition-colors hover:border-gold-dim hover:bg-panel-2"
                   >
                     <span className="max-w-[14rem] truncate text-ink">{b.title}</span>
-                    <span className="shrink-0 rounded bg-black/40 px-1.5 py-px text-[10px] text-faint">{b.clues}</span>
+                    <span className="shrink-0 rounded bg-black/40 px-1.5 py-px text-[0.7rem] text-faint">{b.clues}</span>
                   </a>
                 </li>
               ))}
@@ -121,7 +121,7 @@ export function HomeApp() {
           </Section>
         )}
 
-        <footer className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 pt-12 text-[11px] text-faint">
+        <footer className="mt-14 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-faint">
           <span>Everything runs on your own machine.</span>
           <a className="transition-colors hover:text-gold" href="/control">
             Remote controller (planned) →
@@ -134,9 +134,9 @@ export function HomeApp() {
 
 function Section({ title, children }) {
   return (
-    <section className="mt-10 space-y-3.5">
+    <section className="mt-10 space-y-3.5 2xl:mt-14">
       <div className="flex items-center gap-4">
-        <h2 className="shrink-0 font-display text-lg text-gold">{title}</h2>
+        <h2 className="shrink-0 font-display text-lg text-gold 2xl:text-2xl">{title}</h2>
         <VeinLine className="hidden min-w-0 flex-1 sm:block" height={12} opacity={0.7} />
       </div>
       {children}
@@ -146,14 +146,14 @@ function Section({ title, children }) {
 
 function Notice({ tone, children }) {
   const skin = tone === "bad" ? "border-bad/40 bg-bad/10 text-bad" : "border-gold-dim/40 bg-gold/[0.06] text-muted"
-  return <div className={`rounded-xl border px-4 py-3 text-[12px] leading-relaxed ${skin}`}>{children}</div>
+  return <div className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${skin}`}>{children}</div>
 }
 
 function Door({ href, eyebrow, title, body, primary = false }) {
   return (
     <a
       href={href}
-      className={`group relative flex flex-col gap-1.5 overflow-hidden rounded-xl border p-4 transition-all duration-200 ${
+      className={`group relative flex flex-col gap-1.5 overflow-hidden rounded-xl border p-4 transition-all duration-200 2xl:p-6 ${
         primary
           ? "border-gold-deep/55 bg-gradient-to-b from-onyx/95 to-void/90 hover:border-gold hover:shadow-[0_0_32px_rgba(242,201,107,0.18)]"
           : "border-edge bg-panel/70 hover:border-gold-dim/70 hover:bg-panel-2/70"
@@ -161,9 +161,9 @@ function Door({ href, eyebrow, title, body, primary = false }) {
     >
       <CornerVein className={primary ? "opacity-70" : "opacity-30 transition-opacity group-hover:opacity-60"} />
       <span className="label relative">{eyebrow}</span>
-      <span className={`relative font-display text-xl leading-tight ${primary ? "brass-sm" : "text-ink"}`}>{title}</span>
-      <span className="relative text-[12px] leading-snug text-muted">{body}</span>
-      <span className="relative mt-1 text-[11px] text-faint transition-colors group-hover:text-gold">Open →</span>
+      <span className={`relative font-display text-xl leading-tight 2xl:text-2xl ${primary ? "brass-sm" : "text-ink"}`}>{title}</span>
+      <span className="relative text-xs leading-snug text-muted">{body}</span>
+      <span className="relative mt-1 text-xs text-faint transition-colors group-hover:text-gold">Open →</span>
     </a>
   )
 }
@@ -178,11 +178,11 @@ function JoinDoor() {
         e.preventDefault()
         if (ready) location.href = `/play?code=${encodeURIComponent(code.trim())}`
       }}
-      className="group relative flex flex-col gap-1.5 overflow-hidden rounded-xl border border-edge bg-panel/70 p-4 transition-colors focus-within:border-gold-dim/70"
+      className="group relative flex flex-col gap-1.5 overflow-hidden rounded-xl border border-edge bg-panel/70 p-4 transition-colors focus-within:border-gold-dim/70 2xl:p-6"
     >
       <CornerVein className="opacity-30" />
       <span className="label relative">I'm playing</span>
-      <span className="relative font-display text-xl leading-tight text-ink">Join a game</span>
+      <span className="relative font-display text-xl leading-tight 2xl:text-2xl text-ink">Join a game</span>
       {/* `w-0 flex-1` rather than the field's default full width — otherwise the
           input refuses to shrink and pushes Go out past the card's edge. */}
       <div className="relative mt-auto flex gap-2 pt-1">
@@ -228,9 +228,9 @@ function RoomRow({ room, live, onGone }) {
       <div className="flex items-center gap-2">
         <span className="font-display brass-sm text-lg leading-none tracking-[0.18em]">{room.code}</span>
         {live && (
-          <span className="shrink-0 rounded-full border border-good/50 px-1.5 py-px text-[9px] uppercase tracking-wider text-good">live</span>
+          <span className="shrink-0 rounded-full border border-good/50 px-1.5 py-px text-[0.65rem] uppercase tracking-wider text-good">live</span>
         )}
-        <span className="min-w-0 flex-1 truncate text-[12px] text-ink" title={room.title}>
+        <span className="min-w-0 flex-1 truncate text-xs text-ink" title={room.title}>
           {room.title}
         </span>
       </div>
@@ -240,14 +240,14 @@ function RoomRow({ room, live, onGone }) {
           <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-black/50">
             <div className="h-full rounded-full bg-gradient-to-r from-gold-deep to-gold" style={{ width: `${pct}%` }} />
           </div>
-          <span className="shrink-0 text-[10px] tabular-nums text-faint">
+          <span className="shrink-0 text-[0.7rem] tabular-nums text-faint">
             {room.progress.played}/{room.progress.total}
           </span>
         </div>
       )}
 
       {top.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
           {top.map((p) => (
             <span key={p.name} className="truncate">
               {p.name} <span className="font-value text-gold">{p.score}</span>
@@ -258,15 +258,15 @@ function RoomRow({ room, live, onGone }) {
       )}
 
       <div className="mt-3 flex gap-1.5">
-        <a className="btn btn-gold min-w-0 flex-1 truncate py-1.5 text-center text-[11px]" href={`/host?code=${room.code}`}>
+        <a className="btn btn-gold min-w-0 flex-1 truncate py-1.5 text-center text-xs" href={`/host?code=${room.code}`}>
           {live ? "Rejoin as host" : "Resume"}
         </a>
-        <a className="btn shrink-0 px-2.5 py-1.5 text-[11px]" href={`/display?code=${room.code}`} title="Open the big screen for this room">
+        <a className="btn shrink-0 px-2.5 py-1.5 text-xs" href={`/display?code=${room.code}`} title="Open the big screen for this room">
           TV
         </a>
         {!live && (
           <button
-            className="btn shrink-0 px-2.5 py-1.5 text-[11px] hover:border-bad hover:text-bad"
+            className="btn shrink-0 px-2.5 py-1.5 text-xs hover:border-bad hover:text-bad"
             onClick={forget}
             title="Delete this saved game"
             aria-label={`Forget saved game ${room.code}`}

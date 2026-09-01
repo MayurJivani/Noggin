@@ -65,7 +65,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
   const patch = (p) => setBoard(patchClue(board, roundIndex, selected.catIndex, selected.clueIndex, p))
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_minmax(380px,24%)]">
       <div className="min-w-0 space-y-4">
         <div className="panel p-4">
           <div className="flex flex-wrap items-end gap-3">

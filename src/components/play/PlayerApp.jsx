@@ -221,7 +221,7 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
   }
 
   return (
-    <div className="relative flex min-h-dvh touch-none flex-col overflow-hidden">
+    <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl touch-none flex-col overflow-hidden">
       <Backdrop veins={4} glow={2} />
 
       <header className="relative z-10 flex items-center gap-2 px-4 pt-3">
@@ -307,14 +307,14 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress }) {
         onPress()
       }}
       onContextMenu={(e) => e.preventDefault()}
-      className={`relative aspect-square w-[min(78vw,44vh)] select-none rounded-full border-4 bg-gradient-to-b shadow-2xl shadow-black/50 transition-transform duration-75 ${face} ${
+      className={`relative aspect-square w-[min(78vw,44vh,26rem)] select-none rounded-full border-4 bg-gradient-to-b shadow-2xl shadow-black/50 transition-transform duration-75 ${face} ${
         pressed ? "scale-95" : "active:scale-95"
       }`}
       style={{ touchAction: "none", WebkitUserSelect: "none" }}
     >
       {canBuzz && <span className="pointer-events-none absolute inset-0 rounded-full border-2 border-gold animate-pulse-ring" />}
       <span className="pointer-events-none absolute inset-x-[12%] top-[8%] h-[28%] rounded-full bg-white/18 blur-md" />
-      <span className="relative font-display uppercase leading-none tracking-[0.08em]" style={{ fontSize: "clamp(28px, 12vw, 68px)" }}>
+      <span className="relative font-display uppercase leading-none tracking-[0.08em]" style={{ fontSize: "clamp(28px, min(12vw, 7vh), 72px)" }}>
         {iHoldIt ? "GO" : "BUZZ"}
       </span>
     </button>

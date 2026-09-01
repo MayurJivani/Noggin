@@ -19,7 +19,7 @@ export const BoardGrid = forwardRef(function BoardGrid({ round, cellRef }, ref) 
             className="flex items-center justify-center rounded-[0.8vmin] border border-gold-deep/45 bg-gradient-to-b from-onyx/85 to-void/90 px-[0.6vmin] py-[1.4vmin] text-center animate-tile-in"
             style={{ animationDelay: `${ci * 55}ms` }}
           >
-            <span className="font-display uppercase leading-[1.05] text-gold brass-sm" style={{ fontSize: `clamp(11px, ${2.4 - cols * 0.08}vw, 30px)` }}>
+            <span className="font-display uppercase leading-[1.05] text-gold brass-sm" style={{ fontSize: `max(11px, calc(var(--stage) * ${2.4 - cols * 0.08}))` }}>
               {cat.title || " "}
             </span>
           </div>
@@ -49,7 +49,7 @@ export const BoardGrid = forwardRef(function BoardGrid({ round, cellRef }, ref) 
                     and the board keeps its shape either way. */}
                 <span
                   className={`font-value tabular-nums transition-all duration-700 ${played ? "text-gold-dim/45" : "text-gold brass"}`}
-                  style={{ fontSize: `clamp(20px, ${6 - cols * 0.35}vw, 78px)` }}
+                  style={{ fontSize: `max(20px, calc(var(--stage) * ${6 - cols * 0.35}))` }}
                 >
                   {clue.value}
                 </span>
