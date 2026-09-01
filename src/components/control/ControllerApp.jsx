@@ -198,7 +198,15 @@ function Console({ state, send, connected, auth, viaKey }) {
               {buzzer.armed ? "Lock buzzer" : "Arm buzzer"}
             </button>
           )}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
+            <button
+              className="btn py-2 text-xs hover:border-live hover:text-live"
+              disabled={!state.canUndo}
+              onClick={() => send("judge:undo")}
+              title="Take back the last ruling"
+            >
+              ↩ Undo
+            </button>
             <button className="btn py-2 text-xs" disabled={!live} onClick={() => send("buzzer:reset")}>
               Reset
             </button>

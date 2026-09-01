@@ -7,8 +7,13 @@ What exists, and what is deliberately left for later.
 - **Accounts** — host sign-in with scrypt and cookie sessions. Players never
   need one. Boards and saved games are owned; signups close after the first.
 - **Remote controller** (`/control`) — the in-depth surface for a second
-  operator, reachable with an account or a host-issued key that dies with the
-  room.
+  operator, reachable with an account or a host-issued key (with QR) that dies
+  with the room.
+- **Several games at once** — the desk switches between your rooms and opens new
+  ones; deleting a game ends it live and removes the saved copy.
+- **Undo the last ruling** — one deep, restoring score, spent player, buzzer and
+  tile together.
+- **Board housekeeping** — duplicate and delete from the builder's list.
 - **Front door** (`/`) — pick a role, join by code, and resume any unfinished
   game of your own. Live rooms are marked as such.
 - **Save & resume** — a room freezes to storage under its own code and comes
@@ -39,8 +44,6 @@ What exists, and what is deliberately left for later.
   which operator acted, and two people will eventually fight over the buzzer.
 - **Presence between operators.** Neither the host nor the controller can see
   that the other is connected, or notice when they drop.
-- **Controller QR.** The invite is a copyable link; a QR on the host desk would
-  save reading a key aloud.
 - **Password reset.** There is no recovery flow. A forgotten password currently
   means editing the database.
 

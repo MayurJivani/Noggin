@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { controllerUrl } from "../../lib/net"
+import { QrBlock } from "../ui/QrBlock"
 import { PlayerRoster } from "./PlayerRoster"
 
 /**
@@ -26,6 +27,10 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
         send(buzzer.armed ? "buzzer:lock" : "buzzer:arm")
       } else if (e.key === "y" || e.key === "Y") send("judge", { correct: true })
       else if (e.key === "n" || e.key === "N") send("judge", { correct: false })
+      else if ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        send("judge:undo")
+      }
       else if (e.key === "r" || e.key === "R") send("clue:reveal")
       else if (e.key === "Enter") send("clue:close")
       else if (e.key === "Escape") send("buzzer:reset")
@@ -67,6 +72,7 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
           </div>
           <ControllerInvite send={send} controllerKey={controllerKey} code={code} />
           <SaveControls send={send} savedAt={savedAt} code={code} />
+          <DeleteRoom send={send} code={code} players={players.length} />
           <TimerControls send={send} timer={timer} now={now} />
         </div>
       </div>
@@ -236,6 +242,11 @@ function StagePanel({ state, send, now }) {
         {clue.dailyDouble && <span className="text-[10px] text-live">✦ daily double</span>}
         {wager?.playerId && <span className="text-[10px] text-muted">· {players.find((p) => p.id === wager.playerId)?.name} wagered {wager.amount}</span>}
         <div className="ml-auto flex gap-1.5">
+          {state.canUndo && (
+            <button className="btn hover:border-live hover:text-live" onClick={() => send("judge:undo")} title="Take back the last ruling">
+              ↩ Undo <Kbd>⌘z</Kbd>
+            </button>
+          )}
           <button className="btn" onClick={() => send("clue:reveal")} disabled={state.revealed}>
             Reveal <Kbd>r</Kbd>
           </button>
@@ -459,6 +470,29 @@ function SaveControls({ send, savedAt, code }) {
       <div className="mt-1 text-[10px] leading-snug text-faint">
         Reopen it from the home page with code <span className="text-muted">{code}</span>. Scores and spent tiles come back; phones rejoin.
       </div>
+    </div>
+  )
+}
+
+/**
+ * Ends the game and removes it entirely — the live room, the saved copy, the
+ * scores. Distinct from "forget the saved copy", which leaves the night running
+ * and only declines to keep it, so the confirmation spells out the difference.
+ */
+function DeleteRoom({ send, code, players }) {
+  return (
+    <div className="mt-3 border-t border-edge pt-3">
+      <button
+        className="btn w-full py-1.5 text-[11px] hover:border-bad hover:text-bad"
+        onClick={() => {
+          const who = players ? ` ${players} player${players === 1 ? "" : "s"} will be disconnected.` : ""
+          if (confirm(`Delete game ${code}?${who} Scores and the saved copy go with it. This cannot be undone.`)) {
+            send("room:delete")
+          }
+        }}
+      >
+        Delete this game
+      </button>
     </div>
   )
 }

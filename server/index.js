@@ -313,7 +313,22 @@ function readBody(req, limit = 4 * 1024 * 1024) {
   })
 }
 
-const http = createServer(async (req, res) => {
+/**
+ * Every request is wrapped, because an async handler that rejects sends no
+ * response at all — the socket simply hangs until the browser gives up, which
+ * looks like a dead server rather than a failed request. One bad store call
+ * should cost one request, not the appearance of the whole relay being down.
+ */
+const http = createServer((req, res) => {
+  handleRequest(req, res).catch((err) => {
+    console.error("[noggin] request failed:", err.stack ?? err.message)
+    if (res.headersSent) return res.destroy()
+    res.writeHead(500, { ...corsFor(req), "Content-Type": "application/json" })
+    res.end(JSON.stringify({ error: "server error" }))
+  })
+})
+
+async function handleRequest(req, res) {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
   const json = jsonFor(req)
 
@@ -399,10 +414,15 @@ const http = createServer(async (req, res) => {
       return json(res, 200, { room })
     }
     if (req.method === "DELETE") {
-      const room = await store.loadRoom(code)
-      if (!room) return json(res, 200, { deleted: false })
-      if (!ownsRecord(room, me)) return json(res, 403, { error: "not yours" })
-      return json(res, 200, { deleted: await store.deleteRoom(code) })
+      const live = rooms.get(code)
+      const saved = await store.loadRoom(code)
+      if (!live && !saved) return json(res, 200, { deleted: false })
+      // Either copy establishes who it belongs to; a room that is live but was
+      // never saved still has an owner in memory.
+      const owner = live ? live.ownerId === me?.id : ownsRecord(saved, me)
+      if (!owner) return json(res, 403, { error: "not yours" })
+      const closed = closeLiveRoom(code)
+      return json(res, 200, { deleted: (await store.deleteRoom(code)) || closed })
     }
   }
 
@@ -430,7 +450,7 @@ const http = createServer(async (req, res) => {
   }
 
   res.writeHead(404, CORS).end("not found")
-})
+}
 
 // ── Accounts ─────────────────────────────────────────────────────────────────
 
@@ -619,6 +639,30 @@ function sweep(code) {
       console.log(`[room] ${code} closed`)
     }
   }, 30 * 60_000).unref?.()
+}
+
+/**
+ * End a live room and turn everyone out of it.
+ *
+ * Deleting only the saved copy used to leave the game still running in memory,
+ * with players still buzzing into a room their host thought was gone. Anything
+ * that claims to delete a room has to come through here.
+ */
+function closeLiveRoom(code, message = "The host closed this game.") {
+  const room = rooms.get(code)
+  if (!room) return false
+  for (const [sock] of room.sockets) {
+    send(sock, { type: "error", code: "closed", message })
+    sock.close()
+  }
+  clearTimeout(deadlines.get(code))
+  deadlines.delete(code)
+  clearTimeout(saveTimers.get(code))
+  saveTimers.delete(code)
+  for (const p of room.players.values()) clearTimeout(p.expire)
+  rooms.delete(code)
+  console.log(`[room] ${code} deleted`)
+  return true
 }
 
 /**
@@ -888,6 +932,18 @@ function handleHostMessage(room, meta, ws, msg) {
       return
     }
 
+    // Ends the game for everyone and removes every trace of it.
+    case "room:delete": {
+      if (meta.role !== "host") return
+      const doomed = room.code
+      getStore()
+        .deleteRoom(doomed)
+        .catch((err) => console.error("[noggin] delete failed:", err.message))
+      send(ws, { type: "deleted", code: doomed })
+      closeLiveRoom(doomed)
+      return
+    }
+
     case "room:forget": {
       getStore()
         .deleteRoom(room.code)
@@ -913,6 +969,8 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.resetBuzzer(room))
     case "judge":
       return apply(room, G.judge(room, !!msg.correct, msg.playerId))
+    case "judge:undo":
+      return apply(room, G.undoJudgement(room))
     case "clue:reveal":
       return apply(room, G.revealAnswer(room))
     case "clue:close":

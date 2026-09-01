@@ -537,3 +537,113 @@ test("a controller needs the host's key, and the host can revoke it", async (t) 
     stale.ws.close()
   })
 })
+
+// ── Multiple rooms, and deleting them ────────────────────────────────────────
+
+test("one host can run several rooms at once", async (t) => {
+  const a = client("host")
+  await a.ready
+  const b = client("host")
+  await b.ready
+  t.after(() => [a, b].forEach((c) => c.ws.close()))
+
+  assert.notEqual(a.identity.code, b.identity.code, "each host socket opens its own room")
+
+  a.send("board:set", { board: { ...BOARD, id: "room-a", title: "Practice" } })
+  b.send("board:set", { board: { ...BOARD, id: "room-b", title: "The Real One" } })
+  await settle()
+
+  assert.equal(a.state.board.title, "Practice")
+  assert.equal(b.state.board.title, "The Real One", "the two rooms do not bleed into each other")
+
+  // Moving one game on must leave the other exactly where it was.
+  a.send("game:start")
+  await settle()
+  assert.equal(a.state.phase, "board")
+  assert.equal(b.state.phase, "lobby")
+
+  const { live } = await (await asHost("/rooms")).json()
+  const codes = live.map((l) => l.code)
+  assert.ok(codes.includes(a.identity.code) && codes.includes(b.identity.code), "both are listed as live")
+})
+
+test("deleting a room ends it for everyone, not just on disk", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  host.send("board:set", { board: BOARD })
+  await settle()
+  host.send("room:save")
+  await settle(250)
+
+  const player = client("player", { code, name: "Alice" })
+  const screen = client("display", { code })
+  await Promise.all([player.ready, screen.ready])
+  t.after(() => [host, player, screen].forEach((c) => c.ws.close()))
+
+  await t.test("a stranger still cannot delete it", async () => {
+    const strangerJar = await signUp(`nosy${Date.now()}@example.com`, "let me in please")
+    assert.equal((await asHost(`/rooms/${code}`, { method: "DELETE" }, strangerJar)).status, 403)
+    const { rooms: mine } = await (await asHost("/rooms")).json()
+    assert.ok(mine.some((r) => r.code === code), "still there")
+  })
+
+  await t.test("the owner's delete disconnects the room and clears the record", async () => {
+    const res = await asHost(`/rooms/${code}`, { method: "DELETE" })
+    assert.equal(res.status, 200)
+    assert.equal((await res.json()).deleted, true)
+    await settle(300)
+
+    assert.ok(player.errors.some((e) => e.code === "closed"), "the player was told, not left hanging")
+    assert.equal(player.ws.readyState, WebSocket.CLOSED, "and disconnected")
+    assert.equal(screen.ws.readyState, WebSocket.CLOSED)
+
+    const { rooms: mine, live } = await (await asHost("/rooms")).json()
+    assert.ok(!mine.some((r) => r.code === code), "gone from the saved list")
+    assert.ok(!live.some((l) => l.code === code), "and no longer live")
+  })
+
+  await t.test("its code no longer resolves to anything", async () => {
+    const ghost = client("player", { code, name: "Late" })
+    await ghost.ready
+    assert.ok(ghost.errors.some((e) => e.code === "no-room"), "the room is really gone")
+    ghost.ws.close()
+  })
+})
+
+test("room:delete from the desk does the same thing", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  host.send("room:save")
+  await settle(250)
+  t.after(() => host.ws.close())
+
+  const player = client("player", { code, name: "Bob" })
+  await player.ready
+
+  host.send("room:delete")
+  await settle(350)
+
+  const { rooms: mine, live } = await (await asHost("/rooms")).json()
+  assert.ok(!mine.some((r) => r.code === code))
+  assert.ok(!live.some((l) => l.code === code))
+  assert.equal(player.ws.readyState, WebSocket.CLOSED, "the player was turned out")
+})
+
+test("a failing store errors the request instead of hanging it", async () => {
+  // The data directory disappearing under a running relay used to leave every
+  // request open until the browser gave up — indistinguishable from the server
+  // being down. It must recover, and must never hang.
+  rmSync(path.join(dataDir, "boards"), { recursive: true, force: true })
+
+  const res = await Promise.race([
+    asHost("/boards"),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("request hung")), 4000)),
+  ])
+  assert.ok(res.status === 200 || res.status >= 500, `answered with ${res.status}`)
+
+  // And the relay is still usable afterwards.
+  const me = await (await asHost("/auth/me")).json()
+  assert.ok(me.user, "still serving")
+})

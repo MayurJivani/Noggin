@@ -4,6 +4,8 @@ import {
   boardIssues,
   boardStats,
   downloadBoard,
+  duplicateBoard,
+  makeBoard,
   makeCategory,
   makeRound,
   patchCategory,
@@ -61,6 +63,42 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
       .then((j) => setBoards(j.boards ?? []))
       .catch(() => {})
   }, [saved])
+
+  const fetchBoard = (id) =>
+    fetch(`${getRelayOrigin()}/boards/${id}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j?.board ?? null)
+
+  const open = async (id) => {
+    const b = await fetchBoard(id)
+    if (!b) return
+    setBoard(b)
+    setRoundIndex(0)
+    setSelected(null)
+  }
+
+  const copy = async (id) => {
+    const b = await fetchBoard(id)
+    if (!b) return
+    // Land on the copy: duplicating is nearly always the first step of editing
+    // it, and the autosave effect writes it out from here.
+    setBoard(duplicateBoard(b))
+    setRoundIndex(0)
+    setSelected(null)
+  }
+
+  const remove = async (b) => {
+    if (!confirm(`Delete the board "${b.title}"? This cannot be undone.`)) return
+    await fetch(`${getRelayOrigin()}/boards/${b.id}`, { method: "DELETE", credentials: "include" }).catch(() => {})
+    setBoards((list) => list.filter((x) => x.id !== b.id))
+    // Deleting the one on screen would leave the builder editing a ghost that
+    // the next autosave would silently recreate.
+    if (b.id === board.id) {
+      setBoard(makeBoard())
+      setRoundIndex(0)
+      setSelected(null)
+    }
+  }
 
   const clue = selected ? round?.categories[selected.catIndex]?.clues[selected.clueIndex] : null
   const patch = (p) => setBoard(patchClue(board, roundIndex, selected.catIndex, selected.clueIndex, p))
@@ -341,24 +379,36 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
           <div className="max-h-44 space-y-1 overflow-y-auto">
             {boards.length === 0 && <div className="text-[11px] text-faint">Nothing saved yet.</div>}
             {boards.map((b) => (
-              <button
+              <div
                 key={b.id}
-                className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[12px] transition-colors ${
+                className={`group/board flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
                   b.id === board.id ? "border-gold-deep bg-royal/40" : "border-edge hover:border-violet"
                 }`}
-                onClick={async () => {
-                  if (b.id === board.id) return
-                  const j = await fetch(`${getRelayOrigin()}/boards/${b.id}`, { credentials: "include" }).then((r) => r.json())
-                  if (j.board) {
-                    setBoard(j.board)
-                    setRoundIndex(0)
-                    setSelected(null)
-                  }
-                }}
               >
-                <span className="min-w-0 flex-1 truncate">{b.title}</span>
-                <span className="shrink-0 text-[10px] text-faint">{b.clues} clues</span>
-              </button>
+                <button
+                  className="min-w-0 flex-1 truncate text-left disabled:cursor-default"
+                  disabled={b.id === board.id}
+                  onClick={() => open(b.id)}
+                  title={b.id === board.id ? "Open in the builder" : b.title}
+                >
+                  {b.title}
+                </button>
+                <span className="shrink-0 text-[10px] text-faint">{b.clues}</span>
+                <button
+                  className="shrink-0 px-1 text-[11px] text-faint opacity-0 transition-opacity hover:text-gold group-hover/board:opacity-100"
+                  title="Duplicate — next month's quiz usually starts as this one"
+                  onClick={() => copy(b.id)}
+                >
+                  ⧉
+                </button>
+                <button
+                  className="shrink-0 px-1 text-[11px] text-faint opacity-0 transition-opacity hover:text-bad group-hover/board:opacity-100"
+                  title="Delete this board"
+                  onClick={() => remove(b)}
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
         </div>

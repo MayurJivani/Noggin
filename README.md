@@ -67,7 +67,7 @@ pinned under the thumb.
 Two ways in:
 
 - **You**, signed into your own account, opening `/control` and typing the code.
-- **Someone else**, via a link the host generates from the desk. The key is
+- **Someone else**, via a link (and QR) the host generates from the desk. The key is
   minted on demand, lives only in the relay's memory, and dies with the room —
   it works tonight and not next Tuesday. **Create a controller link** on the
   host desk copies it; **revoke** kicks any controller using it.
@@ -98,6 +98,10 @@ tiles as daily doubles by hand or hit **✦ Scatter** to place them the way the
 show does. Everything autosaves to the relay — closing the tab at 1am doesn't
 cost you the quiz. Export drops a `.noggin.json` you can mail to someone.
 
+Saved boards can be opened, **duplicated** (⧉ — next month's quiz usually starts
+as this month's skeleton, with fresh ids so the copy is its own record) or
+deleted.
+
 **Run** is the desk during the show:
 
 - The mini board on the left is how you pick. The big screen follows.
@@ -108,6 +112,14 @@ cost you the quiz. Export drops a `.noggin.json` you can mail to someone.
 - Any score can be corrected by clicking it. Hosts make mistakes and arguing
   with software in front of an audience is not an option.
 - ☎ grants Phone a Friend. Players can ask from their phone; you still decide.
+- **↩ Undo** takes back the last ruling — the score, the spent player, the
+  buzzer and the tile all go back to where they were. ✓ and ✕ are two adjacent
+  buttons pressed under pressure while talking, and fixing a mis-tap by hand
+  means editing three things separately in front of an audience.
+
+The **Room** panel switches between your games, starts new ones, and deletes
+them. Deleting ends the live game and removes the saved copy — everyone in it is
+disconnected and told why.
 
 Keys, because the other hand is holding a microphone:
 
@@ -118,6 +130,7 @@ Keys, because the other hand is holding a microphone:
 | <kbd>r</kbd> | reveal the answer |
 | <kbd>enter</kbd> | next clue |
 | <kbd>esc</kbd> | reset the buzzer race |
+| <kbd>⌘/ctrl</kbd>+<kbd>z</kbd> | undo the last ruling |
 
 ## How the buzzer is fair
 

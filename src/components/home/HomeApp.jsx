@@ -125,10 +125,15 @@ export function HomeApp() {
         )}
 
         {auth.user && loaded && hasRooms && (
-          <Section title="Pick up where you left off">
+          <Section title="Your games" action={<a className="btn py-1 text-xs" href="/host?new=1">+ New game</a>}>
             <ul className="grid gap-2.5 sm:grid-cols-2 2xl:grid-cols-3">
               {orphanLive.map((l) => (
-                <RoomRow key={l.code} room={{ ...l, players: [], progress: null }} live />
+                <RoomRow
+                  key={l.code}
+                  room={{ ...l, players: [], progress: null }}
+                  live
+                  onGone={() => setLive((ls) => ls.filter((x) => x.code !== l.code))}
+                />
               ))}
               {rooms.map((r) => (
                 <RoomRow key={r.code} room={r} live={liveCodes.has(r.code)} onGone={() => setRooms((rs) => rs.filter((x) => x.code !== r.code))} />
@@ -166,12 +171,13 @@ export function HomeApp() {
   )
 }
 
-function Section({ title, children }) {
+function Section({ title, children, action = null }) {
   return (
     <section className="mt-10 space-y-3.5 2xl:mt-14">
       <div className="flex items-center gap-4">
         <h2 className="shrink-0 font-display text-lg text-gold 2xl:text-2xl">{title}</h2>
         <VeinLine className="hidden min-w-0 flex-1 sm:block" height={12} opacity={0.7} />
+        {action}
       </div>
       {children}
     </section>
@@ -245,8 +251,9 @@ function RoomRow({ room, live, onGone }) {
   const top = [...players].sort((a, b) => b.score - a.score).slice(0, 3)
   const pct = room.progress?.total ? Math.round((room.progress.played / room.progress.total) * 100) : null
 
-  const forget = async () => {
-    if (!confirm(`Forget the saved game ${room.code}? Scores go with it.`)) return
+  const remove = async () => {
+    const warning = live ? "It is running right now — everyone in it will be disconnected. " : ""
+    if (!confirm(`Delete game ${room.code}? ${warning}Scores go with it. This cannot be undone.`)) return
     setBusy(true)
     await fetch(`${getRelayOrigin()}/rooms/${room.code}`, { method: "DELETE", credentials: "include" }).catch(() => {})
     setBusy(false)
@@ -298,16 +305,14 @@ function RoomRow({ room, live, onGone }) {
         <a className="btn shrink-0 px-2.5 py-1.5 text-xs" href={`/display?code=${room.code}`} title="Open the big screen for this room">
           TV
         </a>
-        {!live && (
-          <button
-            className="btn shrink-0 px-2.5 py-1.5 text-xs hover:border-bad hover:text-bad"
-            onClick={forget}
-            title="Delete this saved game"
-            aria-label={`Forget saved game ${room.code}`}
-          >
-            ✕
-          </button>
-        )}
+        <button
+          className="btn shrink-0 px-2.5 py-1.5 text-xs hover:border-bad hover:text-bad"
+          onClick={remove}
+          title={live ? "End and delete this game" : "Delete this saved game"}
+          aria-label={`Delete game ${room.code}`}
+        >
+          ✕
+        </button>
       </div>
     </li>
   )

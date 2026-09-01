@@ -177,6 +177,8 @@ export function createRoom(code, settings = {}) {
     timer: null,
     /** { type, playerId, endsAt } while a lifeline is running. */
     lifeline: null,
+    /** Enough of the last ruling to take it back. See `undoJudgement`. */
+    lastJudgement: null,
     revealed: false,
   }
 }
@@ -235,6 +237,7 @@ export function selectClue(room, catIndex, clueIndex) {
   if (!clue || clue.status === CLUE_STATUS.PLAYED) return []
 
   room.active = { catIndex, clueIndex }
+  room.lastJudgement = null
   room.revealed = false
   room.wager = null
   room.timer = null
@@ -342,6 +345,24 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
   if (!player) return []
 
   const amount = stake(room)
+
+  // Everything a ruling touches, kept so it can be taken back. Hosts mis-tap
+  // ✓ and ✕ constantly — they are two adjacent buttons pressed under pressure
+  // while talking — and "fix it by hand afterwards" means editing a score, a
+  // spent-player list and a clue's status separately, in front of an audience.
+  room.lastJudgement = {
+    playerId,
+    correct,
+    amount,
+    score: player.score,
+    phase: room.phase,
+    revealed: room.revealed,
+    clueStatus: activeClue(room)?.status,
+    active: room.active && { ...room.active },
+    buzzer: cloneBuzzer(room.buzzer),
+    timer: room.timer,
+  }
+
   room.timer = null
 
   if (correct) {
@@ -381,6 +402,38 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
     room.buzzer.armed = false
   }
   return effects
+}
+
+const cloneBuzzer = (b) => ({ ...b, order: b.order.map((e) => ({ ...e })), lockedUntil: { ...b.lockedUntil }, spent: [...b.spent] })
+
+/**
+ * Take back the last ruling.
+ *
+ * Only ever one deep: a host who needs to unwind two judgements has lost track
+ * of the game anyway, and a longer history would need the board's own state
+ * versioned to be honest about what it was restoring.
+ */
+export function undoJudgement(room) {
+  const last = room.lastJudgement
+  if (!last) return []
+
+  const player = room.players.get(last.playerId)
+  if (!player) {
+    room.lastJudgement = null
+    return []
+  }
+
+  player.score = last.score
+  room.phase = last.phase
+  room.revealed = last.revealed
+  room.active = last.active
+  room.buzzer = cloneBuzzer(last.buzzer)
+  room.timer = last.timer
+  const clue = activeClue(room)
+  if (clue && last.clueStatus) clue.status = last.clueStatus
+  room.lastJudgement = null
+
+  return [{ kind: "undo", playerId: last.playerId, correct: last.correct, score: player.score }]
 }
 
 /** Show the answer without anyone getting it — "nobody? it was …". */
@@ -627,6 +680,7 @@ export function projectState(room, role) {
     board,
     clue,
     stake: stake(room),
+    canUndo: privileged && !!room.lastJudgement,
     wager: room.wager,
     revealed: room.revealed,
     timer: room.timer,

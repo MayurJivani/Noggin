@@ -40,6 +40,7 @@ function fileFor(dir, key) {
 }
 
 function writeJson(file, value) {
+  mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.tmp`
   writeFileSync(tmp, JSON.stringify(value, null, 2))
   renameSync(tmp, file)
@@ -53,10 +54,24 @@ function readJson(file) {
   }
 }
 
-/** Every readable record in a directory, newest first by mtime. */
+/**
+ * Every readable record in a directory, newest first by mtime.
+ *
+ * The directory is re-made if it has gone missing. It is created once at
+ * import, which is fine until something removes it underneath a running
+ * process — a cleared volume, a stray `rm -rf data` — after which every read
+ * threw ENOENT for the life of the process.
+ */
 function readAll(dir) {
   const out = []
-  for (const name of readdirSync(dir)) {
+  let names
+  try {
+    names = readdirSync(dir)
+  } catch {
+    mkdirSync(dir, { recursive: true })
+    return out
+  }
+  for (const name of names) {
     if (!name.endsWith(".json") || name === "sessions.json") continue
     const file = path.join(dir, name)
     const value = readJson(file)

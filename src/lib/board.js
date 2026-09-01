@@ -177,6 +177,32 @@ export function sprinkleDailyDoubles(round, count = 1) {
   return cleared
 }
 
+/**
+ * A copy, with fresh ids all the way down.
+ *
+ * Next month's quiz usually starts as last month's skeleton — same categories,
+ * same ladder, new clues. Reusing the ids would make the copy and the original
+ * the same record as far as storage is concerned, and saving one would quietly
+ * overwrite the other.
+ */
+export function duplicateBoard(board) {
+  return {
+    ...board,
+    id: uid("b"),
+    title: `${board.title} (copy)`,
+    updatedAt: Date.now(),
+    rounds: board.rounds.map((round) => ({
+      ...round,
+      id: uid("r"),
+      categories: round.categories.map((cat) => ({
+        ...cat,
+        id: uid("cat"),
+        clues: cat.clues.map((clue) => ({ ...clue, id: uid("c"), status: "open" })),
+      })),
+    })),
+  }
+}
+
 export const downloadBoard = (board) => {
   const blob = new Blob([JSON.stringify(board, null, 2)], { type: "application/json" })
   const a = document.createElement("a")

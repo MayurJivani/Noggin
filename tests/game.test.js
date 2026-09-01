@@ -295,3 +295,71 @@ test("a controller sees exactly what the host sees", () => {
   const controller = G.projectState(room, "controller")
   assert.deepEqual({ ...controller, serverNow: 0 }, { ...host, serverNow: 0 })
 })
+
+test("a mis-tapped ruling can be taken back", () => {
+  const room = setup()
+  G.selectClue(room, 0, 1) // 400
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+
+  // The wrong button. Score down, player out, clue closed.
+  G.judge(room, false)
+  assert.equal(room.players.get("p0").score, -400)
+  assert.deepEqual(room.buzzer.spent, ["p0"])
+
+  assert.deepEqual(kinds(G.undoJudgement(room)), ["undo"])
+  assert.equal(room.players.get("p0").score, 0, "the deduction is reversed")
+  assert.deepEqual(room.buzzer.spent, [], "and they are back in the race")
+  assert.equal(room.buzzer.winner, "p0", "still holding the buzzer, as before the ruling")
+  assert.equal(room.phase, G.PHASE.CLUE)
+
+  // Now rule the other way and the clue closes properly.
+  G.judge(room, true)
+  assert.equal(room.players.get("p0").score, 400)
+  assert.equal(room.phase, G.PHASE.REVEAL)
+})
+
+test("undoing a correct ruling reopens the clue it closed", () => {
+  const room = setup()
+  G.selectClue(room, 0, 0) // 200
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 5)
+  G.judge(room, true)
+  assert.equal(G.currentRound(room).categories[0].clues[0].status, G.CLUE_STATUS.PLAYED)
+
+  G.undoJudgement(room)
+  assert.equal(room.players.get("p1").score, 0)
+  assert.equal(G.currentRound(room).categories[0].clues[0].status, G.CLUE_STATUS.OPEN, "the tile is live again")
+  assert.equal(room.revealed, false, "and the answer is off the screen")
+})
+
+test("there is only ever one ruling to undo", () => {
+  const room = setup()
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 5)
+  G.judge(room, true)
+
+  assert.equal(G.undoJudgement(room).length, 1)
+  assert.equal(G.undoJudgement(room).length, 0, "a second undo does nothing")
+
+  // And picking a new clue clears the slate.
+  G.judge(room, true)
+  G.closeClue(room)
+  G.selectClue(room, 1, 0)
+  assert.equal(room.lastJudgement, null)
+  assert.equal(G.undoJudgement(room).length, 0)
+})
+
+test("only privileged roles are told an undo is available", () => {
+  const room = setup()
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 5)
+  G.judge(room, true)
+
+  assert.equal(G.projectState(room, "host").canUndo, true)
+  assert.equal(G.projectState(room, "controller").canUndo, true)
+  assert.equal(G.projectState(room, "display").canUndo, false)
+  assert.equal(G.projectState(room, "player").canUndo, false)
+})

@@ -8,6 +8,7 @@ import { displayUrl } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
+import { RoomSwitcher } from "./RoomSwitcher"
 import { Builder } from "./Builder"
 import { GameControl } from "./GameControl"
 
@@ -48,12 +49,16 @@ function HostDesk({ auth }) {
   const [savedAt, setSavedAt] = useState(null)
   /** The key the host hands to whoever is driving the controller tonight. */
   const [controllerKey, setControllerKey] = useState(null)
+  /** Bumped whenever the set of rooms changes, so the switcher refetches. */
+  const [roomsVersion, setRoomsVersion] = useState(0)
 
   // The home page links here with an explicit room (`?code=`) when resuming a
   // saved game. Failing that, rejoin the room we opened last time rather than
   // minting a new code — the old one is on a projector and in five phones.
   const [code, setCode] = useState(() => {
-    const wanted = new URLSearchParams(location.search).get("code")?.toUpperCase()
+    const params = new URLSearchParams(location.search)
+    if (params.get("new")) return ""
+    const wanted = params.get("code")?.toUpperCase()
     if (wanted) return wanted
     try {
       return localStorage.getItem(STORAGE + ".code") ?? ""
@@ -92,6 +97,13 @@ function HostDesk({ auth }) {
       if (msg.type === "saved") setSavedAt(msg.savedAt)
       if (msg.type === "forgotten") setSavedAt(null)
       if (msg.type === "controller-key") setControllerKey(msg.key)
+      if (msg.type === "deleted") {
+        // The room this desk was driving is gone. Drop the remembered code so
+        // the next connection opens a fresh one instead of resurrecting it.
+        localStorage.removeItem(STORAGE + ".code")
+        setRoomsVersion((v) => v + 1)
+        location.href = "/host"
+      }
     }, []),
   })
 
@@ -99,8 +111,27 @@ function HostDesk({ auth }) {
     if (identity?.code && identity.code !== code) {
       setCode(identity.code)
       localStorage.setItem(STORAGE + ".code", identity.code)
+      setRoomsVersion((v) => v + 1)
     }
   }, [identity, code])
+
+  /**
+   * Move the desk to another of your games, or open a brand new one.
+   *
+   * A full reload rather than a live swap: the builder, the run desk and the
+   * controller invite all hold state belonging to the room being left, and
+   * unpicking that by hand is a long list of places to forget one.
+   */
+  const goToRoom = (next) => {
+    localStorage.removeItem(STORAGE + ".board")
+    if (next) {
+      localStorage.setItem(STORAGE + ".code", next)
+      location.href = `/host?code=${next}`
+    } else {
+      localStorage.removeItem(STORAGE + ".code")
+      location.href = "/host?new=1"
+    }
+  }
 
   /**
    * Resuming a saved game: adopt the room's board into the builder.
@@ -164,10 +195,7 @@ function HostDesk({ auth }) {
 
         <div className="ml-auto flex items-center gap-3">
           <ScreenLink code={state?.code} />
-          <div className="text-right">
-            <div className="label leading-none">Room</div>
-            <div className="font-display brass-sm text-lg leading-tight tracking-[0.2em]">{state?.code ?? "…"}</div>
-          </div>
+          <RoomSwitcher code={state?.code} refreshKey={roomsVersion} onSwitch={goToRoom} onNew={() => goToRoom(null)} />
           <span className={`h-2 w-2 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} title={connected ? "connected" : "reconnecting"} />
           <button className="text-[0.7rem] text-faint transition-colors hover:text-bad" onClick={auth.logout}>
             sign out
