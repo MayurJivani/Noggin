@@ -13,9 +13,13 @@ import { fileURLToPath } from "node:url"
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
 const BOARD_DIR = path.resolve(process.env.NOGGIN_DATA_DIR ?? path.join(ROOT, "data", "boards"))
 const ROOM_DIR = path.resolve(process.env.NOGGIN_ROOM_DIR ?? path.join(ROOT, "data", "rooms"))
+const USER_DIR = path.resolve(process.env.NOGGIN_USER_DIR ?? path.join(ROOT, "data", "users"))
+/** Sessions are one small file, rewritten whole — there are never many. */
+const SESSION_FILE = path.join(USER_DIR, "sessions.json")
 
 mkdirSync(BOARD_DIR, { recursive: true })
 mkdirSync(ROOM_DIR, { recursive: true })
+mkdirSync(USER_DIR, { recursive: true })
 
 /**
  * Ids and room codes arrive from clients, so they are sanitised into the
@@ -53,7 +57,7 @@ function readJson(file) {
 function readAll(dir) {
   const out = []
   for (const name of readdirSync(dir)) {
-    if (!name.endsWith(".json")) continue
+    if (!name.endsWith(".json") || name === "sessions.json") continue
     const file = path.join(dir, name)
     const value = readJson(file)
     if (value) out.push({ value, at: statSync(file).mtimeMs })
@@ -87,8 +91,10 @@ export function createFileStore() {
       return true
     },
 
-    async listBoards() {
-      return readAll(BOARD_DIR).map(boardSummary)
+    async listBoards(ownerId) {
+      return readAll(BOARD_DIR)
+        .filter((b) => ownedBy(b, ownerId))
+        .map(boardSummary)
     },
 
     async saveRoom(snapshot) {
@@ -112,12 +118,80 @@ export function createFileStore() {
       return true
     },
 
-    async listRooms() {
-      return readAll(ROOM_DIR).map(roomSummary)
+    async listRooms(ownerId) {
+      return readAll(ROOM_DIR)
+        .filter((r) => ownedBy(r, ownerId))
+        .map(roomSummary)
+    },
+
+    // ── Accounts ─────────────────────────────────────────────────────────────
+
+    async createUser(user) {
+      const file = fileFor(USER_DIR, user.id)
+      if (!file) return null
+      // Email is the natural key, and two files cannot enforce that between
+      // themselves — so the uniqueness check happens here, before the write.
+      if (await this.findUserByEmail(user.email)) return null
+      writeJson(file, user)
+      return user
+    },
+
+    async findUserByEmail(email) {
+      const wanted = String(email ?? "").toLowerCase()
+      return readAll(USER_DIR).find((u) => u.email === wanted) ?? null
+    },
+
+    async findUserById(id) {
+      const file = fileFor(USER_DIR, id)
+      return file && existsSync(file) ? readJson(file) : null
+    },
+
+    async countUsers() {
+      return readAll(USER_DIR).length
+    },
+
+    async createSession(tokenHash, userId, expiresAt) {
+      const all = readJson(SESSION_FILE) ?? {}
+      all[tokenHash] = { userId, expiresAt }
+      writeJson(SESSION_FILE, sweepExpired(all))
+      return true
+    },
+
+    async findSession(tokenHash) {
+      const all = readJson(SESSION_FILE) ?? {}
+      const row = all[tokenHash]
+      if (!row) return null
+      if (row.expiresAt <= Date.now()) return null
+      return row
+    },
+
+    async deleteSession(tokenHash) {
+      const all = readJson(SESSION_FILE) ?? {}
+      if (!all[tokenHash]) return false
+      delete all[tokenHash]
+      writeJson(SESSION_FILE, all)
+      return true
     },
 
     async close() {},
   }
+}
+
+/**
+ * A record belongs to you if you own it. Records written before accounts
+ * existed have no owner and belong to nobody — they are not silently handed to
+ * whoever logs in first.
+ */
+function ownedBy(record, ownerId) {
+  return !!ownerId && record?.ownerId === ownerId
+}
+
+/** Expired sessions are dropped on write rather than swept on a timer. */
+function sweepExpired(all) {
+  const now = Date.now()
+  const out = {}
+  for (const [k, v] of Object.entries(all)) if (v?.expiresAt > now) out[k] = v
+  return out
 }
 
 /** Shared with the Postgres backend so both list the same shape. */

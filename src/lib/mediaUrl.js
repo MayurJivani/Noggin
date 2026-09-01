@@ -76,6 +76,7 @@ export function resolveMediaUrl(url) {
 export async function uploadMedia(file, onProgress) {
   const res = await fetch(`${getRelayOrigin()}/upload?name=${encodeURIComponent(file.name)}`, {
     method: "POST",
+    credentials: "include",
     body: file,
     headers: { "Content-Type": file.type || "application/octet-stream" },
   })

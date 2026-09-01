@@ -18,12 +18,13 @@ import { getWsUrl } from "./mediaUrl"
  * @param {string} [opts.code]      – room code; host may omit to open a new room
  * @param {string} [opts.name]      – player display name
  * @param {string} [opts.playerId]  – stable id so a reload keeps its score
+ * @param {string} [opts.key]       – controller key, for driving without an account
  * @param {(effects: any[], state: any) => void} [opts.onEffects]
  * @param {(err: {code:string,message:string}) => void} [opts.onError]
  * @param {(msg: any) => void} [opts.onMessage] – anything this hook doesn't model
  * @param {boolean} [opts.enabled]  – hold off connecting until the user is ready
  */
-export function useRoom({ role, code, name, playerId, onEffects, onError, onMessage, enabled = true }) {
+export function useRoom({ role, code, name, playerId, key, onEffects, onError, onMessage, enabled = true }) {
   const [state, setState] = useState(null)
   const [connected, setConnected] = useState(false)
   const [identity, setIdentity] = useState(null)
@@ -35,8 +36,8 @@ export function useRoom({ role, code, name, playerId, onEffects, onError, onMess
 
   const handlers = useRef({})
   handlers.current = { onEffects, onError, onMessage }
-  const joinRef = useRef({ role, code, name, playerId })
-  joinRef.current = { role, code, name, playerId }
+  const joinRef = useRef({ role, code, name, playerId, key })
+  joinRef.current = { role, code, name, playerId, key }
 
   useEffect(() => {
     if (!enabled) return
@@ -56,7 +57,7 @@ export function useRoom({ role, code, name, playerId, onEffects, onError, onMess
         attempt = 0
         setConnected(true)
         const j = joinRef.current
-        ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, playerId: j.playerId }))
+        ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, playerId: j.playerId, key: j.key }))
         ping = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }))
         }, 25_000)

@@ -22,6 +22,8 @@ const URL = `ws://127.0.0.1:${PORT}`
 
 let server
 let dataDir
+/** Session cookie for the account every privileged test runs as. */
+let cookie = ""
 
 before(async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), "noggin-test-"))
@@ -31,7 +33,11 @@ before(async () => {
       NOGGIN_PORT: String(PORT),
       NOGGIN_DATA_DIR: path.join(dataDir, "boards"),
       NOGGIN_ROOM_DIR: path.join(dataDir, "rooms"),
+      NOGGIN_USER_DIR: path.join(dataDir, "users"),
       NOGGIN_UPLOAD_DIR: path.join(dataDir, "uploads"),
+      // Signups close after the first account on a real deployment. These tests
+      // need several, to prove one host cannot reach another's games.
+      NOGGIN_ALLOW_SIGNUP: "1",
       // The file backend is the one every machine has. A developer with a
       // DATABASE_URL in their shell must not have their real database used as
       // scratch space by the test suite.
@@ -40,7 +46,23 @@ before(async () => {
     stdio: ["ignore", "ignore", "inherit"],
   })
   await waitForRelay()
+  cookie = await signUp("host@example.com", "correct horse battery")
 })
+
+/** Create an account and return its session cookie. */
+async function signUp(email, password) {
+  const res = await fetch(`http://127.0.0.1:${PORT}/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, name: email.split("@")[0] }),
+  })
+  assert.equal(res.status, 200, `signup for ${email} failed`)
+  return (res.headers.get("set-cookie") ?? "").split(";")[0]
+}
+
+/** fetch, as the signed-in host. */
+const asHost = (path, init = {}, jar = cookie) =>
+  fetch(`http://127.0.0.1:${PORT}${path}`, { ...init, headers: { ...(init.headers ?? {}), Cookie: jar } })
 
 after(() => {
   server?.kill("SIGTERM")
@@ -64,8 +86,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 /** Long enough for a message to reach the relay and the reply to fan back out. */
 const settle = (ms = 120) => sleep(ms)
 
-function client(role, joinExtra = {}) {
-  const ws = new WebSocket(URL)
+function client(role, joinExtra = {}, jar = cookie) {
+  const privileged = role === "host" || role === "controller"
+  const ws = new WebSocket(URL, privileged ? { headers: { Cookie: jar } } : undefined)
   const c = { ws, state: null, effects: [], identity: null, errors: [] }
   c.ready = new Promise((resolve) => {
     ws.on("open", () => ws.send(JSON.stringify({ type: "join", role, ...joinExtra })))
@@ -282,7 +305,7 @@ test("a game can be put down and picked up again", async (t) => {
   })
 
   await t.test("it shows up in the saved list with its progress", async () => {
-    const { rooms: saved } = await (await fetch(`http://127.0.0.1:${PORT}/rooms`)).json()
+    const { rooms: saved } = await (await asHost("/rooms")).json()
     const mine = saved.find((r) => r.code === code)
     assert.ok(mine, "the room is listed")
     assert.equal(mine.title, "Saturday Quiz")
@@ -320,7 +343,7 @@ test("a game can be put down and picked up again", async (t) => {
     await host3.ready
     host3.send("room:forget")
     await settle(250)
-    const { rooms: saved } = await (await fetch(`http://127.0.0.1:${PORT}/rooms`)).json()
+    const { rooms: saved } = await (await asHost("/rooms")).json()
     assert.ok(!saved.some((r) => r.code === code))
     host3.ws.close()
   })
@@ -355,30 +378,162 @@ test("a live room is never clobbered by its own older snapshot", async (t) => {
 
 test("boards persist over HTTP", async () => {
   const board = { ...BOARD, id: "persisted", title: "Saved Game" }
-  const put = await fetch(`http://127.0.0.1:${PORT}/boards/persisted`, {
+  const put = await asHost("/boards/persisted", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(board),
   })
   assert.equal(put.status, 200)
 
-  const { board: back } = await (await fetch(`http://127.0.0.1:${PORT}/boards/persisted`)).json()
+  const { board: back } = await (await asHost("/boards/persisted")).json()
   assert.equal(back.title, "Saved Game")
   assert.equal(back.rounds[0].categories[0].clues[0].answer, "marble")
 
-  const { boards } = await (await fetch(`http://127.0.0.1:${PORT}/boards`)).json()
+  const { boards } = await (await asHost("/boards")).json()
   assert.ok(boards.some((b) => b.id === "persisted"))
 })
 
 test("a board id cannot escape the data directory", async () => {
-  const res = await fetch(`http://127.0.0.1:${PORT}/boards/${encodeURIComponent("../../escape")}`, {
+  const res = await asHost(`/boards/${encodeURIComponent("../../escape")}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(BOARD),
   })
   // The id is stripped to something harmless, or refused outright — either way
   // nothing may be written outside the boards directory.
-  const { boards } = await (await fetch(`http://127.0.0.1:${PORT}/boards`)).json()
+  const { boards } = await (await asHost("/boards")).json()
   assert.ok(!boards.some((b) => String(b.id).includes("..")), "no traversal in the listing")
   assert.ok(res.status === 200 || res.status === 400)
+})
+
+// ── Accounts and ownership ───────────────────────────────────────────────────
+
+test("signup, login and logout round-trip", async () => {
+  const jar = await signUp("second@example.com", "another good password")
+
+  const me = await (await asHost("/auth/me", {}, jar)).json()
+  assert.equal(me.user.email, "second@example.com")
+
+  const bad = await fetch(`http://127.0.0.1:${PORT}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "second@example.com", password: "wrong" }),
+  })
+  assert.equal(bad.status, 401)
+
+  const good = await fetch(`http://127.0.0.1:${PORT}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "second@example.com", password: "another good password" }),
+  })
+  assert.equal(good.status, 200)
+  const freshJar = (good.headers.get("set-cookie") ?? "").split(";")[0]
+
+  await asHost("/auth/logout", { method: "POST" }, freshJar)
+  const after = await (await asHost("/auth/me", {}, freshJar)).json()
+  assert.equal(after.user, null, "the session is gone once logged out")
+})
+
+test("a stranger cannot see, open or resume your games", async (t) => {
+  const mine = client("host")
+  await mine.ready
+  const code = mine.identity.code
+  mine.send("board:set", { board: { ...BOARD, id: "private-board", title: "My Quiz" } })
+  await settle()
+  mine.send("room:save")
+  await settle(250)
+  t.after(() => mine.ws.close())
+
+  const strangerJar = await signUp("stranger@example.com", "not your business")
+
+  await t.test("their room list does not contain it", async () => {
+    const { rooms: theirs } = await (await asHost("/rooms", {}, strangerJar)).json()
+    assert.ok(!theirs.some((r) => r.code === code), "someone else's saved game is not listed")
+    const { rooms: ours } = await (await asHost("/rooms")).json()
+    assert.ok(ours.some((r) => r.code === code), "but it is listed for its owner")
+  })
+
+  await t.test("they cannot read the saved room or the board", async () => {
+    assert.equal((await asHost(`/rooms/${code}`, {}, strangerJar)).status, 403)
+    assert.equal((await asHost("/boards/private-board", {}, strangerJar)).status, 403)
+    assert.equal((await asHost("/boards/private-board")).status, 200, "the owner still can")
+  })
+
+  await t.test("they cannot delete it", async () => {
+    assert.equal((await asHost(`/rooms/${code}`, { method: "DELETE" }, strangerJar)).status, 403)
+    const { rooms } = await (await asHost("/rooms")).json()
+    assert.ok(rooms.some((r) => r.code === code), "still there")
+  })
+
+  await t.test("they cannot take the host seat", async () => {
+    const intruder = client("host", { code }, strangerJar)
+    await intruder.ready
+    assert.ok(intruder.errors.some((e) => e.code === "forbidden"), "told the game is not theirs")
+    assert.equal(intruder.state, null, "and handed no state")
+    intruder.ws.close()
+  })
+})
+
+test("signed-out clients get nothing privileged", async () => {
+  assert.equal((await fetch(`http://127.0.0.1:${PORT}/rooms`)).status, 401)
+  assert.equal((await fetch(`http://127.0.0.1:${PORT}/boards`)).status, 401)
+
+  const anon = client("host", {}, "")
+  await anon.ready
+  assert.ok(anon.errors.some((e) => e.code === "auth"), "hosting requires an account")
+  assert.equal(anon.state, null)
+  anon.ws.close()
+})
+
+test("a controller needs the host's key, and the host can revoke it", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  host.send("board:set", { board: BOARD })
+  await settle()
+  t.after(() => host.ws.close())
+
+  await t.test("without a key it is refused", async () => {
+    const nope = client("controller", { code }, "")
+    await nope.ready
+    assert.ok(nope.errors.some((e) => e.code === "auth"))
+    assert.equal(nope.state, null)
+    nope.ws.close()
+  })
+
+  const key = await new Promise((res) => {
+    const onMsg = (raw) => {
+      const m = JSON.parse(raw.toString())
+      if (m.type === "controller-key") {
+        host.ws.off("message", onMsg)
+        res(m.key)
+      }
+    }
+    host.ws.on("message", onMsg)
+    host.send("controller:invite")
+  })
+  assert.ok(key && key.length > 6, "the host is handed a key to share")
+
+  await t.test("with the key it gets the host's own view", async () => {
+    const ctrl = client("controller", { code, key }, "")
+    await ctrl.ready
+    await settle()
+    assert.equal(ctrl.state.code, code)
+    assert.equal(ctrl.state.board.round.categories[0].clues[0].answer, "marble", "unredacted, like the host")
+
+    // And it can actually drive the game.
+    ctrl.send("game:start")
+    await settle()
+    assert.equal(host.state.phase, "board", "the host desk sees what the controller did")
+    ctrl.ws.close()
+  })
+
+  await t.test("revoking closes the door behind it", async () => {
+    host.send("controller:revoke")
+    await settle(200)
+    const stale = client("controller", { code, key }, "")
+    await stale.ready
+    assert.ok(stale.errors.some((e) => e.code === "auth"), "the old key is dead")
+    stale.ws.close()
+  })
 })

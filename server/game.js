@@ -523,6 +523,7 @@ export function resetGame(room) {
 export function snapshotRoom(room) {
   return {
     code: room.code,
+    ownerId: room.ownerId ?? null,
     title: room.board.title,
     board: room.board,
     settings: room.settings,

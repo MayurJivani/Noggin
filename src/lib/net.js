@@ -32,6 +32,17 @@ export async function playerUrl(code) {
   return `${protocol}//${host}${port ? `:${port}` : ""}/play?code=${code}`
 }
 
+/**
+ * The controller link. Carries the room and the key the host just minted, so
+ * whoever scans it lands straight on the console with no code to type.
+ */
+export async function controllerUrl(code, key) {
+  const { protocol, hostname, port } = window.location
+  let host = hostname
+  if (LOOPBACK.has(hostname)) host = (await lanHost()) ?? hostname
+  return `${protocol}//${host}${port ? `:${port}` : ""}/control?code=${code}&key=${encodeURIComponent(key)}`
+}
+
 /** Same, for the big screen — handy when the projector machine isn't the host. */
 export async function displayUrl(code) {
   const { protocol, hostname, port } = window.location

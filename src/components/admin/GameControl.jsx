@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
+import { controllerUrl } from "../../lib/net"
 import { PlayerRoster } from "./PlayerRoster"
 
 /**
@@ -10,7 +11,7 @@ import { PlayerRoster } from "./PlayerRoster"
  * under pressure, while talking. The one thing it does own is the answer,
  * which nobody else in the building can see.
  */
-export function GameControl({ state, send, now, requests, code, savedAt }) {
+export function GameControl({ state, send, now, requests, code, savedAt, controllerKey }) {
   const { phase, board, clue, players, buzzer, timer, lifeline } = state
   const round = board.round
 
@@ -64,6 +65,7 @@ export function GameControl({ state, send, now, requests, code, savedAt }) {
               Reset game
             </button>
           </div>
+          <ControllerInvite send={send} controllerKey={controllerKey} code={code} />
           <SaveControls send={send} savedAt={savedAt} code={code} />
           <TimerControls send={send} timer={timer} now={now} />
         </div>
@@ -349,6 +351,71 @@ function BuzzerPanel({ state, send, now }) {
       {buzzer.spent.length > 0 && (
         <div className="mt-1.5 text-[10px] text-faint">
           out this clue: {buzzer.spent.map((id) => byId[id]?.name ?? "?").join(", ")}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Hand the board to a second pair of hands.
+ *
+ * The key is minted on demand and lives only in memory on the relay, so the
+ * link works tonight and not next Tuesday. Whoever scans it drives the game
+ * without needing an account — which is the point, since the person running the
+ * board is rarely the person who wrote the quiz.
+ */
+function ControllerInvite({ send, controllerKey, code }) {
+  const [url, setUrl] = useState("")
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!controllerKey) {
+      setUrl("")
+      return
+    }
+    controllerUrl(code, controllerKey).then(setUrl)
+  }, [controllerKey, code])
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-baseline justify-between">
+        <span className="label">Remote controller</span>
+        {controllerKey && (
+          <button className="text-[0.7rem] text-faint hover:text-bad" onClick={() => send("controller:revoke")}>
+            revoke
+          </button>
+        )}
+      </div>
+
+      {!controllerKey ? (
+        <>
+          <button className="btn mt-1.5 w-full py-1.5 text-[11px]" onClick={() => send("controller:invite")}>
+            Create a controller link
+          </button>
+          <div className="mt-1 text-[10px] leading-snug text-faint">
+            For someone else to drive the board while you read. No account needed.
+          </div>
+        </>
+      ) : (
+        <div className="mt-1.5 space-y-1.5">
+          <div className="rounded-lg border border-edge bg-black/30 px-2 py-1.5 text-[10px] break-all text-muted">{url || "…"}</div>
+          <div className="flex gap-1.5">
+            <button
+              className="btn btn-gold flex-1 py-1.5 text-[11px]"
+              disabled={!url}
+              onClick={() => {
+                navigator.clipboard?.writeText(url)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1800)
+              }}
+            >
+              {copied ? "Copied ✓" : "Copy link"}
+            </button>
+            <a className="btn px-2.5 py-1.5 text-[11px]" href={url || "#"} target="_blank" rel="noreferrer">
+              Open ↗
+            </a>
+          </div>
         </div>
       )}
     </div>

@@ -4,8 +4,13 @@ What exists, and what is deliberately left for later.
 
 ## Shipped
 
+- **Accounts** — host sign-in with scrypt and cookie sessions. Players never
+  need one. Boards and saved games are owned; signups close after the first.
+- **Remote controller** (`/control`) — the in-depth surface for a second
+  operator, reachable with an account or a host-issued key that dies with the
+  room.
 - **Front door** (`/`) — pick a role, join by code, and resume any unfinished
-  game. Live rooms are marked as such.
+  game of your own. Live rooms are marked as such.
 - **Save & resume** — a room freezes to storage under its own code and comes
   back with its board, spent tiles, players and scores. Autosaves on change, on
   the last person leaving, and on shutdown.
@@ -23,34 +28,21 @@ What exists, and what is deliberately left for later.
 - **Relay** — server-authoritative rules, per-role redaction, reconnection with
   grace, media upload and range-serving, board persistence.
 
-## Next: the remote controller (`/control`)
+## Next
 
-The route and the protocol role exist; only the interface is outstanding.
-
-**Why.** One person cannot comfortably read a clue aloud, watch five faces, and
-also drive a board. Splitting the desk lets the host hold a tablet with the clue
-and the two buttons that matter, while someone at the side runs everything else.
-
-**How it slots in.** The relay already accepts `role: "controller"` and gives it
-the same privileged command surface and the same unredacted state as the host
-(`projectState` treats `host` and `controller` identically — there's a test that
-asserts the two projections match). Nothing about the server needs to change.
-
-**What has to be decided and built:**
-
-1. **The split.** Proposed:
-   - *Host tab* — clue text, the answer, who holds the buzzer, Correct/Wrong,
-     Next. Nothing else on the screen.
-   - *Controller* — the grid, arm/lock/reset, score corrections, lifelines,
-     timers, media cueing, player management.
-2. **Pairing.** Same room code, entered or scanned from a QR on the host desk.
-   Worth considering whether a controller should need to be admitted by the
-   host rather than just knowing the code — the code is on a projector.
-3. **Conflict.** Two privileged clients can both press Arm. The relay's mutators
-   are already idempotent enough that this is harmless, but the UI should show
-   *who* did what, or the two operators will fight over the buzzer.
-4. **Presence.** Each privileged client should be able to see the other is
-   connected, and notice when it isn't.
+- **A slimmer host tab.** The controller shipped, but `/host` is still the full
+  desk. The original idea was a host holding a tablet with the clue, the answer
+  and two buttons while the controller runs everything else — that mode does not
+  exist yet, and the host desk is a poor thing to hold in one hand.
+- **Who did what.** Two privileged clients can both press Arm. The relay's
+  mutators are idempotent enough that this is harmless, but neither screen shows
+  which operator acted, and two people will eventually fight over the buzzer.
+- **Presence between operators.** Neither the host nor the controller can see
+  that the other is connected, or notice when they drop.
+- **Controller QR.** The invite is a copyable link; a QR on the host desk would
+  save reading a key aloud.
+- **Password reset.** There is no recovery flow. A forgotten password currently
+  means editing the database.
 
 ## Later, unranked
 
@@ -75,11 +67,12 @@ asserts the two projections match). Nothing about the server needs to change.
   and on shutdown, so a restart loses at most the last few seconds and any
   buzzer race in flight — but two relay processes would not share rooms. Fine
   for a living room, not for a hosted service.
-- No authentication anywhere. Anyone on the wifi who knows a room code can join
-  as a player, anyone who opens `/host` can open a room, and anyone can resume
-  or forget a saved game. That is the right trade for a party and the wrong one
-  for anything public. If this ever goes past a LAN, the saved-room endpoints
-  are the first thing that needs a gate.
+- Players are still unauthenticated by design: anyone on the wifi who knows a
+  room code can take a seat under any name. That is the right trade for a party.
+  Hosting, resuming and controlling are all gated; joining is not.
+- No rate limiting on the login route. On a LAN that is fine; on a public URL a
+  patient attacker can grind passwords. scrypt makes each attempt expensive, but
+  expensive is not the same as blocked.
 - Saved rooms are never expired. A machine that has hosted a hundred quizzes
   accumulates a hundred rows; the front page shows the most recent and the rest
   just sit there.

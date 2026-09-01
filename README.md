@@ -19,10 +19,11 @@ or nothing else in the room can reach it.
 
 | Where | Who | What |
 | :--- | :--- | :--- |
-| `/` | everyone | Front door — pick a role, or resume a saved game |
-| `/host` | host | Build the quiz, then run it |
+| `/` | everyone | Front door — pick a role, or resume one of your saved games |
+| `/host` | host | Build the quiz, then run it. Needs an account |
 | `/display` | the TV | The board, the clue, the scores — read-only |
 | `/play` | every player | A room code, a name, and one enormous button |
+| `/control` | second operator | The in-depth controller. Account or host-issued link |
 
 `npm run dev` starts two processes:
 
@@ -32,6 +33,44 @@ or nothing else in the room can reach it.
 | 4332 | Relay — WebSocket game state, media upload/streaming, storage |
 
 Both bind to `0.0.0.0` so anything on the same wifi can reach them.
+
+## Accounts
+
+Hosting needs one; **playing never does**. A room full of people typing a four
+letter code should not have to sign up first, so players stay anonymous and only
+the person running the game has an account.
+
+What an account buys is ownership. Your saved games and your boards are yours:
+nobody who wanders onto the URL can list them, resume them, read your clues, or
+take the host seat. Two hosts on the same server never see each other's work.
+
+**Signups close after the first account.** This thing can be put on the open
+internet, and an open registration form there is an invitation. The first person
+through the door gets in; after that it takes `NOGGIN_ALLOW_SIGNUP=1` to let
+anyone else register.
+
+Sessions are an HttpOnly cookie holding a random token; only its SHA-256 is
+stored, so a leaked database does not hand over live sessions. Passwords go
+through scrypt from node's own crypto — no native module to build.
+
+## The remote controller
+
+One person cannot comfortably read a clue aloud, watch five faces, and drive a
+board at the same time. `/control` is the second pair of hands: the host keeps
+the questions and the verdict, and whoever holds the controller runs the grid,
+the buzzer, the scores, the lifelines and the clock.
+
+It is laid out for a phone or tablet held in one hand — big targets, no hover,
+and the two urgent controls (arm the buzzer, rule on whoever is holding it)
+pinned under the thumb.
+
+Two ways in:
+
+- **You**, signed into your own account, opening `/control` and typing the code.
+- **Someone else**, via a link the host generates from the desk. The key is
+  minted on demand, lives only in the relay's memory, and dies with the room —
+  it works tonight and not next Tuesday. **Create a controller link** on the
+  host desk copies it; **revoke** kicks any controller using it.
 
 ## Saving a game for later
 
@@ -129,7 +168,10 @@ npm test
 `tests/game.test.js` drives the rules engine directly — buzzer ordering,
 penalties, scoring, daily doubles, round rollover, and what each role is allowed
 to see. `tests/relay.test.js` boots a real relay and runs a round over real
-sockets with a host, a big screen and two phones.
+sockets with a host, a big screen and two phones, then proves the parts that
+matter once this is on a public URL: a stranger cannot list, read, resume or
+delete your games, signed-out clients get nothing privileged, and a controller
+key works until the host revokes it.
 
 ## Storage
 
@@ -154,7 +196,9 @@ The relay prints which backend it chose at boot. If `DATABASE_URL` is set but
 the tables are missing, it says so loudly and falls back to files rather than
 failing halfway through a game.
 
-`server/schema.sql` is two tables of `jsonb` and is safe to re-run. Boards and
+`server/schema.sql` covers accounts, sessions, boards and rooms, and is safe to
+re-run — including on a database created before accounts existed, which it
+upgrades in place. Boards and
 rooms are documents — always read and written whole, by one host at a time — so
 shredding them into category and clue tables would buy joins nobody performs and
 cost a migration every time a clue grows a field. The columns beside `data`
@@ -179,6 +223,8 @@ exist so the pickers can list and sort without parsing every document.
 | Variable | Default | |
 | :--- | :--- | :--- |
 | `DATABASE_URL` | — | Postgres connection string; unset means file storage |
+| `NOGGIN_ALLOW_SIGNUP` | — | `1` reopens registration after the first account |
+| `NOGGIN_USER_DIR` | `./data/users` | accounts and sessions (file backend) |
 | `NOGGIN_PORT` | 4332 | relay port |
 | `NOGGIN_UPLOAD_DIR` | `./uploads` | clue media |
 | `NOGGIN_DATA_DIR` | `./data/boards` | saved boards (file backend) |

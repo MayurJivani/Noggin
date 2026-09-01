@@ -22,6 +22,19 @@ import { WebSocketServer } from "ws"
 
 import * as G from "./game.js"
 import { getStore, initStore, safeKey } from "./store/index.js"
+import {
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+  hashPassword,
+  hashToken,
+  newControllerKey,
+  newSessionToken,
+  parseCookies,
+  publicUser,
+  sessionCookie,
+  validateCredentials,
+  verifyPassword,
+} from "./auth.js"
 
 const PORT = Number(process.env.NOGGIN_PORT ?? 4332)
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -29,6 +42,15 @@ const UPLOAD_DIR = path.resolve(process.env.NOGGIN_UPLOAD_DIR ?? path.join(ROOT,
 /** How long a disconnected player keeps their seat and score. */
 const PLAYER_GRACE_MS = Number(process.env.NOGGIN_PLAYER_GRACE_MS ?? 5 * 60_000)
 const MAX_UPLOAD_BYTES = Number(process.env.NOGGIN_MAX_UPLOAD ?? 25 * 1024 * 1024)
+/**
+ * Signups are open only until the first account exists.
+ *
+ * This box is reachable from the internet. Leaving registration open forever
+ * would mean anyone who found the URL could make an account, open rooms and
+ * burn disk — so the first person through the door gets in, and after that it
+ * takes an explicit opt-in to let anyone else.
+ */
+const ALLOW_SIGNUP = process.env.NOGGIN_ALLOW_SIGNUP === "1"
 
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true })
 
@@ -70,11 +92,40 @@ const MIME = {
   ".webm": "audio/webm",
 }
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
+const CORS_BASE = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 }
+
+/**
+ * CORS, with credentials.
+ *
+ * In production the relay serves the site itself, so every request is
+ * same-origin and none of this applies. It exists for dev, where Astro is on
+ * 4331 and the relay on 4332 — different origins, same machine.
+ *
+ * A session cookie means `Allow-Origin: *` is off the table: browsers refuse
+ * the pairing, and reflecting *any* origin would let any website on the
+ * internet make authenticated calls on a logged-in host's behalf. So the origin
+ * is echoed only when its hostname matches the one this request arrived on —
+ * the cross-port case, and nothing wider.
+ */
+function corsFor(req) {
+  const origin = req.headers.origin
+  if (!origin) return { ...CORS_BASE }
+  let host
+  try {
+    host = new URL(origin).hostname
+  } catch {
+    return { ...CORS_BASE }
+  }
+  const self = String(req.headers.host ?? "").split(":")[0]
+  if (host !== self) return { ...CORS_BASE }
+  return { ...CORS_BASE, "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true", Vary: "Origin" }
+}
+
+/** Media and static files are public, and are fetched without credentials. */
+const CORS = { ...CORS_BASE, "Access-Control-Allow-Origin": "*" }
 
 /** Strip anything that could climb out of uploads/ or confuse a URL. */
 function safeName(raw) {
@@ -99,8 +150,12 @@ function lanAddresses() {
   return out
 }
 
-const json = (res, code, body) => {
-  res.writeHead(code, { ...CORS, "Content-Type": "application/json" })
+/**
+ * `req` is threaded through so each reply can carry the right CORS headers for
+ * the origin that actually asked.
+ */
+const jsonFor = (req) => (res, code, body) => {
+  res.writeHead(code, { ...corsFor(req), "Content-Type": "application/json" })
   res.end(JSON.stringify(body))
 }
 
@@ -157,6 +212,7 @@ function serveFile(req, res, filePath) {
 }
 
 function handleUpload(req, res, url) {
+  const json = jsonFor(req)
   const name = `${Date.now()}_${safeName(url.searchParams.get("name"))}`
   const dest = resolveUploadPath(name)
   if (!dest) return json(res, 400, { error: "bad filename" })
@@ -259,9 +315,10 @@ function readBody(req, limit = 4 * 1024 * 1024) {
 
 const http = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
+  const json = jsonFor(req)
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, CORS).end()
+    res.writeHead(204, corsFor(req)).end()
     return
   }
 
@@ -272,18 +329,33 @@ const http = createServer(async (req, res) => {
   }
 
   const store = getStore()
+  const me = await currentUser(req)
 
-  if (url.pathname === "/boards" && req.method === "GET") return json(res, 200, { boards: await store.listBoards() })
+  if (url.pathname.startsWith("/auth/")) return handleAuth(req, res, url, me)
+
+  // Everything below is somebody's own material. Without a session there is
+  // nothing to show, and saying so plainly beats returning an empty list that
+  // looks like "you have no games".
+  if (url.pathname === "/boards" && req.method === "GET") {
+    if (!me) return json(res, 401, { error: "sign in" })
+    return json(res, 200, { boards: await store.listBoards(me.id) })
+  }
 
   if (url.pathname.startsWith("/boards/")) {
     const id = decodeURIComponent(url.pathname.slice("/boards/".length))
     if (req.method === "GET") {
       const board = await store.loadBoard(id)
-      return board ? json(res, 200, { board }) : json(res, 404, { error: "no such board" })
+      if (!board) return json(res, 404, { error: "no such board" })
+      if (!ownsRecord(board, me)) return json(res, 403, { error: "not yours" })
+      return json(res, 200, { board })
     }
     if (req.method === "PUT") {
+      if (!me) return json(res, 401, { error: "sign in" })
       try {
+        const existing = await store.loadBoard(id)
+        if (existing && !ownsRecord(existing, me)) return json(res, 403, { error: "not yours" })
         const board = G.normaliseBoard(JSON.parse(await readBody(req)))
+        board.ownerId = me.id
         // The URL wins over whatever the body claims, but only once it has been
         // through the same sanitiser the storage layer uses — so what comes back
         // is an id the client can actually fetch again.
@@ -295,18 +367,26 @@ const http = createServer(async (req, res) => {
         return json(res, 400, { error: err.message })
       }
     }
-    if (req.method === "DELETE") return json(res, 200, { deleted: await store.deleteBoard(id) })
+    if (req.method === "DELETE") {
+      const board = await store.loadBoard(id)
+      if (!board) return json(res, 200, { deleted: false })
+      if (!ownsRecord(board, me)) return json(res, 403, { error: "not yours" })
+      return json(res, 200, { deleted: await store.deleteBoard(id) })
+    }
   }
 
   // Saved rooms — games put down mid-flight and picked up another night.
   if (url.pathname === "/rooms" && req.method === "GET") {
-    const saved = await store.listRooms()
-    const live = [...rooms.values()].map((r) => ({
-      code: r.code,
-      title: r.board.title,
-      phase: r.phase,
-      players: [...r.players.values()].filter((p) => p.connected).length,
-    }))
+    if (!me) return json(res, 401, { error: "sign in" })
+    const saved = await store.listRooms(me.id)
+    const live = [...rooms.values()]
+      .filter((r) => r.ownerId === me.id)
+      .map((r) => ({
+        code: r.code,
+        title: r.board.title,
+        phase: r.phase,
+        players: [...r.players.values()].filter((p) => p.connected).length,
+      }))
     return json(res, 200, { rooms: saved, live })
   }
 
@@ -314,9 +394,16 @@ const http = createServer(async (req, res) => {
     const code = decodeURIComponent(url.pathname.slice("/rooms/".length)).toUpperCase()
     if (req.method === "GET") {
       const room = await store.loadRoom(code)
-      return room ? json(res, 200, { room }) : json(res, 404, { error: "no such saved room" })
+      if (!room) return json(res, 404, { error: "no such saved room" })
+      if (!ownsRecord(room, me)) return json(res, 403, { error: "not yours" })
+      return json(res, 200, { room })
     }
-    if (req.method === "DELETE") return json(res, 200, { deleted: await store.deleteRoom(code) })
+    if (req.method === "DELETE") {
+      const room = await store.loadRoom(code)
+      if (!room) return json(res, 200, { deleted: false })
+      if (!ownsRecord(room, me)) return json(res, 403, { error: "not yours" })
+      return json(res, 200, { deleted: await store.deleteRoom(code) })
+    }
   }
 
   if (req.method === "GET" && url.pathname.startsWith("/files/")) {
@@ -345,6 +432,96 @@ const http = createServer(async (req, res) => {
   res.writeHead(404, CORS).end("not found")
 })
 
+// ── Accounts ─────────────────────────────────────────────────────────────────
+
+/** Resolve a request's session cookie into a user, or null. Never throws. */
+async function currentUser(req) {
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE]
+  if (!token) return null
+  try {
+    const session = await getStore().findSession(hashToken(token))
+    if (!session) return null
+    return await getStore().findUserById(session.userId)
+  } catch (err) {
+    console.error("[noggin] session lookup failed:", err.message)
+    return null
+  }
+}
+
+/** Ownerless records predate accounts and belong to nobody. */
+const ownsRecord = (record, user) => !!user && !!record?.ownerId && record.ownerId === user.id
+
+async function startSession(res, req, userId, body) {
+  const token = newSessionToken()
+  await getStore().createSession(hashToken(token), userId, Date.now() + SESSION_TTL_MS)
+  res.writeHead(200, { ...corsFor(req), "Content-Type": "application/json", "Set-Cookie": sessionCookie(token, req) })
+  res.end(JSON.stringify(body))
+}
+
+async function handleAuth(req, res, url, me) {
+  const json = jsonFor(req)
+  const store = getStore()
+  const route = url.pathname.slice("/auth/".length)
+
+  if (route === "me" && req.method === "GET") {
+    // The signup flag travels with this so the sign-in screen knows whether to
+    // offer a "create account" tab at all.
+    const open = ALLOW_SIGNUP || (await store.countUsers()) === 0
+    return json(res, 200, { user: publicUser(me), signupOpen: open })
+  }
+
+  if (route === "signup" && req.method === "POST") {
+    const open = ALLOW_SIGNUP || (await store.countUsers()) === 0
+    if (!open) return json(res, 403, { error: "Signups are closed on this server." })
+
+    let payload
+    try {
+      payload = JSON.parse(await readBody(req, 8 * 1024))
+    } catch {
+      return json(res, 400, { error: "Bad request." })
+    }
+    const check = validateCredentials(payload)
+    if (check.error) return json(res, 400, { error: check.error })
+
+    const user = {
+      id: `u_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`,
+      email: check.email,
+      name: check.name,
+      passwordHash: await hashPassword(check.password),
+      createdAt: Date.now(),
+    }
+    const created = await store.createUser(user)
+    if (!created) return json(res, 409, { error: "That email is already registered." })
+    console.log(`[auth] account created for ${user.email}`)
+    return startSession(res, req, user.id, { user: publicUser(user) })
+  }
+
+  if (route === "login" && req.method === "POST") {
+    let payload
+    try {
+      payload = JSON.parse(await readBody(req, 8 * 1024))
+    } catch {
+      return json(res, 400, { error: "Bad request." })
+    }
+    const email = String(payload?.email ?? "").trim().toLowerCase()
+    const user = await store.findUserByEmail(email)
+    const ok = user && (await verifyPassword(String(payload?.password ?? ""), user.passwordHash))
+    // One message for both failures, so this cannot be used to enumerate who
+    // has an account here.
+    if (!ok) return json(res, 401, { error: "Wrong email or password." })
+    return startSession(res, req, user.id, { user: publicUser(user) })
+  }
+
+  if (route === "logout" && req.method === "POST") {
+    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE]
+    if (token) await store.deleteSession(hashToken(token)).catch(() => {})
+    res.writeHead(200, { ...corsFor(req), "Content-Type": "application/json", "Set-Cookie": sessionCookie("", req, { clear: true }) })
+    return res.end(JSON.stringify({ ok: true }))
+  }
+
+  return json(res, 404, { error: "no such route" })
+}
+
 // ── Rooms ────────────────────────────────────────────────────────────────────
 
 /** @type {Map<string, ReturnType<typeof G.createRoom> & { sockets: Map<any, any> }>} */
@@ -361,13 +538,18 @@ function newCode() {
   return `R${Date.now().toString(36).toUpperCase().slice(-3)}`
 }
 
-function getRoom(code, { create = false } = {}) {
+function getRoom(code, { create = false, ownerId = null } = {}) {
   const key = String(code ?? "").toUpperCase()
   let room = rooms.get(key)
   if (!room && create) {
-    room = Object.assign(G.createRoom(key), { sockets: new Map() })
+    room = Object.assign(G.createRoom(key), {
+      sockets: new Map(),
+      ownerId,
+      /** Ephemeral, per-night, and never written to disk — see `controller:invite`. */
+      controllerKey: null,
+    })
     rooms.set(key, room)
-    console.log(`[room] ${key} opened`)
+    console.log(`[room] ${key} opened by ${ownerId ?? "nobody"}`)
   }
   return room ?? null
 }
@@ -387,7 +569,11 @@ async function resumeRoom(code) {
   const snapshot = await getStore().loadRoom(key)
   if (!snapshot) return null
 
-  const room = Object.assign(G.restoreRoom(key, snapshot), { sockets: new Map() })
+  const room = Object.assign(G.restoreRoom(key, snapshot), {
+    sockets: new Map(),
+    ownerId: snapshot.ownerId ?? null,
+    controllerKey: null,
+  })
   rooms.set(key, room)
   console.log(`[room] ${key} resumed (${room.players.size} seats, ${room.phase})`)
   return room
@@ -395,7 +581,7 @@ async function resumeRoom(code) {
 
 /** Freeze the room to storage. Returns the summary the host desk shows back. */
 async function persistRoom(room) {
-  const saved = await getStore().saveRoom(G.snapshotRoom(room))
+  const saved = await getStore().saveRoom({ ...G.snapshotRoom(room), ownerId: room.ownerId ?? null })
   if (saved) room.savedAt = saved.savedAt
   return saved
 }
@@ -504,9 +690,12 @@ const wss = new WebSocketServer({ server: http })
 process.on("uncaughtException", (err) => console.error("[noggin] uncaught:", err))
 process.on("unhandledRejection", (err) => console.error("[noggin] unhandled rejection:", err))
 
-wss.on("connection", (ws) => {
-  /** @type {{ code: string|null, role: string, playerId: string|null }} */
-  const meta = { code: null, role: "display", playerId: null }
+wss.on("connection", (ws, req) => {
+  /** @type {{ code: string|null, role: string, playerId: string|null, user: any }} */
+  const meta = { code: null, role: "display", playerId: null, user: null }
+  // A browser sends its cookies on the upgrade, so the socket can be identified
+  // the same way an HTTP request is — no second token to mint or leak.
+  ws.upgradeReq = req
   ws.isAlive = true
   ws.on("pong", () => {
     ws.isAlive = true
@@ -526,7 +715,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "ping") return send(ws, { type: "pong", serverNow: Date.now() })
 
     if (msg.type === "join") {
-      handleJoin(ws, meta, msg).catch((err) => {
+      handleJoin(ws, meta, msg, req).catch((err) => {
         console.error("[noggin] join failed:", err.message)
         send(ws, { type: "error", code: "join-failed", message: "Could not open that room." })
       })
@@ -573,9 +762,19 @@ wss.on("connection", (ws) => {
   })
 })
 
-async function handleJoin(ws, meta, msg) {
+async function handleJoin(ws, meta, msg, req) {
   const role = ["host", "display", "player", "controller"].includes(msg.role) ? msg.role : "display"
   const wanted = String(msg.code ?? "").toUpperCase()
+  const privileged = role === "host" || role === "controller"
+
+  // The two privileged roles can read every clue and answer and can move the
+  // game. Neither is reachable without a session — or, for a controller, the
+  // key the host handed out for this room tonight.
+  const user = privileged ? await currentUser(req) : null
+  const controllerKey = String(msg.key ?? "")
+  if (role === "host" && !user) {
+    return send(ws, { type: "error", code: "auth", message: "Sign in to host a game." })
+  }
 
   // A code that isn't live may still be a saved game. Everyone gets the chance
   // to wake one — a player arriving first on resume night shouldn't be told the
@@ -584,8 +783,27 @@ async function handleJoin(ws, meta, msg) {
 
   // Only the host desk may conjure a *new* room; a phone typing a wrong code
   // should be told so, not dropped into an empty room of its own.
-  if (!room && role === "host") room = getRoom(wanted || newCode(), { create: true })
+  if (!room && role === "host") room = getRoom(wanted || newCode(), { create: true, ownerId: user.id })
   if (!room) return send(ws, { type: "error", code: "no-room", message: "No game with that code." })
+
+  if (role === "host") {
+    // A room saved before accounts existed has no owner; the first host to open
+    // it adopts it. One that is already owned is not up for grabs.
+    if (!room.ownerId) room.ownerId = user.id
+    else if (room.ownerId !== user.id) {
+      return send(ws, { type: "error", code: "forbidden", message: "That game belongs to someone else." })
+    }
+  }
+
+  if (role === "controller") {
+    const owner = user && room.ownerId === user.id
+    const invited = !!room.controllerKey && controllerKey === room.controllerKey
+    if (!owner && !invited) {
+      return send(ws, { type: "error", code: "auth", message: "This controller link is not valid for that game." })
+    }
+  }
+
+  meta.user = user
 
   meta.code = room.code
   meta.role = role
@@ -626,6 +844,10 @@ function handleHostMessage(room, meta, ws, msg) {
         return send(ws, { type: "error", code: "busy", message: "Close the clue before editing the board." })
       }
       room.board = G.normaliseBoard(msg.board)
+      // normaliseBoard rebuilds the object from known fields only, so the owner
+      // has to be re-stamped or the board comes back belonging to nobody — and
+      // its own author is then refused when they try to open it.
+      room.board.ownerId = room.ownerId ?? null
       getStore()
         .saveBoard(room.board)
         .catch((err) => console.error("[noggin] board save failed:", err.message))
@@ -635,6 +857,27 @@ function handleHostMessage(room, meta, ws, msg) {
     // Put the game down and pick it up another night. Explicit, even though
     // autosave already runs — a host wants to be *told* it is safe to close
     // the laptop, not to assume it.
+    // A second pair of hands, without an account. The key is minted on demand,
+    // lives only in memory, and dies with the room — a link that works tonight
+    // and not next Tuesday is the right lifetime for "you drive the board".
+    case "controller:invite": {
+      if (meta.role !== "host") return
+      room.controllerKey = newControllerKey()
+      return send(ws, { type: "controller-key", code: room.code, key: room.controllerKey })
+    }
+
+    case "controller:revoke": {
+      if (meta.role !== "host") return
+      room.controllerKey = null
+      for (const [sock, m] of room.sockets) {
+        if (m.role === "controller" && !(m.user && m.user.id === room.ownerId)) {
+          send(sock, { type: "error", code: "revoked", message: "The host ended this controller session." })
+          sock.close()
+        }
+      }
+      return send(ws, { type: "controller-key", code: room.code, key: null })
+    }
+
     case "room:save": {
       persistRoom(room)
         .then((saved) => {

@@ -4,6 +4,7 @@ import { isLoopbackPage } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand } from "../ui/Brand"
 import { CornerVein, VeinLine } from "../ui/Vein"
+import { useAuth } from "../../lib/useAuth"
 
 /**
  * The front door.
@@ -15,6 +16,7 @@ import { CornerVein, VeinLine } from "../ui/Vein"
  * assumes — and puts the unfinished games right underneath.
  */
 export function HomeApp() {
+  const auth = useAuth()
   const [rooms, setRooms] = useState([])
   const [live, setLive] = useState([])
   const [boards, setBoards] = useState([])
@@ -22,12 +24,21 @@ export function HomeApp() {
   const [offline, setOffline] = useState(false)
 
   useEffect(() => {
+    // Saved games and boards belong to an account. Signed out there is nothing
+    // to fetch, and asking anyway would just be a pair of 401s on every tick.
+    if (!auth.user) {
+      setRooms([])
+      setLive([])
+      setBoards([])
+      setLoaded(auth.ready)
+      return
+    }
     let cancelled = false
     const load = async () => {
       try {
         const [r, b] = await Promise.all([
-          fetch(`${getRelayOrigin()}/rooms`).then((x) => x.json()),
-          fetch(`${getRelayOrigin()}/boards`).then((x) => x.json()),
+          fetch(`${getRelayOrigin()}/rooms`, { credentials: "include" }).then((x) => x.json()),
+          fetch(`${getRelayOrigin()}/boards`, { credentials: "include" }).then((x) => x.json()),
         ])
         if (cancelled) return
         setRooms(r.rooms ?? [])
@@ -46,7 +57,7 @@ export function HomeApp() {
       cancelled = true
       clearInterval(id)
     }
-  }, [])
+  }, [auth.user, auth.ready])
 
   const liveCodes = new Set(live.map((l) => l.code))
   const orphanLive = live.filter((l) => !rooms.some((r) => r.code === l.code))
@@ -68,8 +79,31 @@ export function HomeApp() {
           </p>
         </header>
 
-        <div className="mt-10 grid gap-3 sm:mt-14 sm:grid-cols-3 2xl:gap-5">
-          <Door href="/host" eyebrow="I'm running it" title="Host a game" body="Write the board, then run the night from one desk." primary />
+        {auth.ready && (
+          <div className="mt-6 flex items-center justify-center gap-3 text-xs">
+            {auth.user ? (
+              <>
+                <span className="text-muted">
+                  Signed in as <span className="text-ink">{auth.user.name}</span>
+                </span>
+                <button className="text-faint transition-colors hover:text-bad" onClick={auth.logout}>
+                  sign out
+                </button>
+              </>
+            ) : (
+              <span className="text-faint">Hosting needs an account — players just need the code.</span>
+            )}
+          </div>
+        )}
+
+        <div className="mt-6 grid gap-3 sm:mt-8 sm:grid-cols-3 2xl:gap-5">
+          <Door
+            href="/host"
+            eyebrow="I'm running it"
+            title={auth.user ? "Host a game" : "Sign in to host"}
+            body="Write the board, then run the night from one desk."
+            primary
+          />
           <Door href="/display" eyebrow="This is the TV" title="Big screen" body="The board everyone watches. Needs a room code." />
           <JoinDoor />
         </div>
@@ -90,7 +124,7 @@ export function HomeApp() {
           </div>
         )}
 
-        {loaded && hasRooms && (
+        {auth.user && loaded && hasRooms && (
           <Section title="Pick up where you left off">
             <ul className="grid gap-2.5 sm:grid-cols-2 2xl:grid-cols-3">
               {orphanLive.map((l) => (
@@ -103,7 +137,7 @@ export function HomeApp() {
           </Section>
         )}
 
-        {loaded && boards.length > 0 && (
+        {auth.user && loaded && boards.length > 0 && (
           <Section title="Boards you've written">
             <ul className="flex flex-wrap gap-2">
               {boards.slice(0, 12).map((b) => (
@@ -124,7 +158,7 @@ export function HomeApp() {
         <footer className="mt-14 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-faint">
           <span>Everything runs on your own machine.</span>
           <a className="transition-colors hover:text-gold" href="/control">
-            Remote controller (planned) →
+            Remote controller →
           </a>
         </footer>
       </main>
@@ -214,7 +248,7 @@ function RoomRow({ room, live, onGone }) {
   const forget = async () => {
     if (!confirm(`Forget the saved game ${room.code}? Scores go with it.`)) return
     setBusy(true)
-    await fetch(`${getRelayOrigin()}/rooms/${room.code}`, { method: "DELETE" }).catch(() => {})
+    await fetch(`${getRelayOrigin()}/rooms/${room.code}`, { method: "DELETE", credentials: "include" }).catch(() => {})
     setBusy(false)
     onGone?.()
   }

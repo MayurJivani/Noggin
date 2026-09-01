@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRoom } from "../../lib/useRoom"
+import { useAuth } from "../../lib/useAuth"
+import { AuthLoading, SignIn } from "../auth/SignIn"
 import { DEFAULT_SETTINGS, makeBoard } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
 import { displayUrl } from "../../lib/net"
@@ -20,6 +22,13 @@ const STORAGE = "noggin.host"
  * typo in a clue is found at the worst possible moment, every time.
  */
 export function AdminApp() {
+  const auth = useAuth()
+  if (!auth.ready) return <AuthLoading />
+  if (!auth.user) return <SignIn auth={auth} what="host a game" />
+  return <HostDesk auth={auth} />
+}
+
+function HostDesk({ auth }) {
   const [board, setBoard] = useState(() => {
     try {
       const cached = JSON.parse(localStorage.getItem(STORAGE + ".board") ?? "null")
@@ -37,6 +46,8 @@ export function AdminApp() {
 
   /** Set by the relay when a save lands; drives the "saved ✓" acknowledgement. */
   const [savedAt, setSavedAt] = useState(null)
+  /** The key the host hands to whoever is driving the controller tonight. */
+  const [controllerKey, setControllerKey] = useState(null)
 
   // The home page links here with an explicit room (`?code=`) when resuming a
   // saved game. Failing that, rejoin the room we opened last time rather than
@@ -59,7 +70,7 @@ export function AdminApp() {
   useEffect(() => {
     const wanted = new URLSearchParams(location.search).get("board")
     if (!wanted) return
-    fetch(`${getRelayOrigin()}/boards/${encodeURIComponent(wanted)}`)
+    fetch(`${getRelayOrigin()}/boards/${encodeURIComponent(wanted)}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => j?.board && setBoard(j.board))
       .catch(() => {})
@@ -80,6 +91,7 @@ export function AdminApp() {
     onMessage: useCallback((msg) => {
       if (msg.type === "saved") setSavedAt(msg.savedAt)
       if (msg.type === "forgotten") setSavedAt(null)
+      if (msg.type === "controller-key") setControllerKey(msg.key)
     }, []),
   })
 
@@ -122,6 +134,7 @@ export function AdminApp() {
     setPushState("pushing")
     await fetch(`${getRelayOrigin()}/boards/${board.id}`, {
       method: "PUT",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...board, updatedAt: Date.now() }),
     }).catch(() => {})
@@ -138,6 +151,7 @@ export function AdminApp() {
       <header className="relative z-10 mx-auto flex w-full max-w-[2400px] shrink-0 flex-wrap items-center gap-3 px-4 py-2.5">
         <BrandMark className="text-lg" />
         <span className="label">host desk</span>
+        <span className="hidden text-[0.7rem] text-faint sm:inline">{auth.user.name}</span>
 
         <div className="ml-2 flex rounded-lg border border-edge p-0.5">
           <TabButton on={tab === "build"} onClick={() => setTab("build")}>
@@ -155,6 +169,9 @@ export function AdminApp() {
             <div className="font-display brass-sm text-lg leading-tight tracking-[0.2em]">{state?.code ?? "…"}</div>
           </div>
           <span className={`h-2 w-2 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} title={connected ? "connected" : "reconnecting"} />
+          <button className="text-[0.7rem] text-faint transition-colors hover:text-bad" onClick={auth.logout}>
+            sign out
+          </button>
         </div>
       </header>
       <div className="bulbs relative z-10 mx-4 shrink-0" />
@@ -181,7 +198,15 @@ export function AdminApp() {
             pushState={pushState}
           />
         ) : state ? (
-          <GameControl state={state} send={send} now={() => Date.now()} requests={requests} code={state.code} savedAt={savedAt} />
+          <GameControl
+            state={state}
+            send={send}
+            now={() => Date.now()}
+            requests={requests}
+            code={state.code}
+            savedAt={savedAt}
+            controllerKey={controllerKey}
+          />
         ) : (
           <div className="flex flex-1 items-center justify-center text-[13px] text-faint">Opening the room…</div>
         )}

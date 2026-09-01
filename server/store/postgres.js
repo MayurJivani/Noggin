@@ -17,8 +17,10 @@ export async function createPostgresStore(url) {
   // Fail here rather than at the first save. A host who set DATABASE_URL and
   // forgot to run schema.sql should be told at boot, not halfway through a game.
   const [{ ok }] = await sql`
-    SELECT to_regclass('public.noggin_boards') IS NOT NULL
-       AND to_regclass('public.noggin_rooms')  IS NOT NULL AS ok
+    SELECT to_regclass('public.noggin_boards')   IS NOT NULL
+       AND to_regclass('public.noggin_rooms')    IS NOT NULL
+       AND to_regclass('public.noggin_users')    IS NOT NULL
+       AND to_regclass('public.noggin_sessions') IS NOT NULL AS ok
   `
   if (!ok) {
     await sql.end({ timeout: 5 }).catch(() => {})
@@ -34,10 +36,10 @@ export async function createPostgresStore(url) {
       if (!id) return null
       const saved = { ...board, id, updatedAt: Date.now() }
       await sql`
-        INSERT INTO noggin_boards (id, title, data, updated_at)
-        VALUES (${id}, ${saved.title ?? "Untitled Game"}, ${sql.json(saved)}, now())
+        INSERT INTO noggin_boards (id, owner_id, title, data, updated_at)
+        VALUES (${id}, ${saved.ownerId ?? null}, ${saved.title ?? "Untitled Game"}, ${sql.json(saved)}, now())
         ON CONFLICT (id) DO UPDATE
-          SET title = EXCLUDED.title, data = EXCLUDED.data, updated_at = now()
+          SET owner_id = EXCLUDED.owner_id, title = EXCLUDED.title, data = EXCLUDED.data, updated_at = now()
       `
       return saved
     },
@@ -56,8 +58,11 @@ export async function createPostgresStore(url) {
       return rows.length > 0
     },
 
-    async listBoards() {
-      const rows = await sql`SELECT data FROM noggin_boards ORDER BY updated_at DESC LIMIT 200`
+    async listBoards(ownerId) {
+      if (!ownerId) return []
+      const rows = await sql`
+        SELECT data FROM noggin_boards WHERE owner_id = ${ownerId} ORDER BY updated_at DESC LIMIT 200
+      `
       return rows.map((r) => boardSummary(r.data))
     },
 
@@ -66,9 +71,10 @@ export async function createPostgresStore(url) {
       if (!code) return null
       const saved = { ...snapshot, code, savedAt: Date.now() }
       await sql`
-        INSERT INTO noggin_rooms (code, title, phase, round_index, players, data, saved_at)
+        INSERT INTO noggin_rooms (code, owner_id, title, phase, round_index, players, data, saved_at)
         VALUES (
           ${code},
+          ${saved.ownerId ?? null},
           ${saved.title ?? saved.board?.title ?? "Untitled Game"},
           ${saved.phase ?? "lobby"},
           ${saved.roundIndex ?? 0},
@@ -77,7 +83,8 @@ export async function createPostgresStore(url) {
           now()
         )
         ON CONFLICT (code) DO UPDATE
-          SET title = EXCLUDED.title,
+          SET owner_id = EXCLUDED.owner_id,
+              title = EXCLUDED.title,
               phase = EXCLUDED.phase,
               round_index = EXCLUDED.round_index,
               players = EXCLUDED.players,
@@ -101,9 +108,67 @@ export async function createPostgresStore(url) {
       return rows.length > 0
     },
 
-    async listRooms() {
-      const rows = await sql`SELECT data FROM noggin_rooms ORDER BY saved_at DESC LIMIT 100`
+    async listRooms(ownerId) {
+      if (!ownerId) return []
+      const rows = await sql`
+        SELECT data FROM noggin_rooms WHERE owner_id = ${ownerId} ORDER BY saved_at DESC LIMIT 100
+      `
       return rows.map((r) => roomSummary(r.data))
+    },
+
+    // ── Accounts ─────────────────────────────────────────────────────────────
+
+    async createUser(user) {
+      // ON CONFLICT DO NOTHING rather than a read-then-write: the unique index
+      // on email is the only thing that can settle a race between two signups.
+      const rows = await sql`
+        INSERT INTO noggin_users (id, email, name, password_hash)
+        VALUES (${user.id}, ${user.email}, ${user.name}, ${user.passwordHash})
+        ON CONFLICT (email) DO NOTHING
+        RETURNING id
+      `
+      return rows.length ? user : null
+    },
+
+    async findUserByEmail(email) {
+      const rows = await sql`
+        SELECT id, email, name, password_hash FROM noggin_users WHERE email = ${String(email ?? "").toLowerCase()}
+      `
+      return rows[0] ? { id: rows[0].id, email: rows[0].email, name: rows[0].name, passwordHash: rows[0].password_hash } : null
+    },
+
+    async findUserById(id) {
+      const rows = await sql`SELECT id, email, name FROM noggin_users WHERE id = ${String(id ?? "")}`
+      return rows[0] ?? null
+    },
+
+    async countUsers() {
+      const [{ n }] = await sql`SELECT count(*)::int AS n FROM noggin_users`
+      return n
+    },
+
+    async createSession(tokenHash, userId, expiresAt) {
+      await sql`
+        INSERT INTO noggin_sessions (token_hash, user_id, expires_at)
+        VALUES (${tokenHash}, ${userId}, ${new Date(expiresAt)})
+        ON CONFLICT (token_hash) DO NOTHING
+      `
+      // Opportunistic cleanup — cheap, indexed, and saves needing a cron.
+      await sql`DELETE FROM noggin_sessions WHERE expires_at < now()`
+      return true
+    },
+
+    async findSession(tokenHash) {
+      const rows = await sql`
+        SELECT user_id, expires_at FROM noggin_sessions
+        WHERE token_hash = ${tokenHash} AND expires_at > now()
+      `
+      return rows[0] ? { userId: rows[0].user_id, expiresAt: new Date(rows[0].expires_at).getTime() } : null
+    },
+
+    async deleteSession(tokenHash) {
+      const rows = await sql`DELETE FROM noggin_sessions WHERE token_hash = ${tokenHash} RETURNING token_hash`
+      return rows.length > 0
     },
 
     async close() {

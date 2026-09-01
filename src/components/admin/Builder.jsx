@@ -43,6 +43,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
       try {
         await fetch(`${getRelayOrigin()}/boards/${board.id}`, {
           method: "PUT",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...board, updatedAt: Date.now() }),
         })
@@ -55,7 +56,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
   }, [board])
 
   useEffect(() => {
-    fetch(`${getRelayOrigin()}/boards`)
+    fetch(`${getRelayOrigin()}/boards`, { credentials: "include" })
       .then((r) => r.json())
       .then((j) => setBoards(j.boards ?? []))
       .catch(() => {})
@@ -347,7 +348,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 }`}
                 onClick={async () => {
                   if (b.id === board.id) return
-                  const j = await fetch(`${getRelayOrigin()}/boards/${b.id}`).then((r) => r.json())
+                  const j = await fetch(`${getRelayOrigin()}/boards/${b.id}`, { credentials: "include" }).then((r) => r.json())
                   if (j.board) {
                     setBoard(j.board)
                     setRoundIndex(0)
