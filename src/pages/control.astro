@@ -1,0 +1,43 @@
+---
+import Layout from "../layouts/Layout.astro"
+import "../styles/global.css"
+
+/**
+ * Reserved for phase 2 — see PLAN.md.
+ *
+ * The route and the protocol role exist now so the split can happen without a
+ * rewrite: the relay already accepts `role: "controller"` and gives it the same
+ * privileged command surface and unredacted state as the host desk. What's left
+ * is the UI, and the decision about which half of the controls lives where.
+ */
+---
+
+<Layout title="NOGGIN’ — controller (planned)">
+  <main class="mx-auto flex min-h-dvh max-w-lg flex-col justify-center gap-6 px-6 py-16">
+    <div>
+      <div class="font-display brass text-4xl">Controller</div>
+      <div class="label mt-2" style="letter-spacing:0.3em">planned · phase 2</div>
+    </div>
+
+    <div class="rule-gold"></div>
+
+    <p class="text-[13px] leading-relaxed text-muted">
+      A second privileged screen, so the host can hold a tablet with the clue and
+      the two buttons that matter while someone off to the side drives the rest of
+      the board.
+    </p>
+
+    <ul class="space-y-2 text-[13px] text-muted">
+      <li><span class="text-gold">Host tab</span> — clue, answer, correct/wrong, next. Nothing else.</li>
+      <li><span class="text-gold">Controller</span> — grid, buzzer, scores, lifelines, timers, media cueing.</li>
+      <li><span class="text-gold">Pairing</span> — same room code, scanned from the host desk.</li>
+    </ul>
+
+    <p class="text-[12px] text-faint">
+      The relay already speaks to this role; only the interface is outstanding.
+      Full notes in <code class="text-muted">PLAN.md</code>.
+    </p>
+
+    <a class="btn btn-gold self-start" href="/host">← Host desk</a>
+  </main>
+</Layout>

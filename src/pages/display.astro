@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { DisplayStage } from "../components/display/DisplayStage"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — big screen" fixed>
+  <DisplayStage client:only="react" />
+</Layout>

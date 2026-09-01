@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="stone" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0%" stop-color="#1e1c26"/>
+      <stop offset="55%" stop-color="#101017"/>
+      <stop offset="100%" stop-color="#07060a"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0%" stop-color="#fdf0c8"/>
+      <stop offset="45%" stop-color="#f2c96b"/>
+      <stop offset="100%" stop-color="#a8781f"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#stone)"/>
+  <!-- A vein of gold running behind the mark, same material as the backdrop. -->
+  <path d="M-4 46 C 12 40, 16 22, 30 18 S 54 12, 70 4" fill="none" stroke="url(#gold)" stroke-width="1.6" opacity="0.5"/>
+  <path d="M-4 58 C 14 54, 26 50, 40 54 S 58 60, 70 52" fill="none" stroke="url(#gold)" stroke-width="1" opacity="0.3"/>
+  <g transform="rotate(14 32 32)">
+    <ellipse cx="34" cy="34" rx="15" ry="24" fill="#3a2a08"/>
+    <ellipse cx="32" cy="32" rx="15" ry="24" fill="url(#gold)"/>
+    <ellipse cx="32" cy="32" rx="6" ry="14" fill="#07060a"/>
+  </g>
+</svg>

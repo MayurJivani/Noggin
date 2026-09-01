@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { PlayerApp } from "../components/play/PlayerApp"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — buzzer" fixed>
+  <PlayerApp client:only="react" />
+</Layout>

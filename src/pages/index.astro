@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { HomeApp } from "../components/home/HomeApp"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’">
+  <HomeApp client:only="react" />
+</Layout>

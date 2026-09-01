@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { AdminApp } from "../components/admin/AdminApp"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — host desk" fixed>
+  <AdminApp client:only="react" />
+</Layout>
