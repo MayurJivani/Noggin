@@ -98,9 +98,10 @@ tiles as daily doubles by hand or hit **✦ Scatter** to place them the way the
 show does. Everything autosaves to the relay — closing the tab at 1am doesn't
 cost you the quiz. Export drops a `.noggin.json` you can mail to someone.
 
-Saved boards can be opened, **duplicated** (⧉ — next month's quiz usually starts
-as this month's skeleton, with fresh ids so the copy is its own record) or
-deleted.
+Boards can be opened, **duplicated** (⧉ — next month's quiz usually starts as
+this month's skeleton, with fresh ids so the copy is its own record) or deleted.
+Rounds are deleted from an ✕ on the round tab you're looking at; the last
+remaining round has no ✕, since a board with no rounds is not a board.
 
 **Run** is the desk during the show:
 
@@ -117,9 +118,10 @@ deleted.
   buttons pressed under pressure while talking, and fixing a mis-tap by hand
   means editing three things separately in front of an audience.
 
-The **Room** panel switches between your games, starts new ones, and deletes
-them. Deleting ends the live game and removes the saved copy — everyone in it is
-disconnected and told why.
+The **Room** menu in the header switches between your games, starts new ones,
+and deletes any of them — not only the one you are on. Deleting ends the live
+game and removes the saved copy: everyone in it is disconnected and told why.
+The same ✕ is on each game on the front page.
 
 Keys, because the other hand is holding a microphone:
 

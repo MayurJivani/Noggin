@@ -9,7 +9,7 @@ import { getRelayOrigin } from "../../lib/mediaUrl"
  * one code and offer no way to leave it, so a second game meant clearing
  * localStorage. This lists every room you own and mints new ones on demand.
  */
-export function RoomSwitcher({ code, onSwitch, onNew, refreshKey }) {
+export function RoomSwitcher({ code, onSwitch, onNew, onDelete, refreshKey }) {
   const [open, setOpen] = useState(false)
   const [rooms, setRooms] = useState([])
   const [live, setLive] = useState([])
@@ -67,22 +67,39 @@ export function RoomSwitcher({ code, onSwitch, onNew, refreshKey }) {
               const isLive = r.live || liveCodes.has(r.code)
               const current = r.code === code
               return (
-                <button
+                <div
                   key={r.code}
-                  disabled={current}
-                  onClick={() => {
-                    setOpen(false)
-                    onSwitch(r.code)
-                  }}
-                  className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                  className={`flex items-center gap-1 rounded-lg border px-1 transition-colors ${
                     current ? "border-gold-deep bg-royal/40" : "border-edge hover:border-gold-dim"
                   }`}
                 >
-                  <span className="font-display brass-sm shrink-0 text-sm tracking-[0.15em]">{r.code}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-ink">{r.title}</span>
-                  {isLive && <span className="shrink-0 rounded-full border border-good/50 px-1.5 text-[0.6rem] text-good">live</span>}
-                  {current && <span className="shrink-0 text-[0.6rem] text-faint">here</span>}
-                </button>
+                  <button
+                    disabled={current}
+                    onClick={() => {
+                      setOpen(false)
+                      onSwitch(r.code)
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-1.5 text-left disabled:cursor-default"
+                  >
+                    <span className="font-display brass-sm shrink-0 text-sm tracking-[0.15em]">{r.code}</span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-ink">{r.title}</span>
+                    {isLive && <span className="shrink-0 rounded-full border border-good/50 px-1.5 text-[0.6rem] text-good">live</span>}
+                    {current && <span className="shrink-0 text-[0.6rem] text-faint">here</span>}
+                  </button>
+                  <button
+                    className="shrink-0 px-2 py-1 text-xs text-faint transition-colors hover:text-bad"
+                    title={isLive ? "End and delete this game" : "Delete this saved game"}
+                    aria-label={`Delete game ${r.code}`}
+                    onClick={async () => {
+                      const warning = isLive ? "It is running right now — everyone in it will be disconnected. " : ""
+                      if (!confirm(`Delete game ${r.code}? ${warning}Scores go with it. This cannot be undone.`)) return
+                      setOpen(false)
+                      await onDelete(r.code, current)
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
               )
             })}
           </div>

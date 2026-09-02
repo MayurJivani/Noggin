@@ -103,6 +103,24 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
     }
   }
 
+  /**
+   * Remove a round, clues and all.
+   *
+   * The index has to move as well as the array: leaving `roundIndex` pointing
+   * past the end would fall back to round one silently, which looks like the
+   * wrong round was deleted.
+   */
+  const deleteRound = (i) => {
+    const r = board.rounds[i]
+    const written = r.categories.reduce((n, c) => n + c.clues.filter((cl) => cl.prompt.trim() || cl.media).length, 0)
+    const detail = written ? ` ${written} written clue${written === 1 ? "" : "s"} go with it.` : ""
+    if (!confirm(`Delete ${r.name || `Round ${i + 1}`}?${detail} This cannot be undone.`)) return
+
+    setBoard({ ...board, rounds: board.rounds.filter((_, n) => n !== i) })
+    setRoundIndex((cur) => (cur > i ? cur - 1 : Math.min(cur, board.rounds.length - 2)))
+    setSelected(null)
+  }
+
   const clue = selected && !onFinal ? round?.categories[selected.catIndex]?.clues[selected.clueIndex] : null
   const patch = (p) => setBoard(patchClue(board, roundIndex, selected.catIndex, selected.clueIndex, p))
 
@@ -132,16 +150,34 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
               <div className="label mb-1">Rounds</div>
               <div className="flex gap-1">
                 {board.rounds.map((r, i) => (
-                  <button
-                    key={r.id}
-                    className={`btn ${i === roundIndex ? "btn-gold" : ""}`}
-                    onClick={() => {
-                      setRoundIndex(i)
-                      setSelected(null)
-                    }}
-                  >
-                    {r.name || `R${i + 1}`}
-                  </button>
+                  <span key={r.id} className="relative inline-flex">
+                    <button
+                      className={`btn ${i === roundIndex ? "btn-gold pr-7" : ""}`}
+                      onClick={() => {
+                        setRoundIndex(i)
+                        setSelected(null)
+                      }}
+                    >
+                      {r.name || `R${i + 1}`}
+                    </button>
+                    {/* Only on the round you are looking at, and never on the
+                        last one — a board with no rounds is not a board. Shown
+                        rather than revealed on hover, because half of this is
+                        used on a tablet where there is no hover. */}
+                    {i === roundIndex && board.rounds.length > 1 && (
+                      <button
+                        className="absolute right-1 top-1/2 -translate-y-1/2 rounded px-1 text-[13px] leading-none text-[#17110a]/60 transition-colors hover:text-bad"
+                        title={`Delete ${r.name || `Round ${i + 1}`}`}
+                        aria-label={`Delete ${r.name || `Round ${i + 1}`}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteRound(i)
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </span>
                 ))}
                 <button
                   className="btn px-2.5"
@@ -431,7 +467,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
         </div>
 
         <div className="panel p-4">
-          <div className="label mb-2">Saved games</div>
+          <div className="label mb-2">Your boards</div>
           <div className="max-h-44 space-y-1 overflow-y-auto">
             {boards.length === 0 && <div className="text-[11px] text-faint">Nothing saved yet.</div>}
             {boards.map((b) => (
@@ -451,14 +487,14 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 </button>
                 <span className="shrink-0 text-[10px] text-faint">{b.clues}</span>
                 <button
-                  className="shrink-0 px-1 text-[11px] text-faint opacity-0 transition-opacity hover:text-gold group-hover/board:opacity-100"
+                  className="shrink-0 px-1.5 py-0.5 text-[12px] text-faint opacity-70 transition hover:text-gold group-hover/board:opacity-100"
                   title="Duplicate — next month's quiz usually starts as this one"
                   onClick={() => copy(b.id)}
                 >
                   ⧉
                 </button>
                 <button
-                  className="shrink-0 px-1 text-[11px] text-faint opacity-0 transition-opacity hover:text-bad group-hover/board:opacity-100"
+                  className="shrink-0 px-1.5 py-0.5 text-[12px] text-faint opacity-70 transition hover:text-bad group-hover/board:opacity-100"
                   title="Delete this board"
                   onClick={() => remove(b)}
                 >

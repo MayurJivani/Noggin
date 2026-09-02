@@ -98,17 +98,49 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName, timer, now 
  * the clue card puts its value — so a running timer sat on top of the points.
  * Living in the same flex row means they can never overlap, whatever the
  * screen.
+ *
+ * Ringed, because sitting beside the value it was two gold numerals in the same
+ * face and the room had no way to tell which was the clock. The ring drains as
+ * well as encircles: from the back of a room the falling arc reads before the
+ * digits do.
  */
 function ClueClock({ timer, now }) {
   const left = useCountdown(timer && timer.kind !== "lifeline" ? timer.endsAt : null, now ?? (() => Date.now()))
   if (left == null) return null
+
   const seconds = Math.ceil(left / 1000)
+  const total = (timer.duration || 1) * 1000
+  const frac = Math.max(0, Math.min(1, left / total))
+  const r = 44
+  const circ = 2 * Math.PI * r
+  const urgent = seconds <= 5
+
   return (
     <span
-      className={`ml-[1.5vmin] shrink-0 font-value tabular-nums ${seconds <= 5 ? "text-bad animate-glow" : "text-gold"}`}
-      style={{ fontSize: "max(18px, calc(var(--stage) * 2.6))" }}
+      className="relative ml-[1.5vmin] shrink-0"
+      style={{ width: "max(44px, calc(var(--stage) * 5.6))", height: "max(44px, calc(var(--stage) * 5.6))" }}
     >
-      {seconds}
+      <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+        <circle cx="50" cy="50" r={r} fill="rgba(0,0,0,0.35)" stroke="rgba(122,92,28,0.45)" strokeWidth="6" />
+        <circle
+          cx="50"
+          cy="50"
+          r={r}
+          fill="none"
+          stroke={urgent ? "#ff5f7a" : "#f2c96b"}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - frac)}
+          style={{ transition: "stroke-dashoffset 120ms linear" }}
+        />
+      </svg>
+      <span
+        className={`absolute inset-0 flex items-center justify-center font-value tabular-nums ${urgent ? "text-bad animate-glow" : "text-gold"}`}
+        style={{ fontSize: "max(15px, calc(var(--stage) * 2.1))" }}
+      >
+        {seconds}
+      </span>
     </span>
   )
 }

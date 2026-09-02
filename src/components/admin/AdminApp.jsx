@@ -98,11 +98,12 @@ function HostDesk({ auth }) {
       if (msg.type === "forgotten") setSavedAt(null)
       if (msg.type === "controller-key") setControllerKey(msg.key)
       if (msg.type === "deleted") {
-        // The room this desk was driving is gone. Drop the remembered code so
-        // the next connection opens a fresh one instead of resurrecting it.
+        // The room this desk was driving is gone. Drop the remembered code, or
+        // the next connection would recreate it under the same code — a delete
+        // that undoes itself. Home rather than a fresh room: you just ended the
+        // game you were running, so the next choice is yours to make.
         localStorage.removeItem(STORAGE + ".code")
-        setRoomsVersion((v) => v + 1)
-        location.href = "/host"
+        location.href = "/"
       }
     }, []),
   })
@@ -176,6 +177,23 @@ function HostDesk({ auth }) {
     }
   }, [started])
 
+  /**
+   * Delete a game from the switcher.
+   *
+   * The one you are sitting on goes through the socket, so the relay's own
+   * `deleted` reply can clear the remembered code before this tab reconnects.
+   * Deleting it over HTTP instead would drop the socket, and the reconnect
+   * would helpfully recreate the room under the same code.
+   */
+  const deleteRoom = async (target, isCurrent) => {
+    if (isCurrent) {
+      send("room:delete")
+      return
+    }
+    await fetch(`${getRelayOrigin()}/rooms/${target}`, { method: "DELETE", credentials: "include" }).catch(() => {})
+    setRoomsVersion((v) => v + 1)
+  }
+
   const push = async () => {
     setPushState("pushing")
     await fetch(`${getRelayOrigin()}/boards/${board.id}`, {
@@ -220,7 +238,13 @@ function HostDesk({ auth }) {
 
         <div className="ml-auto flex items-center gap-3">
           <ScreenLink code={state?.code} />
-          <RoomSwitcher code={state?.code} refreshKey={roomsVersion} onSwitch={goToRoom} onNew={() => goToRoom(null)} />
+          <RoomSwitcher
+            code={state?.code}
+            refreshKey={roomsVersion}
+            onSwitch={goToRoom}
+            onNew={() => goToRoom(null)}
+            onDelete={deleteRoom}
+          />
           <span className={`h-2 w-2 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} title={connected ? "connected" : "reconnecting"} />
           <button className="text-[0.7rem] text-faint transition-colors hover:text-bad" onClick={auth.logout}>
             sign out
