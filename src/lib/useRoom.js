@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getWsUrl } from "./mediaUrl"
 
+/** How often to ping. Frequent enough to notice a dead socket within seconds. */
+const PING_EVERY_MS = 5_000
+/** Silence for longer than this means the socket is gone, whatever it claims. */
+const SILENCE_LIMIT_MS = 12_000
+
 /**
  * One WebSocket per page, whatever role the page is playing.
  *
@@ -33,6 +38,19 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
   /** Relay clock minus ours. Timers are absolute epochs, so a laptop with a
    *  drifting clock would otherwise count down to the wrong moment. */
   const offsetRef = useRef(0)
+  /** Round-trip time, so a player can see their connection is healthy. */
+  const [rtt, setRtt] = useState(null)
+  /**
+   * Messages written while the socket was down.
+   *
+   * A press that arrives during a reconnect used to be dropped on the floor —
+   * the player felt the button, saw nothing happen, and concluded the buzzer
+   * was broken. Each entry carries a deadline: replaying a buzz four seconds
+   * late would be worse than losing it, because it would enter a race that is
+   * already over.
+   */
+  const outbox = useRef([])
+  const reconnectNow = useRef(() => {})
 
   const handlers = useRef({})
   handlers.current = { onEffects, onError, onMessage }
@@ -47,23 +65,55 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
     let retry = null
     let attempt = 0
     let ping = null
+    let watchdog = null
+    /** When we last heard anything at all from the relay. */
+    let lastSeen = Date.now()
+    let pingSentAt = 0
 
     const connect = () => {
       if (closed) return
+      clearTimeout(retry)
       const ws = new WebSocket(getWsUrl())
       wsRef.current = ws
 
       ws.onopen = () => {
         attempt = 0
+        lastSeen = Date.now()
         setConnected(true)
         const j = joinRef.current
         ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, playerId: j.playerId, key: j.key }))
+
+        // Anything the player did while we were away, if it is still worth
+        // saying. Sent after the join so the relay knows who is speaking.
+        const now = Date.now()
+        const queued = outbox.current
+        outbox.current = []
+        for (const item of queued) {
+          if (item.deadline && now > item.deadline) continue
+          ws.send(item.body)
+        }
+
+        /*
+          A phone that walks out of range does not get a close event: the socket
+          just stops carrying anything, and the browser can sit on that for
+          minutes. Pinging often and treating silence as death is the only way
+          to notice — and on a buzzer, "connected" being a lie is the worst
+          possible failure, because the player has no reason to doubt it.
+        */
+        clearInterval(ping)
         ping = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }))
-        }, 25_000)
+          if (ws.readyState !== WebSocket.OPEN) return
+          if (Date.now() - lastSeen > SILENCE_LIMIT_MS) {
+            ws.close()
+            return
+          }
+          pingSentAt = Date.now()
+          ws.send(JSON.stringify({ type: "ping" }))
+        }, PING_EVERY_MS)
       }
 
       ws.onmessage = (e) => {
+        lastSeen = Date.now()
         let msg
         try {
           msg = JSON.parse(e.data)
@@ -87,7 +137,17 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
           return
         }
         if (msg.type === "pong") {
-          offsetRef.current = msg.serverNow - Date.now()
+          const now = Date.now()
+          if (pingSentAt) {
+            const round = now - pingSentAt
+            setRtt(round)
+            // Halve the round trip to estimate one-way, so a countdown is not
+            // skewed by the time the reply spent coming back.
+            offsetRef.current = msg.serverNow - (now - round / 2)
+            pingSentAt = 0
+          } else {
+            offsetRef.current = msg.serverNow - now
+          }
           return
         }
         // Everything else (save acknowledgements, and whatever the protocol
@@ -99,20 +159,58 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
         clearInterval(ping)
         setConnected(false)
         if (closed) return
-        // Back off, but stay responsive: a phone should rejoin within a second
-        // or two of wifi returning, not after a 30s penalty.
-        retry = setTimeout(connect, Math.min(400 * 2 ** attempt++, 5000))
+        // The first retry is immediate: a dropped socket is usually a blip, and
+        // making the room wait 400ms to find that out helps nobody. Only a
+        // genuinely absent network gets backed off.
+        const delay = attempt === 0 ? 0 : Math.min(300 * 2 ** attempt, 4000)
+        attempt++
+        clearTimeout(retry)
+        retry = setTimeout(connect, delay)
       }
 
       ws.onclose = reconnect
       ws.onerror = () => ws.close()
     }
 
+    /**
+     * Come back the instant the device says it can, rather than waiting out a
+     * backoff. Wifi returning, a phone waking, a tab being swiped back to — all
+     * are far better signals than a timer, and all are the moment a player is
+     * about to look at the buzzer again.
+     */
+    reconnectNow.current = () => {
+      const w = wsRef.current
+      if (closed) return
+      if (w && w.readyState === WebSocket.OPEN) return
+      if (w && w.readyState === WebSocket.CONNECTING) return
+      attempt = 0
+      clearTimeout(retry)
+      connect()
+    }
+
+    const wake = () => {
+      if (document.visibilityState === "visible") reconnectNow.current()
+    }
+    window.addEventListener("online", reconnectNow.current)
+    window.addEventListener("pageshow", reconnectNow.current)
+    document.addEventListener("visibilitychange", wake)
+
+    // A last line of defence for the case where nothing fires an event at all:
+    // some mobile browsers restore a tab without `pageshow` or `online`.
+    watchdog = setInterval(() => {
+      const w = wsRef.current
+      if (!w || w.readyState === WebSocket.CLOSED) reconnectNow.current()
+    }, 2000)
+
     connect()
     return () => {
       closed = true
       clearInterval(ping)
+      clearInterval(watchdog)
       clearTimeout(retry)
+      window.removeEventListener("online", reconnectNow.current)
+      window.removeEventListener("pageshow", reconnectNow.current)
+      document.removeEventListener("visibilitychange", wake)
       const w = wsRef.current
       if (w) {
         w.onclose = null
@@ -122,15 +220,31 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
     }
   }, [role, code, enabled])
 
-  const send = useCallback((type, payload = {}) => {
+  /**
+   * @param {string} type
+   * @param {object} [payload]
+   * @param {number} [ttl] – how long this is still worth sending if the socket
+   *   is down, in ms. Omit for things that should simply be dropped.
+   */
+  const send = useCallback((type, payload = {}, ttl = 0) => {
+    const body = JSON.stringify({ type, ...payload })
     const w = wsRef.current
-    if (w?.readyState === WebSocket.OPEN) w.send(JSON.stringify({ type, ...payload }))
+    if (w?.readyState === WebSocket.OPEN) {
+      w.send(body)
+      return true
+    }
+    if (ttl > 0) {
+      outbox.current.push({ body, deadline: Date.now() + ttl })
+      // Do not sit waiting for a backoff when something is actually pending.
+      reconnectNow.current()
+    }
+    return false
   }, [])
 
   /** Relay time, for turning an absolute `endsAt` into a countdown. */
   const now = useCallback(() => Date.now() + offsetRef.current, [])
 
-  return { state, connected, identity, send, now }
+  return { state, connected, identity, send, now, rtt }
 }
 
 /**

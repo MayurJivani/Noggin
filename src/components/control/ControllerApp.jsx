@@ -328,7 +328,7 @@ function ClueStatus({ state, holder, now }) {
         <div className="mt-2 flex flex-wrap gap-1.5">
           {buzzer.order.map((e, i) => (
             <span key={e.playerId} className={`rounded border px-2 py-0.5 text-[0.7rem] ${i === 0 ? "border-live text-live" : "border-edge text-faint"}`}>
-              {state.players.find((p) => p.id === e.playerId)?.name} {e.ms}ms
+              {state.players.find((p) => p.id === e.playerId)?.name} {i === 0 ? "first" : `+${e.behind}ms`}
             </span>
           ))}
         </div>

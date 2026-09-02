@@ -172,8 +172,22 @@ which two of forty are wrong. Nothing is replaced until you confirm the preview.
 ## How the buzzer is fair
 
 The relay is the referee. A phone never decides anything — it sends "I pressed"
-and the server timestamps arrival. On a LAN that's a couple of milliseconds of
+and the server timestamps arrival, over an open WebSocket. Nothing on that path
+polls or waits for an interval. On a LAN that's a couple of milliseconds of
 jitter against human reaction times of two hundred.
+
+The transport is tuned for it: Nagle's algorithm is off (it would hold a press
+back up to 40ms waiting for data that never comes), compression is off (deflate
+costs more than it saves on a 300-byte frame), and the relay serialises each
+state once per *view* rather than once per socket.
+
+The race list shows margins behind the winner — `+40ms` — rather than time since
+the buzzer opened, which is mostly a measure of how long the host talked.
+
+**A press is never silently lost.** If the socket happens to be down, the buzz is
+queued and sent the moment it reconnects, and dropped if two seconds pass —
+arriving late would enter a race that is already over. The button says so rather
+than looking dead.
 
 Pressing **before** the host arms costs a short lockout (500ms by default), so
 mashing the button from the moment a clue appears gains nothing. Losing the race
@@ -200,7 +214,20 @@ Uploads cap at 25MB (`NOGGIN_MAX_UPLOAD`).
 
 ## Reconnection
 
-Everything survives a reload. The room owns the game state, not the host tab.
+Everything survives a reload, and everything survives the network going away.
+The room owns the game state, not the host tab.
+
+A phone that walks out of range does not get a close event — the socket simply
+stops carrying anything, and a browser can sit on that for minutes. So the
+client pings every 5s and treats 12s of silence as death, rather than trusting a
+socket that still claims to be open. On a buzzer, "connected" being a lie is the
+worst failure there is, because the player has no reason to doubt it.
+
+Coming back is immediate rather than backed off: the first retry has no delay,
+and `online`, `pageshow` and the tab becoming visible all trigger a reconnect at
+once — each is a better signal than a timer, and each is the moment someone is
+about to look at their buzzer again. Players see their round-trip time, so
+"is it me or the wifi?" has an answer.
 
 - A player who locks their screen or drops off wifi comes back to the same seat,
   name and score for five minutes. That works from the id their phone remembers,

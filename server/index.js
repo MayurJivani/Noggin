@@ -616,14 +616,26 @@ const send = (ws, payload) => {
  * client that can never drift out of sync is worth far more than the bytes.
  */
 function broadcast(room, effects = []) {
-  // Players each see their own final wager and answer and nobody else's, so
-  // the cache key is the viewer, not just the role. Non-players still share
-  // one projection between them.
-  const cache = new Map()
+  /*
+    Serialise once per distinct view, not once per socket.
+
+    Only the final needs a per-player projection — that is where a wager and an
+    answer are private to their author. Everywhere else every player sees the
+    same thing, so keying on the viewer meant building and stringifying the
+    whole state N times for N phones on every buzz, for N identical results.
+  */
+  const perViewer = room.phase === G.PHASE.FINAL
+  const payloads = new Map()
+
   for (const [ws, meta] of room.sockets) {
-    const key = meta.role === "player" ? `p:${meta.playerId}` : meta.role
-    if (!cache.has(key)) cache.set(key, G.projectState(room, meta.role, meta.playerId))
-    send(ws, { type: "state", state: cache.get(key), effects })
+    if (ws.readyState !== ws.OPEN) continue
+    const key = perViewer && meta.role === "player" ? `p:${meta.playerId}` : meta.role
+    let payload = payloads.get(key)
+    if (payload === undefined) {
+      payload = JSON.stringify({ type: "state", state: G.projectState(room, meta.role, meta.playerId), effects })
+      payloads.set(key, payload)
+    }
+    ws.send(payload)
   }
 }
 
@@ -734,7 +746,17 @@ function apply(room, effects) {
 
 // ── WebSocket ────────────────────────────────────────────────────────────────
 
-const wss = new WebSocketServer({ server: http })
+const wss = new WebSocketServer({
+  server: http,
+  /**
+   * No compression. Every frame here is a few hundred bytes of JSON, and
+   * deflating one costs more time than it saves on any network a quiz is
+   * played on — this is a race decided in tens of milliseconds, not a
+   * bandwidth problem. (`ws` defaults this off; stating it stops a future
+   * "let's turn on compression" from quietly taxing the buzzer.)
+   */
+  perMessageDeflate: false,
+})
 
 /**
  * One bad frame from one phone must never take the game down mid-round. Room
@@ -745,6 +767,14 @@ process.on("uncaughtException", (err) => console.error("[noggin] uncaught:", err
 process.on("unhandledRejection", (err) => console.error("[noggin] unhandled rejection:", err))
 
 wss.on("connection", (ws, req) => {
+  /**
+   * Nagle's algorithm holds a small write back for up to 40ms waiting for more
+   * data to coalesce with. That is a sensible default for bulk transfer and
+   * exactly wrong for a buzzer: the whole message *is* the payload, and there
+   * is never a second one coming to justify the wait.
+   */
+  req.socket.setNoDelay(true)
+
   /** @type {{ code: string|null, role: string, playerId: string|null, user: any }} */
   const meta = { code: null, role: "display", playerId: null, user: null }
   // A browser sends its cookies on the upgrade, so the socket can be identified

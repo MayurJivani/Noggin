@@ -545,3 +545,18 @@ test("auto-arm leaves a daily double alone", () => {
   assert.deepEqual(kinds(G.selectClue(room, 0, 0)), ["daily-double"])
   assert.equal(room.buzzer.armed, false, "there is no race to open")
 })
+
+test("the race list reports margins behind the winner, not time since arming", () => {
+  const room = setup()
+  G.selectClue(room, 0, 0)
+  // A host who arms and then reads the clue aloud for twenty seconds.
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 20_000)
+  G.buzz(room, "p1", 20_090)
+
+  const order = G.projectState(room, "host").buzzer.order
+  assert.equal(order[0].behind, 0, "the winner is the baseline")
+  assert.equal(order[1].behind, 90, "and the rest are measured against them")
+  // The absolute figure is still there, and is still dominated by the host.
+  assert.equal(order[0].ms, 20_000)
+})

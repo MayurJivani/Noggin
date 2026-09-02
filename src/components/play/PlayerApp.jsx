@@ -58,7 +58,7 @@ export function PlayerApp() {
     [],
   )
 
-  const { state, connected, identity, send } = useRoom({
+  const { state, connected, identity, send, rtt } = useRoom({
     role: "player",
     code,
     name,
@@ -102,6 +102,7 @@ export function PlayerApp() {
       state={state}
       me={me}
       connected={connected}
+      rtt={rtt}
       send={send}
       pressed={pressed}
       setPressed={setPressed}
@@ -167,7 +168,7 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
   )
 }
 
-function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
+function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }) {
   const { phase, buzzer, clue, lifeline } = state
   const now = useCallback(() => Date.now(), [])
 
@@ -207,16 +208,23 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
     dim: "text-faint",
   }[status.tone]
 
+  /**
+   * A buzz is worth replaying for a moment if the socket happens to be down,
+   * and worthless after that: arriving late would enter a race that is already
+   * decided. Two seconds is about as long as a clue stays unanswered.
+   */
+  const BUZZ_TTL_MS = 2000
+
   const press = () => {
     if (!canBuzz) {
       // Still send it. An early press is a real event the relay wants to see —
       // silently swallowing it would let a player mash with no consequence.
-      if (live && !spent && !iHoldIt) send("buzz")
+      if (live && !spent && !iHoldIt) send("buzz", {}, BUZZ_TTL_MS)
       buzz(20)
       return
     }
     setPressed(true)
-    send("buzz")
+    send("buzz", {}, BUZZ_TTL_MS)
     buzz(35)
     setTimeout(() => setPressed(false), 220)
   }
@@ -235,10 +243,15 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
       </header>
 
       <div className="relative z-10 px-4 pt-3">
-        <div className={`text-center font-display uppercase tracking-[0.2em] ${tone}`} style={{ fontSize: 13 }}>
-          {status.text}
-          {onPenalty && <span className="ml-2 tabular-nums">{(penalty / 1000).toFixed(1)}s</span>}
+        <div className={`text-center font-display uppercase tracking-[0.2em] ${connected ? tone : "text-bad"}`} style={{ fontSize: 13 }}>
+          {connected ? status.text : "Reconnecting…"}
+          {connected && onPenalty && <span className="ml-2 tabular-nums">{(penalty / 1000).toFixed(1)}s</span>}
         </div>
+        {connected && rtt != null && (
+          <div className="mt-0.5 text-center text-[0.65rem] text-faint">
+            {rtt}ms to the host{rtt > 400 ? " · slow connection" : ""}
+          </div>
+        )}
       </div>
 
       {phase === "final" && <FinalPanel state={state} me={me} send={send} />}
@@ -260,7 +273,7 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
       )}
 
       <div className={`relative z-10 flex flex-1 items-center justify-center px-6 py-4 ${phase === "final" ? "hidden" : ""}`}>
-        <BuzzerButton canBuzz={canBuzz} iHoldIt={iHoldIt} disabled={spent || onPenalty} pressed={pressed} onPress={press} />
+        <BuzzerButton canBuzz={canBuzz && connected} iHoldIt={iHoldIt} disabled={spent || onPenalty} pressed={pressed} onPress={press} offline={!connected} />
       </div>
 
       <footer className="relative z-10 space-y-2 px-4 pb-5">
@@ -301,7 +314,7 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
  * Events, and on those the buzzer simply did nothing. Falling back to `onClick`
  * would work but costs the ~300ms the fallback exists to avoid.
  */
-function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress }) {
+function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = false }) {
   const lastFire = useRef(0)
 
   /** Whichever event arrives first wins; the duplicate is dropped. */
@@ -336,6 +349,11 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress }) {
       <span className="relative font-display uppercase leading-none tracking-[0.08em]" style={{ fontSize: "clamp(28px, min(12vw, 7vh), 72px)" }}>
         {iHoldIt ? "GO" : "BUZZ"}
       </span>
+      {offline && (
+        <span className="pointer-events-none absolute inset-x-0 bottom-[18%] text-center text-[0.7rem] uppercase tracking-widest text-bad">
+          offline · press still counts
+        </span>
+      )}
     </button>
   )
 }

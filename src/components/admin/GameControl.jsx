@@ -363,7 +363,11 @@ function BuzzerPanel({ state, send, now }) {
               title="Give this player the floor instead"
               onClick={() => send("judge", { correct: true, playerId: e.playerId })}
             >
-              {i + 1}. {byId[e.playerId]?.name ?? "—"} <span className="text-faint">{e.ms}ms</span>
+              {i + 1}. {byId[e.playerId]?.name ?? "—"}{" "}
+              {/* Margin behind the winner, not time since the buzzer opened.
+                  The latter is mostly a measure of how long the host waited
+                  before arming, which is why it used to read "15000ms". */}
+              <span className="text-faint">{i === 0 ? "first" : `+${e.behind}ms`}</span>
             </button>
           ))}
         </div>
