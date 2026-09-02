@@ -50,6 +50,16 @@ export const DEFAULTS = {
   penaltyForWrong: true,
 }
 
+/**
+ * How long after the winning press a later one still counts as part of the race.
+ *
+ * Without this, every press between the winner and the host's ruling was filed
+ * as a race entry timed from when the buzzer opened — so a player idly pressing
+ * while the host deliberated showed up as "15000ms", which is true and useless.
+ * A photo finish is decided in tenths; anything beyond this is not a contender.
+ */
+const LATE_GRACE_MS = 1500
+
 let seq = 0
 const uid = (prefix) => `${prefix}_${Date.now().toString(36)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
@@ -198,6 +208,8 @@ export function createRoom(code, settings = {}) {
       order: [],
       /** Player currently holding the buzz, or null. */
       winner: null,
+      /** How long after opening the winner pressed, so margins can be shown. */
+      winnerMs: null,
       /** playerId -> epoch ms until which they may not buzz. */
       lockedUntil: {},
       /** Players who have already answered this clue and got it wrong. */
@@ -319,6 +331,7 @@ export function armBuzzer(room, now = Date.now()) {
   room.buzzer.opened = true
   room.buzzer.openedAt = now
   room.buzzer.winner = null
+  room.buzzer.winnerMs = null
   // Each arming is its own race. Leaving the previous order in place would bar
   // anyone already in it from pressing again.
   room.buzzer.order = []
@@ -340,7 +353,7 @@ export function resetBuzzer(room) {
 }
 
 function resetBuzzerState(room) {
-  room.buzzer = { armed: false, opened: false, openedAt: 0, order: [], winner: null, lockedUntil: {}, spent: [] }
+  room.buzzer = { armed: false, opened: false, openedAt: 0, order: [], winner: null, winnerMs: null, lockedUntil: {}, spent: [] }
 }
 
 /**
@@ -365,14 +378,22 @@ export function buzz(room, playerId, now = Date.now()) {
   }
 
   const ms = Math.max(0, now - room.buzzer.openedAt)
+
+  // The gate is already shut: someone won, or the host locked it. Losing a race
+  // by 60ms is not an offence and must not be punished like jumping the gun —
+  // but only a press close behind the winner was ever in the race. Anything
+  // later is someone fiddling while the host deliberates, and filing it with a
+  // fifteen-second time makes the list of contenders useless.
+  if (!room.buzzer.armed) {
+    const contender = room.buzzer.winnerMs != null && ms - room.buzzer.winnerMs <= LATE_GRACE_MS
+    if (!contender) return []
+    room.buzzer.order.push({ playerId, ms })
+    return [{ kind: "buzz-late", playerId, ms }]
+  }
+
   room.buzzer.order.push({ playerId, ms })
-
-  // The gate is already shut: someone won, or the host locked it. Record the
-  // press so a photo finish is visible, but losing a race by 60ms is not an
-  // offence and must not be punished like jumping the gun.
-  if (!room.buzzer.armed) return [{ kind: "buzz-late", playerId, ms }]
-
   room.buzzer.winner = playerId
+  room.buzzer.winnerMs = ms
   room.buzzer.armed = false
   if (room.settings.answerSeconds > 0) {
     room.timer = { kind: "answer", duration: room.settings.answerSeconds, endsAt: now + room.settings.answerSeconds * 1000 }
@@ -442,6 +463,7 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
     room.buzzer.openedAt = Date.now()
     // Fresh race — see armBuzzer.
     room.buzzer.order = []
+    room.buzzer.winnerMs = null
     effects.push({ kind: "buzzer-open", answerSeconds: room.settings.answerSeconds })
   } else {
     room.buzzer.armed = false
@@ -848,7 +870,9 @@ export function projectState(room, role, viewerId = null) {
       openedAt: room.buzzer.openedAt,
       winner: room.buzzer.winner,
       spent: room.buzzer.spent,
-      order: room.buzzer.order,
+      // Margins behind the winner read better than absolute times: "+40ms" is
+      // the thing being adjudicated, "1240ms" is trivia about the host's pace.
+      order: room.buzzer.order.map((e) => ({ ...e, behind: room.buzzer.winnerMs == null ? 0 : e.ms - room.buzzer.winnerMs })),
       lockedUntil: room.buzzer.lockedUntil,
     },
     players: [...room.players.values()]

@@ -201,7 +201,15 @@ Uploads cap at 25MB (`NOGGIN_MAX_UPLOAD`).
 Everything survives a reload. The room owns the game state, not the host tab.
 
 - A player who locks their screen or drops off wifi comes back to the same seat,
-  name and score for five minutes.
+  name and score for five minutes. That works from the id their phone remembers,
+  and failing that from their **name** — a cleared browser, a private tab or a
+  different phone entirely still gets them their score back, because a name
+  matching a seat nobody is sitting in is that person returning. A seat someone
+  is *currently* holding is never handed over; a second real Alice becomes
+  "Alice 2" rather than inheriting the first one's points.
+- The host desk reopens the game it was last on. Its address carries the room
+  code, so a reload rejoins rather than starting again — new games only ever
+  come from **+ Start a new game**.
 - The big screen holds no state at all and can be reloaded mid-clue.
 - The host desk rejoins the room code it opened last, rather than minting a new
   one that's already on a projector and in five phones.

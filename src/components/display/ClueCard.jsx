@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
+import { useCountdown } from "../../lib/useRoom"
 import { CornerVein, VeinLine } from "../ui/Vein"
 
 /**
@@ -10,7 +11,7 @@ import { CornerVein, VeinLine } from "../ui/Vein"
  * exactly on top of it and grows. That one detail is most of what makes the
  * board feel like a physical thing rather than a slideshow.
  */
-export function ClueCard({ clue, revealed, stake, origin, wagerName }) {
+export function ClueCard({ clue, revealed, stake, origin, wagerName, timer, now }) {
   const el = useRef(null)
   const [flown, setFlown] = useState(false)
 
@@ -59,6 +60,7 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName }) {
             ✦ DAILY DOUBLE{wagerName ? ` · ${wagerName}` : ""}
           </span>
         )}
+        <ClueClock timer={timer} now={now} />
       </div>
 
       <div className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-[2.5vmin] px-[6vmin] py-[3vmin] ${flown ? "" : "opacity-0"}`}>
@@ -86,6 +88,28 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName }) {
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The clock, inline in the clue's own header.
+ *
+ * It used to float in the top-right corner of the stage, which is exactly where
+ * the clue card puts its value — so a running timer sat on top of the points.
+ * Living in the same flex row means they can never overlap, whatever the
+ * screen.
+ */
+function ClueClock({ timer, now }) {
+  const left = useCountdown(timer && timer.kind !== "lifeline" ? timer.endsAt : null, now ?? (() => Date.now()))
+  if (left == null) return null
+  const seconds = Math.ceil(left / 1000)
+  return (
+    <span
+      className={`ml-[1.5vmin] shrink-0 font-value tabular-nums ${seconds <= 5 ? "text-bad animate-glow" : "text-gold"}`}
+      style={{ fontSize: "max(18px, calc(var(--stage) * 2.6))" }}
+    >
+      {seconds}
+    </span>
   )
 }
 

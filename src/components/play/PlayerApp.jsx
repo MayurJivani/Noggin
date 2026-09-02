@@ -222,7 +222,7 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
   }
 
   return (
-    <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl touch-none flex-col overflow-hidden">
+    <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl flex-col overflow-hidden">
       <Backdrop veins={4} glow={2} />
 
       <header className="relative z-10 flex items-center gap-2 px-4 pt-3">
@@ -293,8 +293,26 @@ function Board({ state, me, connected, send, pressed, setPressed, onLeave }) {
  * One enormous target. Sized to the viewport rather than a fixed pixel count
  * because the difference between a 5" phone and a 7" one is the difference
  * between winning the race and not.
+ *
+ * Pressing is bound to pointer *and* touch, with the first one to fire winning
+ * and the other suppressed for a moment afterwards. `onPointerDown` alone looks
+ * complete and is not: the in-app browsers people actually open a link in —
+ * Instagram, Facebook, older Android WebViews — do not all implement Pointer
+ * Events, and on those the buzzer simply did nothing. Falling back to `onClick`
+ * would work but costs the ~300ms the fallback exists to avoid.
  */
 function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress }) {
+  const lastFire = useRef(0)
+
+  /** Whichever event arrives first wins; the duplicate is dropped. */
+  const fire = (e) => {
+    e.preventDefault()
+    const now = Date.now()
+    if (now - lastFire.current < 350) return
+    lastFire.current = now
+    onPress()
+  }
+
   const face = iHoldIt
     ? "from-live to-[#c99411] border-live text-[#17110a]"
     : canBuzz
@@ -305,15 +323,13 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress }) {
 
   return (
     <button
-      onPointerDown={(e) => {
-        e.preventDefault()
-        onPress()
-      }}
+      onPointerDown={fire}
+      onTouchStart={fire}
       onContextMenu={(e) => e.preventDefault()}
       className={`relative aspect-square w-[min(78vw,44vh,26rem)] select-none rounded-full border-4 bg-gradient-to-b shadow-2xl shadow-black/50 transition-transform duration-75 ${face} ${
         pressed ? "scale-95" : "active:scale-95"
       }`}
-      style={{ touchAction: "none", WebkitUserSelect: "none" }}
+      style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTapHighlightColor: "transparent" }}
     >
       {canBuzz && <span className="pointer-events-none absolute inset-0 rounded-full border-2 border-gold animate-pulse-ring" />}
       <span className="pointer-events-none absolute inset-x-[12%] top-[8%] h-[28%] rounded-full bg-white/18 blur-md" />

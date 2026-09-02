@@ -108,10 +108,25 @@ function HostDesk({ auth }) {
   })
 
   useEffect(() => {
-    if (identity?.code && identity.code !== code) {
+    if (!identity?.code) return
+    if (identity.code !== code) {
       setCode(identity.code)
-      localStorage.setItem(STORAGE + ".code", identity.code)
       setRoomsVersion((v) => v + 1)
+    }
+    localStorage.setItem(STORAGE + ".code", identity.code)
+
+    /*
+      Take `?new=1` out of the address bar the moment the room exists.
+
+      It is an instruction, not a location, and leaving it there made the page
+      mean "open a new game" forever — so every refresh of the host desk minted
+      another empty room and abandoned the one before it. Replacing the URL with
+      the room's own code makes a reload reopen *this* game, and makes the
+      address worth bookmarking or sending to a second screen.
+    */
+    const params = new URLSearchParams(location.search)
+    if (params.has("new") || params.get("code") !== identity.code) {
+      history.replaceState(null, "", `/host?code=${identity.code}`)
     }
   }, [identity, code])
 

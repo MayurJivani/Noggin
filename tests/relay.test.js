@@ -771,3 +771,96 @@ test("auto-arm opens the buzzer on its own, after the reading time", async (t) =
   await settle()
   assert.equal(host.state.buzzer.winner, alice.identity.playerId, "and a press now counts")
 })
+
+test("a player who reloads gets their own seat back", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  t.after(() => host.ws.close())
+
+  const alice = client("player", { code, name: "Alice" })
+  await alice.ready
+  const A = alice.identity.playerId
+  host.send("score:adjust", { playerId: A, delta: 700 })
+  await settle()
+
+  await t.test("by id, the way a normal reload does", async () => {
+    alice.ws.close()
+    await settle(250)
+    const again = client("player", { code, name: "Alice", playerId: A })
+    await again.ready
+    assert.equal(again.identity.playerId, A)
+    assert.equal(again.state.players.length, 1, "no second Alice appeared")
+    again.ws.close()
+    await settle(250)
+  })
+
+  await t.test("and by name, when the id is gone", async () => {
+    // A cleared browser, a private tab, or a different phone entirely.
+    const fresh = client("player", { code, name: "alice" })
+    await fresh.ready
+    await settle()
+    assert.equal(fresh.identity.playerId, A, "same seat, matched on the name")
+    assert.equal(fresh.state.players.length, 1, "still one Alice")
+    assert.equal(fresh.state.players[0].score, 700, "with her score intact")
+    fresh.ws.close()
+    await settle(250)
+  })
+})
+
+test("a second person of the same name gets their own seat, not someone else's", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+
+  const alice = client("player", { code, name: "Alice" })
+  await alice.ready
+  host.send("score:adjust", { playerId: alice.identity.playerId, delta: 500 })
+  await settle()
+
+  // Alice is still connected, so this is a different person with the same name.
+  const other = client("player", { code, name: "Alice" })
+  await other.ready
+  await settle()
+  t.after(() => [host, alice, other].forEach((c) => c.ws.close()))
+
+  assert.notEqual(other.identity.playerId, alice.identity.playerId, "not handed the live seat")
+  assert.equal(host.state.players.length, 2)
+  const names = host.state.players.map((p) => p.name).sort()
+  assert.deepEqual(names, ["Alice", "Alice 2"], "told apart rather than merged")
+  assert.equal(host.state.players.find((p) => p.name === "Alice 2").score, 0, "and starts from zero")
+})
+
+test("presses long after the race is decided are not filed as contenders", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  const alice = client("player", { code, name: "Alice" })
+  const bob = client("player", { code, name: "Bob" })
+  await Promise.all([alice.ready, bob.ready])
+  t.after(() => [host, alice, bob].forEach((c) => c.ws.close()))
+
+  host.send("board:set", { board: BOARD })
+  await settle()
+  host.send("game:start")
+  await settle()
+  host.send("clue:select", { catIndex: 0, clueIndex: 0 })
+  await settle()
+  host.send("buzzer:arm")
+  await settle()
+
+  alice.send("buzz")
+  await settle()
+  assert.equal(host.state.buzzer.order.length, 1)
+
+  // Bob idly presses while the host deliberates. That is not a photo finish.
+  await sleep(1800)
+  bob.send("buzz")
+  await settle()
+
+  assert.equal(host.state.buzzer.order.length, 1, "the stale press is not a race entry")
+  assert.ok(
+    host.state.buzzer.order.every((e) => e.behind < 1500),
+    "and nothing absurd is reported as a margin",
+  )
+})

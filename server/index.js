@@ -864,15 +864,22 @@ async function handleJoin(ws, meta, msg, req) {
   room.sockets.set(ws, meta)
 
   if (role === "player") {
-    const name = String(msg.name ?? "").trim().slice(0, 16) || "Player"
-    // A returning playerId keeps its score; anything else is a new seat.
-    const existing = msg.playerId && room.players.get(String(msg.playerId))
-    if (existing) {
-      clearTimeout(existing.expire)
-      existing.connected = true
-      existing.name = name || existing.name
-      meta.playerId = existing.id
+    let name = String(msg.name ?? "").trim().slice(0, 16) || "Player"
+    const seat = findSeat(room, msg.playerId, name)
+
+    if (seat) {
+      clearTimeout(seat.expire)
+      seat.connected = true
+      seat.name = name || seat.name
+      meta.playerId = seat.id
     } else {
+      // Two people really are called Alice. Distinguishing them beats handing
+      // the second one a seat with the first one's score on it.
+      if (nameTaken(room, name)) {
+        let n = 2
+        while (nameTaken(room, `${name} ${n}`) && n < 20) n++
+        name = `${name} ${n}`.slice(0, 16)
+      }
       const id = `p_${Math.random().toString(36).slice(2, 10)}`
       const player = G.makePlayer(id, name)
       player.lifelines = { ...room.settings.lifelines }
@@ -887,6 +894,28 @@ async function handleJoin(ws, meta, msg, req) {
   }
 
   broadcast(room)
+}
+
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+const nameTaken = (room, name) => [...room.players.values()].some((p) => sameName(p.name, name))
+
+/**
+ * Find the seat a joining player already owns.
+ *
+ * The id in localStorage is the reliable route, but it is gone the moment
+ * someone reloads in a private tab, clears their browser, or reconnects from a
+ * second device — and a quiz night is full of phones being handed around. So a
+ * name that matches a seat nobody is currently sitting in is treated as that
+ * person coming back, which is what actually happened.
+ *
+ * A *connected* seat is never adopted: that would let anyone take over a
+ * player's score by typing their name.
+ */
+function findSeat(room, playerId, name) {
+  const byId = playerId && room.players.get(String(playerId))
+  if (byId) return byId
+  return [...room.players.values()].find((p) => !p.connected && sameName(p.name, name)) ?? null
 }
 
 function handleHostMessage(room, meta, ws, msg) {

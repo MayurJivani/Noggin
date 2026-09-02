@@ -130,7 +130,15 @@ export function DisplayStage({ code: initialCode }) {
           <div className="relative h-full w-full">
             <BoardGrid round={board.round} cellRef={cellRef} />
             {clue && phase !== "board" && (
-              <ClueCard clue={clue} revealed={state.revealed} stake={state.stake} origin={origin} wagerName={wagerName} />
+              <ClueCard
+                clue={clue}
+                revealed={state.revealed}
+                stake={state.stake}
+                origin={origin}
+                wagerName={wagerName}
+                timer={timer}
+                now={() => Date.now()}
+              />
             )}
           </div>
         )}
@@ -138,7 +146,7 @@ export function DisplayStage({ code: initialCode }) {
         <DailyDoubleSplash show={splash} />
         <LifelineOverlay lifeline={lifeline} playerName={players.find((p) => p.id === lifeline?.playerId)?.name} now={() => Date.now()} />
         <BuzzOverlay name={flash?.name} verdict={flash?.verdict} />
-        <TimerRing timer={timer} now={() => Date.now()} />
+        {!clue && <TimerRing timer={timer} now={() => Date.now()} />}
         <BuzzerBanner armed={buzzer.armed} />
       </main>
 
