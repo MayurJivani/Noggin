@@ -305,6 +305,9 @@ function RoomRow({ room, live, onGone }) {
         <a className="btn shrink-0 px-2.5 py-1.5 text-xs" href={`/display?code=${room.code}`} title="Open the big screen for this room">
           TV
         </a>
+        <a className="btn shrink-0 px-2.5 py-1.5 text-xs" href={`/scores?code=${room.code}`} title="Open the scoreboard for this room">
+          Scores
+        </a>
         <button
           className="btn shrink-0 px-2.5 py-1.5 text-xs hover:border-bad hover:text-bad"
           onClick={remove}

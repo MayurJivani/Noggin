@@ -8,6 +8,14 @@ import { getRelayOrigin } from "./mediaUrl"
 
 let lanPromise = null
 
+/** The page's own origin, with a loopback host swapped for something a phone
+ *  or a spare tablet on the wifi can actually open. */
+async function originForLan() {
+  const { protocol, hostname, port } = window.location
+  const host = LOOPBACK.has(hostname) ? ((await lanHost()) ?? hostname) : hostname
+  return `${protocol}//${host}${port ? `:${port}` : ""}`
+}
+
 export function lanHost() {
   if (!lanPromise) {
     lanPromise = fetch(`${getRelayOrigin()}/net`)
@@ -41,6 +49,16 @@ export async function controllerUrl(code, key) {
   let host = hostname
   if (LOOPBACK.has(hostname)) host = (await lanHost()) ?? hostname
   return `${protocol}//${host}${port ? `:${port}` : ""}/control?code=${code}&key=${encodeURIComponent(key)}`
+}
+
+/** The all-players scoreboard, for a second monitor or the control desk. */
+export async function scoresUrl(code) {
+  return `${await originForLan()}/scores?code=${code}`
+}
+
+/** One player's podium screen, for the tablet in front of them. */
+export async function podiumUrl(code, name) {
+  return `${await originForLan()}/podium?code=${code}&name=${encodeURIComponent(name)}`
 }
 
 /** Same, for the big screen — handy when the projector machine isn't the host. */

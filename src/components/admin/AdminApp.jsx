@@ -4,7 +4,7 @@ import { useAuth } from "../../lib/useAuth"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { DEFAULT_SETTINGS, makeBoard } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
-import { displayUrl } from "../../lib/net"
+import { displayUrl, scoresUrl } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
@@ -238,6 +238,7 @@ function HostDesk({ auth }) {
 
         <div className="ml-auto flex items-center gap-3">
           <ScreenLink code={state?.code} />
+          <ScreenLink code={state?.code} kind="scores" />
           <RoomSwitcher
             code={state?.code}
             refreshKey={roomsVersion}
@@ -309,16 +310,20 @@ const TabButton = ({ on, onClick, children }) => (
   </button>
 )
 
-/** One-click open of the big screen, on the LAN address a projector can use. */
-function ScreenLink({ code }) {
+/**
+ * One-click open of a viewer screen, on the LAN address the machine showing it
+ * can actually reach — a projector or a spare monitor is rarely this laptop.
+ */
+function ScreenLink({ code, kind = "display" }) {
   const [url, setUrl] = useState("")
   useEffect(() => {
-    if (code) displayUrl(code).then(setUrl)
-  }, [code])
+    if (!code) return
+    ;(kind === "scores" ? scoresUrl : displayUrl)(code).then(setUrl)
+  }, [code, kind])
   if (!url) return null
   return (
     <a className="btn text-[11px]" href={url} target="_blank" rel="noreferrer">
-      Open big screen ↗
+      {kind === "scores" ? "Scoreboard ↗" : "Open big screen ↗"}
     </a>
   )
 }

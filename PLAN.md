@@ -21,6 +21,8 @@ What exists, and what is deliberately left for later.
 - **Auto-arm** — the buzzer opens with the clue, optionally after a reading
   delay.
 - **Board housekeeping** — duplicate and delete from the builder's list.
+- **Podium screens** (`/podium`) — one per player, name and score filling it,
+  lighting up when they buzz. **Scoreboard** (`/scores`) — all of them at once.
 - **Front door** (`/`) — pick a role, join by code, and resume any unfinished
   game of your own. Live rooms are marked as such.
 - **Save & resume** — a room freezes to storage under its own code and comes

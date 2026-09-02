@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { PodiumApp } from "../components/scores/PodiumApp"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — podium" fixed>
+  <PodiumApp client:only="react" />
+</Layout>

@@ -24,6 +24,8 @@ or nothing else in the room can reach it.
 | `/display` | the TV | The board, the clue, the scores — read-only |
 | `/play` | every player | A room code, a name, and one enormous button |
 | `/control` | second operator | The in-depth controller. Account or host-issued link |
+| `/scores` | a second monitor | Every player at once: score, who's in, bets, call timer |
+| `/podium` | one player's booth | Their name and their score, filling the screen |
 
 `npm run dev` starts two processes:
 
@@ -71,6 +73,24 @@ Two ways in:
   minted on demand, lives only in the relay's memory, and dies with the room —
   it works tonight and not next Tuesday. **Create a controller link** on the
   host desk copies it; **revoke** kicks any controller using it.
+
+## Podium and scoreboard screens
+
+Two read-only views for spare screens, both joining as viewers — so they are
+under exactly the same redaction as the big screen and never learn an unplayed
+clue or a blind final wager.
+
+**`/podium`** is the screen that stands in front of a contestant: their name
+banded across the top, their score filling the middle. Everything else it knows
+how to say — buzzed in, on the phone with the clock running, what they staked —
+is said by lighting the whole panel, because from across a room a badge is
+invisible and a colour is not. Open one per seat from the **▭** button beside
+each player on the host desk; it remembers which player it is showing, so a
+reload doesn't mean re-picking five tablets.
+
+**`/scores`** is all of them at once, for a control desk or a second monitor:
+ranked cards, who is in and by what margin, whose phone call is running, and who
+has bet what.
 
 ## Saving a game for later
 

@@ -1,11 +1,12 @@
 import { useState } from "react"
+import { podiumUrl } from "../../lib/net"
 
 /**
  * The people in the room. Scores are editable inline because at some point
  * someone will be awarded points for an answer the host didn't anticipate, and
  * arguing with the software in front of an audience is not an option.
  */
-export function PlayerRoster({ players, send, buzzer, lifeline, requests, stake }) {
+export function PlayerRoster({ players, send, buzzer, lifeline, requests, stake, code }) {
   return (
     <div className="panel flex min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-edge px-3 py-2">
@@ -34,7 +35,7 @@ export function PlayerRoster({ players, send, buzzer, lifeline, requests, stake 
   )
 }
 
-function PlayerRow({ player, send, buzzer, lifeline, requested, stake }) {
+function PlayerRow({ player, send, buzzer, lifeline, requested, stake, code }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(String(player.score))
 
@@ -115,7 +116,14 @@ function PlayerRow({ player, send, buzzer, lifeline, requested, stake }) {
         )}
 
         <button
-          className="btn ml-auto px-1.5 py-0.5 text-[10px] hover:border-bad hover:text-bad"
+          className="btn ml-auto px-1.5 py-0.5 text-[10px]"
+          title="Open this player's podium screen — put it on the tablet in front of them"
+          onClick={async () => window.open(await podiumUrl(code, player.name), "_blank", "noreferrer")}
+        >
+          ▭
+        </button>
+        <button
+          className="btn px-1.5 py-0.5 text-[10px] hover:border-bad hover:text-bad"
           onClick={() => confirm(`Remove ${player.name}?`) && send("player:kick", { playerId: player.id })}
         >
           ✕

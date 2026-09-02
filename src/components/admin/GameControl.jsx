@@ -40,7 +40,7 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
   }, [send, buzzer.armed])
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)_290px] 2xl:grid-cols-[minmax(260px,18%)_minmax(0,1fr)_minmax(330px,22%)]">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(300px,30%)_minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(380px,32%)_minmax(0,1fr)_minmax(340px,20%)]">
       <MiniBoard state={state} send={send} />
 
       <div className="flex min-h-0 flex-col gap-3">
@@ -49,7 +49,7 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
       </div>
 
       <div className="flex min-h-0 flex-col gap-3">
-        <PlayerRoster players={players} send={send} buzzer={buzzer} lifeline={lifeline} requests={requests} stake={state.stake} />
+        <PlayerRoster players={players} send={send} buzzer={buzzer} lifeline={lifeline} requests={requests} stake={state.stake} code={code} />
         <div className="panel p-3">
           <div className="label mb-2">Room</div>
           <div className="flex items-center justify-between text-[12px] text-muted">
@@ -86,16 +86,42 @@ function MiniBoard({ state, send }) {
   const live = state.phase === "board"
   if (!round) return null
 
+  const cols = round.categories.length
+  const rows = round.values.length
+  const left = round.categories.reduce((n, c) => n + c.clues.filter((cl) => cl.status !== "played").length, 0)
+
   return (
     <div className="panel flex min-h-0 flex-col">
-      <div className="border-b border-edge px-3 py-2">
+      <div className="flex items-baseline gap-2 border-b border-edge px-3 py-2">
         <span className="label">{round.name}</span>
+        <span className="ml-auto text-[0.7rem] text-faint">{left} left</span>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-2">
-        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${round.categories.length}, minmax(0, 1fr))` }}>
+
+      {/*
+        The grid fills the panel instead of sitting at the top of it in 32px
+        rows. This is the control the host actually drives the game with, and
+        it was the smallest thing on a 1700px screen while the column beside it
+        held an acre of nothing. Rows are `1fr`, so the board grows to whatever
+        height it is given and the tiles come with it.
+      */}
+      <div className="min-h-0 flex-1 p-2">
+        <div
+          className="grid h-full gap-1"
+          style={{
+            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+            gridTemplateRows: `auto repeat(${rows}, minmax(0, 1fr))`,
+          }}
+        >
           {round.categories.map((cat) => (
-            <div key={cat.id} className="truncate px-0.5 pb-1 text-center text-[9px] uppercase leading-tight text-muted" title={cat.title}>
-              {cat.title || "—"}
+            <div
+              key={cat.id}
+              className="flex items-end justify-center px-0.5 pb-1 text-center uppercase leading-[1.15] text-muted"
+              style={{ fontSize: `clamp(9px, ${Math.max(0.5, 1.1 - cols * 0.05)}vw, 13px)` }}
+              title={cat.title}
+            >
+              {/* Two lines rather than an ellipsis: "8TH GRADE T…" is not a
+                  category, and the host has to recognise it at a glance. */}
+              <span className="line-clamp-2">{cat.title || "—"}</span>
             </div>
           ))}
           {round.values.map((_, qi) =>
@@ -110,18 +136,19 @@ function MiniBoard({ state, send }) {
                   disabled={played || !live}
                   onClick={() => send("clue:select", { catIndex: ci, clueIndex: qi })}
                   title={clue.prompt || ""}
-                  className={`relative h-8 rounded font-value text-[13px] transition-colors ${
+                  style={{ fontSize: `clamp(12px, ${Math.max(0.7, 1.7 - cols * 0.08)}vw, 26px)` }}
+                  className={`relative min-h-[2rem] rounded font-value tabular-nums transition-colors ${
                     active
                       ? "bg-gold text-onyx"
                       : played
                         ? "bg-black/30 text-gold-dim/40 line-through decoration-gold-dim/30"
                         : live
-                          ? "bg-panel-2 text-gold/85 hover:bg-royal"
+                          ? "bg-panel-2 text-gold/85 hover:bg-royal hover:text-gold"
                           : "bg-panel-2 text-gold/40"
                   }`}
                 >
                   {clue.value}
-                  {clue.dailyDouble && !played && <span className="absolute right-0.5 top-0 text-[8px] text-live">✦</span>}
+                  {clue.dailyDouble && !played && <span className="absolute right-1 top-0.5 text-[0.6rem] text-live">✦</span>}
                 </button>
               )
             }),
@@ -247,7 +274,7 @@ function StagePanel({ state, send, now }) {
     <div className="panel flex min-h-0 flex-1 flex-col p-4">
       <div className="flex items-center gap-2">
         <span className="label">{clue.category}</span>
-        <span className="font-value text-lg text-gold">{state.stake}</span>
+        <span className="font-value text-2xl text-gold">{state.stake}</span>
         {clue.dailyDouble && <span className="text-[10px] text-live">✦ daily double</span>}
         {wager?.playerId && <span className="text-[10px] text-muted">· {players.find((p) => p.id === wager.playerId)?.name} wagered {wager.amount}</span>}
         <div className="ml-auto flex gap-1.5">
@@ -265,29 +292,41 @@ function StagePanel({ state, send, now }) {
         </div>
       </div>
 
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
-        <div className="font-display text-[17px] leading-snug text-ink">{clue.prompt || <span className="text-faint">(no clue text)</span>}</div>
-        {clue.media && <MediaPreview media={clue.media} />}
-
-        <div className="mt-3 rounded-lg border border-good/40 bg-good/10 px-3 py-2">
-          <div className="label mb-0.5" style={{ color: "var(--color-good)" }}>
-            Answer {state.revealed && "· on screen"}
+      {/*
+        Centred, and sized to be read aloud from a laptop at arm's length. This
+        used to pin a 17px line to the top of a panel most of a screen tall, so
+        the two things the host is actually looking at sat in one corner with an
+        acre of nothing under them.
+      */}
+      <div className="mt-3 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl">
+          <div className="font-display text-xl leading-snug text-ink 2xl:text-3xl">
+            {clue.prompt || <span className="text-faint">(no clue text)</span>}
           </div>
-          <div className="text-[15px] font-semibold text-ink">{clue.answer || <span className="text-faint">(none recorded)</span>}</div>
+          {clue.media && <MediaPreview media={clue.media} />}
+
+          <div className="mt-4 rounded-lg border border-good/40 bg-good/10 px-4 py-3">
+            <div className="label mb-1" style={{ color: "var(--color-good)" }}>
+              Answer {state.revealed && "· on screen"}
+            </div>
+            <div className="text-lg font-semibold text-ink 2xl:text-2xl">
+              {clue.answer || <span className="text-faint">(none recorded)</span>}
+            </div>
+          </div>
+          {clue.answerMedia && <MediaPreview media={clue.answerMedia} />}
         </div>
-        {clue.answerMedia && <MediaPreview media={clue.answerMedia} />}
       </div>
 
       {holder && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-live bg-live/10 px-3 py-2 animate-pop">
-          <span className="font-display text-lg text-live">{holder.name}</span>
-          <span className="text-[11px] text-muted">has the floor</span>
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-live bg-live/10 px-4 py-3 animate-pop">
+          <span className="font-display text-xl text-live 2xl:text-2xl">{holder.name}</span>
+          <span className="text-xs text-muted">has the floor</span>
           <AnswerClock timer={state.timer} now={now} />
-          <div className="ml-auto flex gap-1.5">
-            <button className="btn btn-good" onClick={() => send("judge", { correct: true })}>
+          <div className="ml-auto flex gap-2">
+            <button className="btn btn-good px-5 py-2.5 text-sm" onClick={() => send("judge", { correct: true })}>
               Correct <Kbd>y</Kbd>
             </button>
-            <button className="btn btn-bad" onClick={() => send("judge", { correct: false })}>
+            <button className="btn btn-bad px-5 py-2.5 text-sm" onClick={() => send("judge", { correct: false })}>
               Wrong <Kbd>n</Kbd>
             </button>
           </div>

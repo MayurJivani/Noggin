@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { ScoreboardApp } from "../components/scores/ScoreboardApp"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — scoreboard" fixed>
+  <ScoreboardApp client:only="react" />
+</Layout>
