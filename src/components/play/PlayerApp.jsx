@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
+import { readJson, removeStore, writeJson } from "../../lib/storage"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
 import { FinalPanel } from "./FinalPanel"
@@ -18,13 +19,7 @@ const STORAGE = "noggin.player"
  * seat with the same score instead of a fresh zero.
  */
 export function PlayerApp() {
-  const [saved] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE) ?? "{}")
-    } catch {
-      return {}
-    }
-  })
+  const [saved] = useState(() => readJson(STORAGE, {}))
   const params = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams()
 
   const [code, setCode] = useState((params.get("code") ?? saved.code ?? "").toUpperCase())
@@ -75,7 +70,7 @@ export function PlayerApp() {
   identityRef.current = identity
 
   useEffect(() => {
-    if (identity?.playerId) localStorage.setItem(STORAGE, JSON.stringify({ playerId: identity.playerId, name, code: identity.code }))
+    if (identity?.playerId) writeJson(STORAGE, { playerId: identity.playerId, name, code: identity.code })
   }, [identity, name])
 
   if (!joined || !state) {
@@ -107,7 +102,7 @@ export function PlayerApp() {
       pressed={pressed}
       setPressed={setPressed}
       onLeave={() => {
-        localStorage.removeItem(STORAGE)
+        removeStore(STORAGE)
         setJoined(false)
       }}
     />
@@ -317,9 +312,16 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
 function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = false }) {
   const lastFire = useRef(0)
 
-  /** Whichever event arrives first wins; the duplicate is dropped. */
+  /**
+   * Whichever event arrives first wins; the duplicate is dropped.
+   *
+   * `preventDefault` is only attempted where it can actually work. React
+   * registers `touchstart` passively, so calling it from the touch path does
+   * nothing except log an error in Safari — scrolling and double-tap zoom are
+   * already ruled out by `touch-action: none` on the button itself.
+   */
   const fire = (e) => {
-    e.preventDefault()
+    if (e.type !== "touchstart" && e.cancelable) e.preventDefault()
     const now = Date.now()
     if (now - lastFire.current < 350) return
     lastFire.current = now

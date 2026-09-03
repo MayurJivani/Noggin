@@ -73,6 +73,21 @@ What exists, and what is deliberately left for later.
   another room.
 - **Persisted game history.** Who won, what was missed, which clues nobody got.
 
+## Browser notes
+
+The player page is the one that has to work on whatever someone happens to be
+holding, so it avoids things that are absent or hostile on real devices:
+
+- Pointer Events are not universal in in-app browsers; touch is handled too.
+- `localStorage` throws on write in Safari Private Browsing. Every access goes
+  through `src/lib/storage.js`, which degrades to a no-op — nothing in the game
+  depends on it.
+- `MediaQueryList.addEventListener` is Safari 14+. The reduced-motion hook
+  feature-detects and falls back to `addListener`.
+- React registers `touchstart` passively, so `preventDefault` from a touch
+  handler does nothing but log an error in Safari. `touch-action: none` on the
+  button does the real work.
+
 ## Known limits
 
 - One relay process holds live rooms in memory. It writes them down on change

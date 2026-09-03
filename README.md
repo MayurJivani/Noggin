@@ -217,6 +217,12 @@ queued and sent the moment it reconnects, and dropped if two seconds pass —
 arriving late would enter a race that is already over. The button says so rather
 than looking dead.
 
+**It works on the browsers people actually have.** Pointer *and* touch are both
+handled, since the in-app browsers links open in do not all implement Pointer
+Events. Nothing the buzzer needs depends on `localStorage`, which Safari lets
+you read and then refuses to write in Private Browsing — storage here only
+remembers a seat, so it degrades to a no-op instead of taking the page down.
+
 Pressing **before** the host arms costs a short lockout (500ms by default), so
 mashing the button from the moment a clue appears gains nothing. Losing the race
 by 60ms is *not* the same offence and costs nothing.

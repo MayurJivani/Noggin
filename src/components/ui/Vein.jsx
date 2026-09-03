@@ -80,14 +80,27 @@ const BRANCH_FRAMES = standingWave(BRANCH_HARMONICS)
  * is not rendered for anyone who asked for less movement.
  */
 const REDUCED = "(prefers-reduced-motion: reduce)"
+
+/**
+ * Safari before 14 gives `MediaQueryList` only the deprecated
+ * `addListener`/`removeListener` pair. Calling `addEventListener` on it throws,
+ * and this hook runs during the render of a component the *player page* uses —
+ * so on an older iPhone the whole buzzer failed to mount over a decorative
+ * flourish. Feature-detect, and treat no `matchMedia` at all as "no preference".
+ */
 function usePrefersReducedMotion() {
   return useSyncExternalStore(
     (cb) => {
-      const mq = window.matchMedia(REDUCED)
-      mq.addEventListener("change", cb)
-      return () => mq.removeEventListener("change", cb)
+      const mq = window.matchMedia?.(REDUCED)
+      if (!mq) return () => {}
+      if (mq.addEventListener) {
+        mq.addEventListener("change", cb)
+        return () => mq.removeEventListener("change", cb)
+      }
+      mq.addListener(cb)
+      return () => mq.removeListener(cb)
     },
-    () => window.matchMedia(REDUCED).matches,
+    () => window.matchMedia?.(REDUCED)?.matches ?? false,
     () => false,
   )
 }

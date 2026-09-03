@@ -3,6 +3,7 @@ import { useRoom } from "../../lib/useRoom"
 import { useAuth } from "../../lib/useAuth"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { DEFAULT_SETTINGS, makeBoard } from "../../lib/board"
+import { readJson, readStore, removeStore, writeJson, writeStore } from "../../lib/storage"
 import { getRelayOrigin } from "../../lib/mediaUrl"
 import { displayUrl, podiumsUrl, scoresUrl } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
@@ -30,14 +31,7 @@ export function AdminApp() {
 }
 
 function HostDesk({ auth }) {
-  const [board, setBoard] = useState(() => {
-    try {
-      const cached = JSON.parse(localStorage.getItem(STORAGE + ".board") ?? "null")
-      return cached ?? makeBoard()
-    } catch {
-      return makeBoard()
-    }
-  })
+  const [board, setBoard] = useState(() => readJson(STORAGE + ".board") ?? makeBoard())
   const [roundIndex, setRoundIndex] = useState(0)
   const [tab, setTab] = useState("build")
   const [pushState, setPushState] = useState("idle")
@@ -60,15 +54,11 @@ function HostDesk({ auth }) {
     if (params.get("new")) return ""
     const wanted = params.get("code")?.toUpperCase()
     if (wanted) return wanted
-    try {
-      return localStorage.getItem(STORAGE + ".code") ?? ""
-    } catch {
-      return ""
-    }
+    return readStore(STORAGE + ".code", "")
   })
 
   useEffect(() => {
-    localStorage.setItem(STORAGE + ".board", JSON.stringify(board))
+    writeJson(STORAGE + ".board", board)
   }, [board])
 
   // `?board=` opens a saved board straight into the builder.
@@ -102,7 +92,7 @@ function HostDesk({ auth }) {
         // the next connection would recreate it under the same code — a delete
         // that undoes itself. Home rather than a fresh room: you just ended the
         // game you were running, so the next choice is yours to make.
-        localStorage.removeItem(STORAGE + ".code")
+        removeStore(STORAGE + ".code")
         location.href = "/"
       }
     }, []),
@@ -114,7 +104,7 @@ function HostDesk({ auth }) {
       setCode(identity.code)
       setRoomsVersion((v) => v + 1)
     }
-    localStorage.setItem(STORAGE + ".code", identity.code)
+    writeStore(STORAGE + ".code", identity.code)
 
     /*
       Take `?new=1` out of the address bar the moment the room exists.
@@ -139,12 +129,12 @@ function HostDesk({ auth }) {
    * unpicking that by hand is a long list of places to forget one.
    */
   const goToRoom = (next) => {
-    localStorage.removeItem(STORAGE + ".board")
+    removeStore(STORAGE + ".board")
     if (next) {
-      localStorage.setItem(STORAGE + ".code", next)
+      writeStore(STORAGE + ".code", next)
       location.href = `/host?code=${next}`
     } else {
-      localStorage.removeItem(STORAGE + ".code")
+      removeStore(STORAGE + ".code")
       location.href = "/host?new=1"
     }
   }
