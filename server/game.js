@@ -48,7 +48,19 @@ export const DEFAULTS = {
   lifelines: { phone: 1 },
   /** A wrong answer subtracts the clue value as well as failing to add it. */
   penaltyForWrong: true,
+  /**
+   * What a won daily double pays, as a multiple of the wager.
+   *
+   * The show pays the wager back once. Two makes finding one worth the risk,
+   * which is the point of it being hidden. A miss always costs the wager
+   * itself, not a multiple — doubling the downside as well would make every
+   * daily double a coin flip nobody sane would take.
+   */
+  dailyDoubleMultiplier: 2,
 }
+
+/** How many score changes to remember per player. */
+const HISTORY_LIMIT = 30
 
 /**
  * How long after the winning press a later one still counts as part of the race.
@@ -235,7 +247,23 @@ export function makePlayer(id, name) {
     connected: true,
     joinedAt: Date.now(),
     lifelines: { ...DEFAULTS.lifelines },
+    /** Every score change, newest last. See `record`. */
+    history: [],
   }
+}
+
+/**
+ * Note a score change against the player it happened to.
+ *
+ * "Why am I on 400?" is the single most common question at a quiz, and until
+ * now the only answer was a number with no story behind it. Each entry carries
+ * what it was for, so the roster can show the working.
+ */
+function record(player, delta, reason, detail = null) {
+  if (!delta) return
+  player.history ??= []
+  player.history.push({ at: Date.now(), delta, score: player.score, reason, detail })
+  if (player.history.length > HISTORY_LIMIT) player.history.shift()
 }
 
 // ── Lookups ──────────────────────────────────────────────────────────────────
@@ -346,10 +374,36 @@ export function lockBuzzer(room) {
   return [{ kind: "buzzer-lock" }]
 }
 
-/** Wipe the race but keep the clue up — "everyone try again". */
+/** Wipe the race but keep the clue up, leaving the buzzer shut. */
 export function resetBuzzer(room) {
   resetBuzzerState(room)
   return [{ kind: "buzzer-reset" }]
+}
+
+/**
+ * Give the clue back to everyone, including whoever has already missed it.
+ *
+ * Arming alone cannot do this: a player who has answered is `spent` for the
+ * rest of the clue, so once everybody has had a go the buzzer could be opened
+ * and still nobody could press it. This is the "go on then, one more try"
+ * button — it clears the record of who is out and opens the buzzer in one
+ * move, because doing it in two left a state where neither half worked.
+ */
+export function reopenBuzzer(room, now = Date.now()) {
+  if (room.phase !== PHASE.CLUE) return []
+  if (room.wager) return [] // a daily double belongs to one player
+  resetBuzzerState(room)
+  room.buzzer.armed = true
+  room.buzzer.opened = true
+  room.buzzer.openedAt = now
+  room.timer = null
+  return [{ kind: "buzzer-reopen" }]
+}
+
+/** True when nobody left can press the button on this clue. */
+export function everyoneSpent(room) {
+  if (room.phase !== PHASE.CLUE || room.players.size === 0) return false
+  return [...room.players.keys()].every((id) => room.buzzer.spent.includes(id))
 }
 
 function resetBuzzerState(room) {
@@ -432,16 +486,23 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
   room.timer = null
 
   if (correct) {
-    player.score += amount
+    // A daily double pays a multiple of what was staked; an ordinary clue pays
+    // its face value, so the multiplier only ever applies to a wager.
+    const paid = room.wager ? amount * (room.settings.dailyDoubleMultiplier ?? 1) : amount
+    player.score += paid
+    record(player, paid, room.wager ? "daily-double" : "correct", clueLabel(room))
     room.buzzer.armed = false
     room.buzzer.winner = playerId
     room.phase = PHASE.REVEAL
     room.revealed = true
     markPlayed(room)
-    return [{ kind: "correct", playerId, amount, score: player.score }]
+    return [{ kind: "correct", playerId, amount: paid, score: player.score }]
   }
 
-  if (room.settings.penaltyForWrong) player.score -= amount
+  if (room.settings.penaltyForWrong) {
+    player.score -= amount
+    record(player, -amount, "wrong", clueLabel(room))
+  }
   room.buzzer.spent.push(playerId)
   room.buzzer.winner = null
 
@@ -471,6 +532,15 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
   return effects
 }
 
+/** A short "where did this come from", for the history. */
+function clueLabel(room) {
+  const clue = activeClue(room)
+  if (!clue) return null
+  const round = currentRound(room)
+  const cat = round?.categories[room.active?.catIndex]?.title
+  return cat ? `${cat} ${clue.value}` : String(clue.value)
+}
+
 const cloneBuzzer = (b) => ({ ...b, order: b.order.map((e) => ({ ...e })), lockedUntil: { ...b.lockedUntil }, spent: [...b.spent] })
 
 /**
@@ -491,6 +561,7 @@ export function undoJudgement(room) {
   }
 
   player.score = last.score
+  if (player.history?.length) player.history.pop()
   room.phase = last.phase
   room.revealed = last.revealed
   room.active = last.active
@@ -555,14 +626,19 @@ export function nextRound(room) {
 export function adjustScore(room, playerId, delta) {
   const player = room.players.get(playerId)
   if (!player) return []
-  player.score += num(delta, 0)
+  const by = num(delta, 0)
+  player.score += by
+  record(player, by, "adjust")
   return [{ kind: "score", playerId, score: player.score }]
 }
 
 export function setScore(room, playerId, score) {
   const player = room.players.get(playerId)
   if (!player) return []
-  player.score = num(score, 0)
+  const target = num(score, 0)
+  const by = target - player.score
+  player.score = target
+  record(player, by, "set")
   return [{ kind: "score", playerId, score: player.score }]
 }
 
@@ -727,6 +803,7 @@ export function judgeFinal(room, correct) {
 
   const wager = room.final.wagers[playerId] ?? 0
   player.score += correct ? wager : -wager
+  record(player, correct ? wager : -wager, correct ? "final-correct" : "final-wrong", "Final")
   room.final.judged[playerId] = correct
 
   const effects = [{ kind: correct ? "final-correct" : "final-wrong", playerId, wager, score: player.score }]
@@ -860,6 +937,7 @@ export function projectState(room, role, viewerId = null) {
     clue,
     stake: stake(room),
     canUndo: privileged && !!room.lastJudgement,
+    everyoneSpent: everyoneSpent(room),
     final: projectFinal(room, privileged, viewerId),
     wager: room.wager,
     revealed: room.revealed,
@@ -876,7 +954,16 @@ export function projectState(room, role, viewerId = null) {
       lockedUntil: room.buzzer.lockedUntil,
     },
     players: [...room.players.values()]
-      .map((p) => ({ id: p.id, name: p.name, score: p.score, connected: p.connected, lifelines: p.lifelines }))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        score: p.score,
+        connected: p.connected,
+        lifelines: p.lifelines,
+        // The working behind the total. Everyone can see it — it is a
+        // scoreboard, not a secret — but it is trimmed for the wire.
+        history: (p.history ?? []).slice(-12),
+      }))
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
   }
 }

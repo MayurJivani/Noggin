@@ -212,8 +212,13 @@ function Console({ state, send, connected, auth, viaKey }) {
             >
               ↩ Undo
             </button>
-            <button className="btn py-2 text-xs" disabled={!live} onClick={() => send("buzzer:reset")}>
-              Reset
+            <button
+              className={`btn py-2 text-xs ${state.everyoneSpent ? "btn-gold" : ""}`}
+              disabled={!live}
+              onClick={() => send(state.everyoneSpent ? "buzzer:reopen" : "buzzer:reset")}
+              title={state.everyoneSpent ? "Everyone has had a go — open it for all of them again" : "Clear the race"}
+            >
+              {state.everyoneSpent ? "↻ Again" : "Reset"}
             </button>
             <button className="btn py-2 text-xs" disabled={state.revealed || !clue} onClick={() => send("clue:reveal")}>
               Reveal

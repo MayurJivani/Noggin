@@ -63,29 +63,42 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName, timer, now 
         <ClueClock timer={timer} now={now} />
       </div>
 
-      <div className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-[2.5vmin] px-[6vmin] py-[3vmin] ${flown ? "" : "opacity-0"}`}>
-        {clue.prompt && (
-          <p
-            className="max-w-[46ch] text-center font-display leading-[1.16] text-ink animate-rise"
-            style={{ fontSize: `max(20px, calc(var(--stage) * ${Math.max(2.1, 5.4 - clue.prompt.length / 90)}))`, animationDelay: "220ms" }}
-          >
-            {clue.prompt}
-          </p>
-        )}
-        {clue.media && <Media media={clue.media} />}
-
-        {revealed && (
-          <div className="mt-[1vmin] flex flex-col items-center gap-[1.5vmin] animate-slam">
-            <VeinLine className="w-[36vmin]" height={16} />
-            <div className="label" style={{ letterSpacing: "0.4em" }}>
-              Answer
-            </div>
-            <p className="max-w-[40ch] text-center font-display leading-tight text-gold brass" style={{ fontSize: "max(22px, calc(var(--stage) * 4))" }}>
-              {clue.answer}
+      {/*
+        `m-auto` on the inner column rather than `justify-center` on the outer
+        one. Both centre while there is room, but a centred *flex* child cannot
+        be scrolled back to once it overflows — its top goes above the scroll
+        origin — and the card clips. With auto margins the content simply stops
+        being centred when it stops fitting, and the overflow is reachable.
+      */}
+      <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto px-[6vmin] py-[3vmin] ${flown ? "" : "opacity-0"}`}>
+        <div className="m-auto flex w-full flex-col items-center gap-[2.5vmin]">
+          {clue.prompt && (
+            <p
+              className="max-w-[46ch] shrink-0 text-center font-display leading-[1.16] text-ink animate-rise"
+              style={{ fontSize: `max(20px, calc(var(--stage) * ${Math.max(2.1, 5.4 - clue.prompt.length / 90)}))`, animationDelay: "220ms" }}
+            >
+              {clue.prompt}
             </p>
-            {clue.answerMedia && <Media media={clue.answerMedia} compact />}
-          </div>
-        )}
+          )}
+          {/* The picture yields to the answer. A tall image plus a revealed
+              answer is exactly the case that used to push the answer off the
+              bottom of the card, and of the two the answer is the one the room
+              is waiting for. */}
+          {clue.media && <Media media={clue.media} revealed={revealed} />}
+
+          {revealed && (
+            <div className="mt-[1vmin] flex shrink-0 flex-col items-center gap-[1.5vmin] animate-slam">
+              <VeinLine className="w-[36vmin]" height={16} />
+              <div className="label" style={{ letterSpacing: "0.4em" }}>
+                Answer
+              </div>
+              <p className="max-w-[40ch] text-center font-display leading-tight text-gold brass" style={{ fontSize: "max(22px, calc(var(--stage) * 4))" }}>
+                {clue.answer}
+              </p>
+              {clue.answerMedia && <Media media={clue.answerMedia} compact />}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -145,7 +158,7 @@ function ClueClock({ timer, now }) {
   )
 }
 
-function Media({ media, compact = false }) {
+function Media({ media, compact = false, revealed = false }) {
   const src = resolveMediaUrl(media.url)
 
   if (media.kind === "image") {
@@ -153,8 +166,8 @@ function Media({ media, compact = false }) {
       <img
         src={src}
         alt={media.alt ?? ""}
-        className="rounded-[1vmin] border border-gold-deep/30 object-contain shadow-xl shadow-black/50 animate-rise"
-        style={{ maxHeight: compact ? "24vh" : "46vh", animationDelay: "300ms" }}
+        className="min-h-0 shrink rounded-[1vmin] border border-gold-deep/30 object-contain shadow-xl shadow-black/50 transition-all duration-500 animate-rise"
+        style={{ maxHeight: compact ? "24vh" : revealed ? "30vh" : "46vh", animationDelay: "300ms" }}
       />
     )
   }

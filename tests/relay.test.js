@@ -223,7 +223,8 @@ test("a full round, over the wire", async (t) => {
 
     host.send("judge", { correct: true })
     await settle()
-    assert.equal(host.state.players.find((p) => p.id === B).score, 350)
+    // 200 already, staking 150 on a daily double, which pays double.
+    assert.equal(host.state.players.find((p) => p.id === B).score, 200 + 150 * 2)
     host.send("clue:close")
     await settle()
   })

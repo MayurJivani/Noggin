@@ -379,6 +379,18 @@ function BuzzerPanel({ state, send, now }) {
         <button className="btn" disabled={!live} onClick={() => send("buzzer:reset")}>
           Reset <Kbd>esc</Kbd>
         </button>
+        {/* Surfaced only when it is the answer to something. Arming on its own
+            cannot help here: everyone is spent, so the buzzer would open and
+            nobody could press it. */}
+        {live && (state.everyoneSpent || buzzer.spent.length > 0) && (
+          <button
+            className={`btn ${state.everyoneSpent ? "btn-gold animate-pop" : ""}`}
+            onClick={() => send("buzzer:reopen")}
+            title="Clear who is out and open the buzzer again, so everyone can have another go"
+          >
+            ↻ Everyone again
+          </button>
+        )}
 
         {lifeline && (
           <span className="ml-auto flex items-center gap-2 rounded-lg border border-amethyst bg-royal/30 px-2.5 py-1">
@@ -413,7 +425,11 @@ function BuzzerPanel({ state, send, now }) {
       )}
       {buzzer.spent.length > 0 && (
         <div className="mt-1.5 text-[10px] text-faint">
-          out this clue: {buzzer.spent.map((id) => byId[id]?.name ?? "?").join(", ")}
+          {state.everyoneSpent ? (
+            <span className="text-live">Everyone has had a go — reopen it or move on.</span>
+          ) : (
+            <>out this clue: {buzzer.spent.map((id) => byId[id]?.name ?? "?").join(", ")}</>
+          )}
         </div>
       )}
     </div>

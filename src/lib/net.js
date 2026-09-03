@@ -56,6 +56,11 @@ export async function scoresUrl(code) {
   return `${await originForLan()}/scores?code=${code}`
 }
 
+/** Every player's podium on one screen, for a monitor in front of the seats. */
+export async function podiumsUrl(code) {
+  return `${await originForLan()}/podium?code=${code}`
+}
+
 /** One player's podium screen, for the tablet in front of them. */
 export async function podiumUrl(code, name) {
   return `${await originForLan()}/podium?code=${code}&name=${encodeURIComponent(name)}`

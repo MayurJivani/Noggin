@@ -115,7 +115,9 @@ Two halves, one page, because on the night you flip between them constantly.
 **Build** works with nothing else running. Click a tile to write it: clue text,
 an answer only you ever see, points, and optionally an image or a sound. Mark
 tiles as daily doubles by hand or hit **✦ Scatter** to place them the way the
-show does. Everything autosaves to the relay — closing the tab at 1am doesn't
+show does. A won daily double pays **twice** the wager (`dailyDoubleMultiplier`);
+a missed one costs the wager itself, since doubling the downside as well would
+make every one a coin flip nobody sane would take. Everything autosaves to the relay — closing the tab at 1am doesn't
 cost you the quiz. Export drops a `.noggin.json` you can mail to someone.
 
 Boards can be opened, **duplicated** (⧉ — next month's quiz usually starts as
@@ -130,6 +132,12 @@ remaining round has no ✕, since a board with no rounds is not a board.
   recorded with its margin, so a photo finish can be settled by eye.
 - **Correct** / **Wrong** rules on the player holding the floor. A miss deducts
   and reopens the buzzer for everyone who hasn't answered yet.
+- **↻ Everyone again** appears once people are out, and turns gold when *all*
+  of them are. Arming cannot help at that point — a player who has answered is
+  out for the rest of the clue, so the buzzer would open with nobody able to
+  press it. This clears who is out and opens it in one move.
+- **▸** beside a score opens that player's history: every change, what it was
+  for, and the running total. "Why am I on 400?" now has an answer.
 - Any score can be corrected by clicking it. Hosts make mistakes and arguing
   with software in front of an audience is not an option.
 - ☎ grants Phone a Friend. Players can ask from their phone; you still decide.

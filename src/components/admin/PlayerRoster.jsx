@@ -6,6 +6,38 @@ import { podiumUrl } from "../../lib/net"
  * someone will be awarded points for an answer the host didn't anticipate, and
  * arguing with the software in front of an audience is not an option.
  */
+const REASONS = {
+  correct: "correct",
+  wrong: "wrong",
+  "daily-double": "daily double",
+  "final-correct": "final",
+  "final-wrong": "final",
+  adjust: "by hand",
+  set: "set by hand",
+}
+
+function ScoreHistory({ history }) {
+  const rows = [...(history ?? [])].reverse()
+  if (!rows.length) return <div className="mt-1.5 px-1 text-[10px] text-faint">Nothing scored yet.</div>
+  return (
+    <ol className="mt-1.5 max-h-32 space-y-0.5 overflow-y-auto rounded border border-edge bg-black/25 px-2 py-1.5">
+      {rows.map((e, i) => (
+        <li key={i} className="flex items-baseline gap-2 text-[10px]">
+          <span className={`w-12 shrink-0 text-right font-value tabular-nums ${e.delta < 0 ? "text-bad" : "text-good"}`}>
+            {e.delta > 0 ? "+" : ""}
+            {e.delta}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-muted">
+            {e.detail ? `${e.detail} · ` : ""}
+            {REASONS[e.reason] ?? e.reason}
+          </span>
+          <span className="shrink-0 font-value tabular-nums text-faint">{e.score}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 export function PlayerRoster({ players, send, buzzer, lifeline, requests, stake, code }) {
   return (
     <div className="panel flex min-h-0 flex-col">
@@ -37,6 +69,7 @@ export function PlayerRoster({ players, send, buzzer, lifeline, requests, stake,
 
 function PlayerRow({ player, send, buzzer, lifeline, requested, stake, code }) {
   const [editing, setEditing] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const [draft, setDraft] = useState(String(player.score))
 
   const holdsBuzz = buzzer.winner === player.id
@@ -76,18 +109,31 @@ function PlayerRow({ player, send, buzzer, lifeline, requested, stake, code }) {
             }}
           />
         ) : (
-          <button
-            className={`shrink-0 font-value text-[17px] tabular-nums ${player.score < 0 ? "text-bad" : "text-gold"}`}
-            onClick={() => {
-              setDraft(String(player.score))
-              setEditing(true)
-            }}
-            title="Click to set exactly"
-          >
-            {player.score}
-          </button>
+          <>
+            <button
+              className="shrink-0 px-1 text-[10px] text-faint transition-colors hover:text-gold"
+              title="Where this score came from"
+              onClick={() => setShowHistory((v) => !v)}
+            >
+              {showHistory ? "▾" : "▸"}
+            </button>
+            <button
+              className={`shrink-0 font-value text-[17px] tabular-nums ${player.score < 0 ? "text-bad" : "text-gold"}`}
+              onClick={() => {
+                setDraft(String(player.score))
+                setEditing(true)
+              }}
+              title="Click to set exactly"
+            >
+              {player.score}
+            </button>
+          </>
         )}
       </div>
+
+      {/* "Why am I on 400?" is the most common question at a quiz, and until now
+          the only answer was the number itself. */}
+      {showHistory && <ScoreHistory history={player.history} />}
 
       <div className="mt-1.5 flex items-center gap-1">
         <button className="btn px-1.5 py-0.5 text-[10px]" onClick={() => send("score:adjust", { playerId: player.id, delta: stake || 100 })}>

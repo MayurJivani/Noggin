@@ -4,116 +4,174 @@ import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
 
-const PINNED = "noggin.podium"
-
 /**
- * One player's podium.
+ * Podiums: an individual scoreboard for each player.
  *
- * The screen that stands in front of a contestant: their name banded across the
- * top, their score filling the middle, and nothing else competing with it. Put
- * one on a tablet or spare monitor at each seat.
+ * Two ways to run it, because there are two ways a room is set up:
  *
- * Everything else this screen knows how to say — buzzed in, on the phone, what
- * they staked — is said *on the score*, by lighting the whole panel, because
- * from the far side of a room a badge is invisible and a colour is not.
+ * - **A screen each.** `?name=` pins one player, for the tablet standing in
+ *   front of them.
+ * - **One screen for all of them.** No name, and every player gets their own
+ *   panel side by side — the same thing a row of lecterns shows, on a single
+ *   monitor laid in front of the seats.
  *
- * Read-only, and joins as a viewer, so it is subject to the same redaction as
- * the big screen: a blind final wager stays blind here too.
+ * The URL is the whole state. A booth tablet that reloads, or gets handed to
+ * someone else, is doing what its address says rather than what it happens to
+ * remember.
+ *
+ * Read-only, and joins as a viewer, so it is under the same redaction as the
+ * big screen: it never learns an unplayed clue, and a blind final wager stays
+ * blind here too.
  */
 export function PodiumApp() {
   const params = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams()
   const [code] = useState(() => (params.get("code") ?? "").toUpperCase())
-  // A booth tablet must come back to the same player after a reload — nobody
-  // wants to re-pick five podiums because the wifi blinked.
-  const [pick, setPick] = useState(() => params.get("name") ?? localStorage.getItem(`${PINNED}.${code}`) ?? "")
+  const only = (params.get("name") ?? "").trim().toLowerCase()
   const [error, setError] = useState(null)
   const { state, connected } = useRoom({ role: "display", code, onError: setError })
   const now = useCallback(() => Date.now(), [])
-
-  useEffect(() => {
-    if (code && pick) localStorage.setItem(`${PINNED}.${code}`, pick)
-  }, [code, pick])
 
   if (!code) return <Frame><CodeForm /></Frame>
   if (error) return <Frame><span className="text-muted">{error.message}</span></Frame>
   if (!state) return <Frame><span className="text-faint">{connected ? "Joining…" : "Looking for the room…"}</span></Frame>
 
-  const me = state.players.find((p) => p.name.toLowerCase() === pick.trim().toLowerCase())
-  if (!me) return <Frame><Picker players={state.players} onPick={setPick} /></Frame>
+  const players = only ? state.players.filter((p) => p.name.toLowerCase() === only) : state.players
 
-  const holds = state.buzzer.winner === me.id
-  const spent = state.buzzer.spent.includes(me.id)
-  const onCall = state.lifeline?.playerId === me.id
-  const wager = state.wager?.playerId === me.id ? state.wager.amount : null
-  const final = state.final?.players?.find((f) => f.id === me.id)
+  if (only && !players.length) {
+    return (
+      <Frame>
+        <div className="space-y-3">
+          <div className="text-muted">Nobody in this room is called “{params.get("name")}”.</div>
+          <a className="btn btn-gold" href={`/podium?code=${code}`}>
+            Show every podium
+          </a>
+        </div>
+      </Frame>
+    )
+  }
+
+  if (!players.length) {
+    return <Frame><span className="text-faint">Nobody has joined this room yet.</span></Frame>
+  }
 
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden">
       <Backdrop veins={6} glow={3} />
 
-      {/*
-        The whole panel is the indicator. A contestant looking at their own
-        podium sees the colour before they read anything on it, which is the
-        point — they need to know they are in before they start talking.
-      */}
-      <div
-        className={`relative z-10 m-[2vmin] flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2vmin] border-[0.5vmin] transition-all duration-300 ${
-          holds
-            ? "border-live bg-live/12 shadow-[0_0_10vmin_rgba(255,207,61,0.28)]"
-            : onCall
-              ? "border-amethyst bg-royal/45"
-              : spent
-                ? "border-edge bg-black/40"
-                : "border-gold-deep/50 bg-gradient-to-b from-onyx/90 to-void/95"
-        }`}
-      >
-        <div className="shrink-0 px-[3vmin] pt-[2.5vmin] text-center">
-          <div
-            className="truncate font-display uppercase leading-none text-ink"
-            style={{ fontSize: "max(22px, calc(var(--stage) * 5.5))", letterSpacing: "0.04em" }}
-          >
-            {me.name}
-          </div>
-          <VeinLine className="mx-auto mt-[1.5vmin] w-[80%]" height={16} />
+      <main className="relative z-10 min-h-0 flex-1 p-[1.5vmin]">
+        <div
+          className="grid h-full gap-[1.5vmin]"
+          style={{ gridTemplateColumns: `repeat(${columnsFor(players.length)}, minmax(0, 1fr))`, gridAutoRows: "minmax(0, 1fr)" }}
+        >
+          {players.map((p) => (
+            <Podium key={p.id} player={p} state={state} now={now} solo={!!only} code={code} />
+          ))}
         </div>
+      </main>
 
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[1.5vmin] px-[3vmin]">
-          <Score value={me.score} />
-
-          {/* One line, and only when there is something to say. */}
-          <StatusLine
-            holds={holds}
-            spent={spent}
-            onCall={onCall}
-            callEndsAt={onCall ? state.lifeline.endsAt : null}
-            wager={wager}
-            final={final}
-            finalStage={state.final?.stage}
-            phase={state.phase}
-            armed={state.buzzer.armed}
-            now={now}
-          />
-        </div>
-
-        <div className="flex shrink-0 items-center justify-center gap-[1.5vmin] pb-[2.5vmin] opacity-70">
-          <BrandMark className="text-[max(11px,calc(var(--stage)*1.6))]" />
-          <span className="label">{state.code}</span>
-          {!connected && <span className="h-[1vmin] w-[1vmin] rounded-full bg-bad animate-glow" title="reconnecting" />}
-        </div>
-      </div>
-
-      <button
-        className="absolute bottom-[1vmin] right-[1.5vmin] z-20 text-[0.7rem] text-faint/60 transition-colors hover:text-muted"
-        onClick={() => setPick("")}
-      >
-        change player
-      </button>
+      <footer className="relative z-10 flex shrink-0 items-center justify-center gap-[2vmin] pb-[1.2vmin] opacity-70">
+        <BrandMark className="text-[max(11px,calc(var(--stage)*1.5))]" />
+        <span className="label">{state.code}</span>
+        {!connected && <span className="h-[1vmin] w-[1vmin] rounded-full bg-bad animate-glow" title="reconnecting" />}
+        {only && (
+          <a className="text-[0.7rem] text-faint/70 transition-colors hover:text-muted" href={`/podium?code=${code}`}>
+            all podiums
+          </a>
+        )}
+      </footer>
     </div>
   )
 }
 
-/** The number, rolling. It is the whole screen, so it gets the whole screen. */
-function Score({ value }) {
+/**
+ * Panels stay tall rather than spreading into a row of slivers. Three across is
+ * the shape of the thing being imitated, and a fourth player wraps rather than
+ * halving everyone's width.
+ */
+const columnsFor = (n) => (n <= 1 ? 1 : n <= 2 ? 2 : n <= 6 ? 3 : n <= 12 ? 4 : 5)
+
+function Podium({ player, state, now, solo, code }) {
+  const holds = state.buzzer.winner === player.id
+  const spent = state.buzzer.spent.includes(player.id)
+  const onCall = state.lifeline?.playerId === player.id
+  const wager = state.wager?.playerId === player.id ? state.wager.amount : null
+  const final = state.final?.players?.find((f) => f.id === player.id)
+  const dimmed = !!state.lifeline && !onCall
+
+  /*
+    The whole panel is the indicator. A contestant looking at their own podium
+    sees the colour before they read anything on it, which is the point — they
+    need to know they are in before they start talking.
+  */
+  const skin = holds
+    ? "border-live bg-live/12 shadow-[0_0_8vmin_rgba(255,207,61,0.28)]"
+    : onCall
+      ? "border-amethyst bg-royal/45"
+      : spent
+        ? "border-edge bg-black/40"
+        : "border-gold-deep/50 bg-gradient-to-b from-onyx/90 to-void/95"
+
+  const body = (
+    <>
+      <div className="shrink-0 px-[2vmin] pt-[2vmin] text-center">
+        <div
+          className="truncate font-display uppercase leading-none text-ink"
+          style={{ fontSize: `max(16px, calc(var(--stage) * ${solo ? 5.5 : 3.2}))`, letterSpacing: "0.04em" }}
+        >
+          {player.name}
+        </div>
+        <VeinLine className="mx-auto mt-[1.2vmin] w-[80%]" height={solo ? 16 : 12} />
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[1.2vmin] px-[1.5vmin]">
+        <Score value={player.score} solo={solo} />
+        <StatusLine
+          holds={holds}
+          spent={spent}
+          onCall={onCall}
+          callEndsAt={onCall ? state.lifeline.endsAt : null}
+          wager={wager}
+          final={final}
+          finalStage={state.final?.stage}
+          phase={state.phase}
+          armed={state.buzzer.armed}
+          solo={solo}
+          now={now}
+        />
+      </div>
+
+      <div className="flex shrink-0 items-center justify-center gap-[1vmin] pb-[1.5vmin]">
+        {(player.lifelines?.phone ?? 0) > 0 && (
+          <span className="text-gold-dim" style={{ fontSize: `max(9px, calc(var(--stage) * ${solo ? 1.5 : 1.1}))` }}>
+            ☎ {player.lifelines.phone}
+          </span>
+        )}
+        {!player.connected && (
+          <span className="text-faint" style={{ fontSize: `max(9px, calc(var(--stage) * ${solo ? 1.5 : 1.1}))` }}>
+            away
+          </span>
+        )}
+      </div>
+    </>
+  )
+
+  const shell = `relative flex min-h-0 flex-col overflow-hidden rounded-[1.5vmin] border-[0.4vmin] transition-all duration-300 ${skin} ${
+    dimmed ? "opacity-40" : ""
+  }`
+
+  // On the wall each panel is a link to its own screen, so a booth tablet gets
+  // an address it will still be showing after a reload.
+  return solo ? (
+    <div className={shell}>{body}</div>
+  ) : (
+    <a className={`${shell} hover:border-gold`} href={`/podium?code=${code}&name=${encodeURIComponent(player.name)}`} title={`Open ${player.name}'s own screen`}>
+      {body}
+    </a>
+  )
+}
+
+/** The number, rolling. It is most of the panel, so it gets most of the panel. */
+function Score({ value, solo }) {
   const [shown, setShown] = useState(value)
   const from = useRef(value)
   const raf = useRef(0)
@@ -138,65 +196,52 @@ function Score({ value }) {
   return (
     <div
       className={`font-value leading-[0.85] tabular-nums ${shown < 0 ? "text-bad" : "text-gold"} ${moving ? "" : "brass"}`}
-      style={{ fontSize: "max(56px, calc(var(--stage) * 16))" }}
+      style={{ fontSize: `max(${solo ? 56 : 34}px, calc(var(--stage) * ${solo ? 16 : 8}))` }}
     >
       {shown}
     </div>
   )
 }
 
-function StatusLine({ holds, spent, onCall, callEndsAt, wager, final, finalStage, phase, armed, now }) {
+function StatusLine({ holds, spent, onCall, callEndsAt, wager, final, finalStage, phase, armed, solo, now }) {
   const left = useCountdown(callEndsAt, now)
+  const size = { fontSize: `max(10px, calc(var(--stage) * ${solo ? 2 : 1.3}))` }
 
   if (onCall) {
     const seconds = Math.ceil((left ?? 0) / 1000)
     return (
-      <Line tone="text-amethyst">
+      <Line tone="text-amethyst" size={size}>
         ☎ Phone a friend
-        <span className={`ml-[1.5vmin] font-value tabular-nums ${seconds <= 5 ? "text-bad" : "text-amethyst"}`}>{seconds}</span>
+        <span className={`ml-[1.2vmin] font-value tabular-nums ${seconds <= 5 ? "text-bad" : "text-amethyst"}`}>{seconds}</span>
       </Line>
     )
   }
-  if (holds) return <Line tone="text-live">You're in — answer</Line>
-  if (wager != null) return <Line tone="text-live">✦ Wagered {wager}</Line>
-  if (spent) return <Line tone="text-faint">Out this clue</Line>
+  if (holds) return <Line tone="text-live" size={size}>You're in — answer</Line>
+  if (wager != null) return <Line tone="text-live" size={size}>✦ Wagered {wager}</Line>
+  if (spent) return <Line tone="text-faint" size={size}>Out this clue</Line>
 
   if (phase === "final" && final) {
-    if (finalStage === "wager") return <Line tone="text-gold">{final.wagered ? "Bet placed" : "Place your bet"}</Line>
-    if (finalStage === "clue") return <Line tone="text-gold">{final.answered ? "Answer locked" : "Writing…"}</Line>
-    if (final.judged != null) return <Line tone={final.judged ? "text-good" : "text-bad"}>{final.judged ? "Correct" : "Wrong"}</Line>
-    return <Line tone="text-gold">Final</Line>
+    if (finalStage === "wager") return <Line tone="text-gold" size={size}>{final.wagered ? "Bet placed" : "Place your bet"}</Line>
+    if (finalStage === "clue") return <Line tone="text-gold" size={size}>{final.answered ? "Answer locked" : "Writing…"}</Line>
+    if (final.judged != null)
+      return (
+        <Line tone={final.judged ? "text-good" : "text-bad"} size={size}>
+          {final.judged ? "Correct" : "Wrong"}
+          {final.wager != null && ` · ${final.judged ? "+" : "−"}${final.wager}`}
+        </Line>
+      )
+    return <Line tone="text-gold" size={size}>Final</Line>
   }
 
-  if (armed) return <Line tone="text-good">Buzzers open</Line>
+  if (armed) return <Line tone="text-good" size={size}>Buzzers open</Line>
   return null
 }
 
-const Line = ({ tone, children }) => (
-  <div
-    className={`flex items-center font-display uppercase tracking-[0.25em] ${tone}`}
-    style={{ fontSize: "max(12px, calc(var(--stage) * 2))" }}
-  >
+const Line = ({ tone, size, children }) => (
+  <div className={`flex items-center text-center font-display uppercase tracking-[0.22em] ${tone}`} style={size}>
     {children}
   </div>
 )
-
-function Picker({ players, onPick }) {
-  return (
-    <div className="w-full max-w-sm text-center">
-      <div className="label mb-3">Which podium is this?</div>
-      {players.length === 0 && <div className="text-sm text-faint">Nobody has joined this room yet.</div>}
-      <div className="flex flex-col gap-2">
-        {players.map((p) => (
-          <button key={p.id} className="btn py-3 text-base" onClick={() => onPick(p.name)}>
-            {p.name}
-          </button>
-        ))}
-      </div>
-      <p className="mt-4 text-xs text-faint">This screen remembers your choice.</p>
-    </div>
-  )
-}
 
 function CodeForm() {
   const [value, setValue] = useState("")
@@ -209,7 +254,7 @@ function CodeForm() {
       }}
     >
       <BrandMark className="text-2xl" />
-      <div className="label">podium</div>
+      <div className="label">podiums</div>
       <div className="flex gap-2">
         <input
           className="field w-40 text-center font-display text-2xl uppercase tracking-[0.3em]"

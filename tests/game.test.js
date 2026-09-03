@@ -560,3 +560,99 @@ test("the race list reports margins behind the winner, not time since arming", (
   // The absolute figure is still there, and is still dominated by the host.
   assert.equal(order[0].ms, 20_000)
 })
+
+test("a clue can be given back to everyone after they have all missed it", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+
+  G.buzz(room, "p0", 10)
+  G.judge(room, false)
+  G.buzz(room, "p1", 20)
+  G.judge(room, false)
+
+  assert.equal(G.everyoneSpent(room), true, "nobody is left to press")
+  assert.equal(room.buzzer.armed, false)
+
+  // Arming alone is not enough — everyone is still marked out.
+  G.armBuzzer(room)
+  assert.equal(G.buzz(room, "p0", 30).length, 0, "still spent")
+
+  assert.deepEqual(kinds(G.reopenBuzzer(room, 1000)), ["buzzer-reopen"])
+  assert.deepEqual(room.buzzer.spent, [], "the record of who is out is cleared")
+  assert.equal(room.buzzer.armed, true, "and the buzzer is open in the same move")
+  assert.deepEqual(kinds(G.buzz(room, "p0", 1100)), ["buzz-in"], "they can try again")
+})
+
+test("reopening leaves a daily double alone", () => {
+  const room = setup()
+  G.currentRound(room).categories[0].clues[0].dailyDouble = true
+  G.selectClue(room, 0, 0)
+  G.setWager(room, "p0", 100)
+  assert.equal(G.reopenBuzzer(room).length, 0, "it is one player's clue, not a race")
+})
+
+test("a daily double pays a multiple of the wager, but only costs the wager", () => {
+  const room = setup()
+  G.currentRound(room).categories[0].clues[0].dailyDouble = true
+  room.players.get("p0").score = 500
+
+  G.selectClue(room, 0, 0)
+  G.setWager(room, "p0", 300)
+  G.judge(room, true)
+  assert.equal(room.players.get("p0").score, 500 + 600, "won twice the stake")
+
+  // And a miss costs the stake itself — doubling the downside would make every
+  // daily double a coin flip nobody would take.
+  const other = setup()
+  G.currentRound(other).categories[0].clues[0].dailyDouble = true
+  other.players.get("p0").score = 500
+  G.selectClue(other, 0, 0)
+  G.setWager(other, "p0", 300)
+  G.judge(other, false)
+  assert.equal(other.players.get("p0").score, 200)
+})
+
+test("an ordinary clue is unaffected by the daily double multiplier", () => {
+  const room = setup()
+  G.selectClue(room, 0, 1) // 400
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 5)
+  G.judge(room, true)
+  assert.equal(room.players.get("p0").score, 400)
+})
+
+test("every score change is recorded with what it was for", () => {
+  const room = setup()
+  G.selectClue(room, 0, 1) // CAT0 400
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 5)
+  G.judge(room, true)
+  G.closeClue(room)
+  G.adjustScore(room, "p0", 50)
+
+  const h = G.projectState(room, "host").players.find((p) => p.id === "p0").history
+  assert.equal(h.length, 2)
+  assert.deepEqual(
+    h.map((e) => [e.delta, e.reason]),
+    [
+      [400, "correct"],
+      [50, "adjust"],
+    ],
+  )
+  assert.equal(h[0].detail, "CAT0 400", "and where it came from")
+  assert.equal(h[1].score, 450, "with the running total")
+})
+
+test("undoing a ruling takes its history entry with it", () => {
+  const room = setup()
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 5)
+  G.judge(room, true)
+  assert.equal(room.players.get("p0").history.length, 1)
+
+  G.undoJudgement(room)
+  assert.equal(room.players.get("p0").history.length, 0, "or the working stops matching the total")
+  assert.equal(room.players.get("p0").score, 0)
+})

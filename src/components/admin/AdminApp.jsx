@@ -4,7 +4,7 @@ import { useAuth } from "../../lib/useAuth"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { DEFAULT_SETTINGS, makeBoard } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
-import { displayUrl, scoresUrl } from "../../lib/net"
+import { displayUrl, podiumsUrl, scoresUrl } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
@@ -238,6 +238,7 @@ function HostDesk({ auth }) {
 
         <div className="ml-auto flex items-center gap-3">
           <ScreenLink code={state?.code} />
+          <ScreenLink code={state?.code} kind="podiums" />
           <ScreenLink code={state?.code} kind="scores" />
           <RoomSwitcher
             code={state?.code}
@@ -318,12 +319,12 @@ function ScreenLink({ code, kind = "display" }) {
   const [url, setUrl] = useState("")
   useEffect(() => {
     if (!code) return
-    ;(kind === "scores" ? scoresUrl : displayUrl)(code).then(setUrl)
+    ;({ scores: scoresUrl, podiums: podiumsUrl, display: displayUrl }[kind] ?? displayUrl)(code).then(setUrl)
   }, [code, kind])
   if (!url) return null
   return (
     <a className="btn text-[11px]" href={url} target="_blank" rel="noreferrer">
-      {kind === "scores" ? "Scoreboard ↗" : "Open big screen ↗"}
+      {{ scores: "Scoreboard ↗", podiums: "Podiums ↗" }[kind] ?? "Open big screen ↗"}
     </a>
   )
 }

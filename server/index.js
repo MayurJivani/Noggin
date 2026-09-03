@@ -1036,6 +1036,8 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.lockBuzzer(room))
     case "buzzer:reset":
       return apply(room, G.resetBuzzer(room))
+    case "buzzer:reopen":
+      return apply(room, G.reopenBuzzer(room))
     case "judge":
       return apply(room, G.judge(room, !!msg.correct, msg.playerId))
     case "judge:undo":
