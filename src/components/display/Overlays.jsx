@@ -29,18 +29,18 @@ export function BuzzOverlay({ name, verdict }) {
   )
 }
 
-/** The daily double splash — the one moment the board is allowed to shout. */
-export function DailyDoubleSplash({ show }) {
+/** The Nitro splash — the one moment the board is allowed to shout. */
+export function NitroSplash({ show }) {
   if (!show) return null
   return (
     <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center overflow-hidden bg-void/70 backdrop-blur-sm">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(242,201,107,0.26),transparent_62%)] animate-flare" />
       <div className="text-center animate-slam">
         <div className="font-display leading-[0.9] brass" style={{ fontSize: "max(40px, calc(var(--stage) * 11))" }}>
-          DAILY
+          NOGGIN&rsquo;
         </div>
         <div className="font-display leading-[0.9] brass" style={{ fontSize: "max(40px, calc(var(--stage) * 11))" }}>
-          DOUBLE
+          NITRO
         </div>
       </div>
     </div>

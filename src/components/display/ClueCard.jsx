@@ -55,9 +55,9 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName, timer, now 
         <span className="ml-auto font-value tabular-nums text-gold brass-sm" style={{ fontSize: "max(20px, calc(var(--stage) * 3))" }}>
           {stake}
         </span>
-        {clue.dailyDouble && (
+        {clue.nitro && (
           <span className="rounded-full border border-live/60 px-[1.4vmin] py-[0.4vmin] font-display text-live animate-glow" style={{ fontSize: "max(9px, calc(var(--stage) * 1))" }}>
-            ✦ DAILY DOUBLE{wagerName ? ` · ${wagerName}` : ""}
+            ✦ NOGGIN&rsquo; NITRO{wagerName ? ` · ${wagerName}` : ""}
           </span>
         )}
         <ClueClock timer={timer} now={now} />

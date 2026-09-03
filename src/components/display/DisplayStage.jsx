@@ -9,7 +9,7 @@ import { BoardGrid } from "./BoardGrid"
 import { FinalStage } from "./FinalStage"
 import { ClueCard } from "./ClueCard"
 import { ScoreBar } from "./ScoreBar"
-import { BuzzerBanner, BuzzOverlay, DailyDoubleSplash, LifelineOverlay, TimerRing } from "./Overlays"
+import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, TimerRing } from "./Overlays"
 
 /**
  * The big screen. Read-only by design: it holds no game state of its own and
@@ -39,11 +39,11 @@ export function DisplayStage({ code: initialCode }) {
     for (const fx of effects) {
       playForEffect(fx)
 
-      if (fx.kind === "clue-open" || fx.kind === "daily-double") {
+      if (fx.kind === "clue-open" || fx.kind === "nitro") {
         const el = cells.current.get(`${fx.catIndex}:${fx.clueIndex}`)
         setOrigin(el ? el.getBoundingClientRect() : null)
       }
-      if (fx.kind === "daily-double") {
+      if (fx.kind === "nitro") {
         setSplash(true)
         setTimeout(() => setSplash(false), 2000)
       }
@@ -143,7 +143,7 @@ export function DisplayStage({ code: initialCode }) {
           </div>
         )}
 
-        <DailyDoubleSplash show={splash} />
+        <NitroSplash show={splash} />
         <LifelineOverlay lifeline={lifeline} playerName={players.find((p) => p.id === lifeline?.playerId)?.name} now={() => Date.now()} />
         <BuzzOverlay name={flash?.name} verdict={flash?.verdict} />
         {!clue && <TimerRing timer={timer} now={() => Date.now()} />}

@@ -4,7 +4,7 @@
  * Everything here is deliberately free of sockets, timers and disk so it can be
  * driven straight from `node --test`. The relay owns transport; this file owns
  * "what is true right now". Mutators return an array of *effects* — transient
- * things the display animates on (a buzz, a correct answer, a daily double
+ * things the display animates on (a buzz, a correct answer, a Nitro
  * splash) that aren't derivable from the state snapshot alone.
  */
 
@@ -12,7 +12,7 @@
 export const PHASE = {
   LOBBY: "lobby", // players joining, board not yet revealed
   BOARD: "board", // grid on screen, host picking
-  WAGER: "wager", // daily double — controlling player is setting a wager
+  WAGER: "wager", // Noggin' Nitro — the player who found it is setting a wager
   CLUE: "clue", // clue on screen; buzzer may or may not be armed
   REVEAL: "reveal", // answer shown
   INTERMISSION: "intermission", // between rounds
@@ -48,15 +48,6 @@ export const DEFAULTS = {
   lifelines: { phone: 1 },
   /** A wrong answer subtracts the clue value as well as failing to add it. */
   penaltyForWrong: true,
-  /**
-   * What a won daily double pays, as a multiple of the wager.
-   *
-   * The show pays the wager back once. Two makes finding one worth the risk,
-   * which is the point of it being hidden. A miss always costs the wager
-   * itself, not a multiple — doubling the downside as well would make every
-   * daily double a coin flip nobody sane would take.
-   */
-  dailyDoubleMultiplier: 2,
 }
 
 /** How many score changes to remember per player. */
@@ -87,7 +78,7 @@ export function makeClue(value = 200) {
     answer: "",
     /** Media revealed alongside the answer, e.g. "who sang this?" -> the artwork. */
     answerMedia: null,
-    dailyDouble: false,
+    nitro: false,
     status: CLUE_STATUS.OPEN,
   }
 }
@@ -168,7 +159,9 @@ export function normaliseBoard(raw) {
           media: media(cl?.media),
           answer: str(cl?.answer, 300),
           answerMedia: media(cl?.answerMedia),
-          dailyDouble: !!cl?.dailyDouble,
+          // Boards written before the rename say `dailyDouble`; read both so a
+          // saved game does not lose its marked tiles.
+          nitro: !!(cl?.nitro ?? cl?.dailyDouble),
           status: cl?.status === CLUE_STATUS.PLAYED ? CLUE_STATUS.PLAYED : CLUE_STATUS.OPEN,
         })),
       })),
@@ -276,7 +269,7 @@ export function activeClue(room) {
   return round?.categories[room.active.catIndex]?.clues[room.active.clueIndex] ?? null
 }
 
-/** What the clue is worth right now — a daily double overrides the tile value. */
+/** What the clue is worth right now — a nitro overrides the tile value. */
 export function stake(room) {
   const clue = activeClue(room)
   if (!clue) return 0
@@ -316,10 +309,10 @@ export function selectClue(room, catIndex, clueIndex) {
   room.lifeline = null
   resetBuzzerState(room)
 
-  if (clue.dailyDouble) {
+  if (clue.nitro) {
     room.phase = PHASE.WAGER
     room.wager = { playerId: null, amount: null }
-    return [{ kind: "daily-double", catIndex, clueIndex }]
+    return [{ kind: "nitro", catIndex, clueIndex }]
   }
 
   room.phase = PHASE.CLUE
@@ -339,14 +332,14 @@ export function selectClue(room, catIndex, clueIndex) {
   return effects
 }
 
-/** Daily double: name who controls the board and what they're risking. */
+/** Nitro: name who found it and what they are risking. */
 export function setWager(room, playerId, amount) {
   if (room.phase !== PHASE.WAGER) return []
   if (!room.players.has(playerId)) return []
   const capped = Math.max(0, Math.min(num(amount, 0), maxWager(room, playerId)))
   room.wager = { playerId, amount: capped }
   room.phase = PHASE.CLUE
-  // Nobody else may buzz on a daily double — it is that player's clue alone.
+  // Nobody else may buzz on a nitro — it is that player's clue alone.
   room.buzzer.winner = playerId
   room.buzzer.armed = false
   return [{ kind: "wager-set", playerId, amount: capped }]
@@ -354,7 +347,7 @@ export function setWager(room, playerId, amount) {
 
 export function armBuzzer(room, now = Date.now()) {
   if (room.phase !== PHASE.CLUE) return []
-  if (room.wager) return [] // daily double: no race to run
+  if (room.wager) return [] // a nitro belongs to one player: no race to run
   room.buzzer.armed = true
   room.buzzer.opened = true
   room.buzzer.openedAt = now
@@ -391,7 +384,7 @@ export function resetBuzzer(room) {
  */
 export function reopenBuzzer(room, now = Date.now()) {
   if (room.phase !== PHASE.CLUE) return []
-  if (room.wager) return [] // a daily double belongs to one player
+  if (room.wager) return [] // a nitro belongs to one player
   resetBuzzerState(room)
   room.buzzer.armed = true
   room.buzzer.opened = true
@@ -486,17 +479,14 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
   room.timer = null
 
   if (correct) {
-    // A daily double pays a multiple of what was staked; an ordinary clue pays
-    // its face value, so the multiplier only ever applies to a wager.
-    const paid = room.wager ? amount * (room.settings.dailyDoubleMultiplier ?? 1) : amount
-    player.score += paid
-    record(player, paid, room.wager ? "daily-double" : "correct", clueLabel(room))
+    player.score += amount
+    record(player, amount, room.wager ? "nitro" : "correct", clueLabel(room))
     room.buzzer.armed = false
     room.buzzer.winner = playerId
     room.phase = PHASE.REVEAL
     room.revealed = true
     markPlayed(room)
-    return [{ kind: "correct", playerId, amount: paid, score: player.score }]
+    return [{ kind: "correct", playerId, amount, score: player.score }]
   }
 
   if (room.settings.penaltyForWrong) {
@@ -508,7 +498,7 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
 
   const effects = [{ kind: "wrong", playerId, amount, score: player.score }]
 
-  // A daily double is a solo bet — a miss ends the clue rather than reopening it.
+  // A nitro is a solo bet — a miss ends the clue rather than reopening it.
   if (room.wager) {
     room.phase = PHASE.REVEAL
     room.revealed = true
@@ -903,7 +893,7 @@ export function projectState(room, role, viewerId = null) {
           value: clue.value,
           status: clue.status,
           // A tile that hasn't been played must not leak its contents.
-          ...(privileged ? { prompt: clue.prompt, answer: clue.answer, media: clue.media, dailyDouble: clue.dailyDouble } : {}),
+          ...(privileged ? { prompt: clue.prompt, answer: clue.answer, media: clue.media, nitro: clue.nitro } : {}),
         })),
       })),
     },
@@ -915,7 +905,7 @@ export function projectState(room, role, viewerId = null) {
     value: active.value,
     prompt: room.phase === PHASE.WAGER && !privileged ? "" : active.prompt,
     media: room.phase === PHASE.WAGER && !privileged ? null : active.media,
-    dailyDouble: active.dailyDouble,
+    nitro: active.nitro,
     answer: showAnswer ? active.answer : null,
     answerMedia: showAnswer ? active.answerMedia : null,
     catIndex: room.active.catIndex,

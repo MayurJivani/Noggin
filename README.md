@@ -4,7 +4,7 @@ A quiz-board game show for a room with a TV and a pile of phones.
 
 Write the board in the afternoon, put the big screen on the projector, let
 everyone scan a QR, and run the night from one desk. Categories, point ladders,
-image and audio clues, daily doubles, a real buzzer race with millisecond
+image and audio clues, Noggin’ Nitro tiles, a real buzzer race with millisecond
 ordering, and a Phone a Friend lifeline.
 
 ```sh
@@ -114,10 +114,11 @@ Two halves, one page, because on the night you flip between them constantly.
 
 **Build** works with nothing else running. Click a tile to write it: clue text,
 an answer only you ever see, points, and optionally an image or a sound. Mark
-tiles as daily doubles by hand or hit **✦ Scatter** to place them the way the
-show does. A won daily double pays **twice** the wager (`dailyDoubleMultiplier`);
-a missed one costs the wager itself, since doubling the downside as well would
-make every one a coin flip nobody sane would take. Everything autosaves to the relay — closing the tab at 1am doesn't
+tiles as **Noggin’ Nitro** by hand, or hit **✦ Scatter Nitro** to place them the
+way the show does. A Nitro tile is found rather than announced: whoever picks it
+stakes part of their score before seeing the clue, alone, with no buzzer race.
+Win and you gain the wager, miss and you lose it — so staking everything is what
+doubles your score, which is the whole appeal of finding one. Everything autosaves to the relay — closing the tab at 1am doesn't
 cost you the quiz. Export drops a `.noggin.json` you can mail to someone.
 
 Boards can be opened, **duplicated** (⧉ — next month's quiz usually starts as
@@ -290,7 +291,7 @@ npm test
 ```
 
 `tests/game.test.js` drives the rules engine directly — buzzer ordering,
-penalties, scoring, daily doubles, round rollover, and what each role is allowed
+penalties, scoring, Nitro wagers, round rollover, and what each role is allowed
 to see. `tests/relay.test.js` boots a real relay and runs a round over real
 sockets with a host, a big screen and two phones, then proves the parts that
 matter once this is on a public URL: a stranger cannot list, read, resume or

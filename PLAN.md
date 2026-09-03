@@ -31,10 +31,10 @@ What exists, and what is deliberately left for later.
 - **Storage** — Postgres when `DATABASE_URL` is set, JSON files otherwise,
   behind one async interface.
 - **Host desk** (`/host`) — board builder and control desk in one page.
-  Categories, editable point ladders, image/audio clues, daily doubles, board
+  Categories, editable point ladders, image/audio clues, Nitro tiles, board
   autosave and import/export, tunable rules.
 - **Big screen** (`/display`) — board grid, clue reveal that flies out of the
-  tile it came from, daily double splash, buzz-in slam, countdown rings,
+  tile it came from, Nitro splash, buzz-in slam, countdown rings,
   rolling scores, lobby with join QR.
 - **Player buzzer** (`/play`) — join by code or QR, one thumb-sized button,
   haptics, early-buzz feedback, the clue text mirrored for anyone who can't see

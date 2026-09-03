@@ -12,7 +12,7 @@ import {
   patchClue,
   patchRound,
   resizeRound,
-  sprinkleDailyDoubles,
+  scatterNitro,
 } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
 import { MediaField } from "../ui/MediaField"
@@ -264,11 +264,11 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
             >
               + Category
             </button>
-            <button className="btn" onClick={() => setBoard(patchRound(board, roundIndex, sprinkleDailyDoubles(round, roundIndex === 0 ? 1 : 2)))}>
-              ✦ Scatter daily doubles
+            <button className="btn" onClick={() => setBoard(patchRound(board, roundIndex, scatterNitro(round, roundIndex === 0 ? 1 : 2)))}>
+              ✦ Scatter Nitro
             </button>
             <div className="ml-auto text-[11px] text-faint">
-              {stats.filled}/{stats.clues} written · {stats.media} media · {stats.dailyDoubles} DD
+              {stats.filled}/{stats.clues} written · {stats.media} media · {stats.nitros} nitro
             </div>
           </div>
 
@@ -313,7 +313,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                           }`}
                         >
                           {cl.value}
-                          {cl.dailyDouble && <span className="absolute right-1.5 top-1 text-[10px] text-live">✦</span>}
+                          {cl.nitro && <span className="absolute right-1.5 top-1 text-[10px] text-live">✦</span>}
                           {written && !cl.answer.trim() && (
                             <span className="absolute bottom-1 left-1.5 text-[9px] text-bad" title="No answer recorded">
                               !
@@ -367,8 +367,8 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                   <input type="number" step={50} className="field" value={clue.value} onChange={(e) => patch({ value: +e.target.value || 0 })} />
                 </label>
                 <label className="mt-4 flex cursor-pointer items-center gap-2 text-[12px] text-muted">
-                  <input type="checkbox" checked={clue.dailyDouble} onChange={(e) => patch({ dailyDouble: e.target.checked })} />
-                  Daily double
+                  <input type="checkbox" checked={clue.nitro} onChange={(e) => patch({ nitro: e.target.checked })} />
+                  Noggin' Nitro
                 </label>
               </div>
 

@@ -31,7 +31,7 @@ export const makeClue = (value = 200) => ({
   media: null,
   answer: "",
   answerMedia: null,
-  dailyDouble: false,
+  nitro: false,
   status: "open",
 })
 
@@ -99,8 +99,8 @@ export function boardIssues(board) {
         void qi
       })
     })
-    const dds = round.categories.flatMap((c) => c.clues.filter((cl) => cl.dailyDouble))
-    if (dds.length > 2) issues.push({ level: "warn", where: label, message: `${dds.length} daily doubles in one round.` })
+    const hot = round.categories.flatMap((c) => c.clues.filter((cl) => cl.nitro))
+    if (hot.length > 2) issues.push({ level: "warn", where: label, message: `${hot.length} Nitro tiles in one round.` })
   })
   return issues
 }
@@ -109,18 +109,18 @@ export function boardStats(board) {
   let clues = 0
   let filled = 0
   let media = 0
-  let dailyDoubles = 0
+  let nitros = 0
   for (const round of board.rounds) {
     for (const cat of round.categories) {
       for (const clue of cat.clues) {
         clues++
         if (clue.prompt.trim() || clue.media) filled++
         if (clue.media) media++
-        if (clue.dailyDouble) dailyDoubles++
+        if (clue.nitro) nitros++
       }
     }
   }
-  return { clues, filled, media, dailyDoubles, rounds: board.rounds.length }
+  return { clues, filled, media, nitros, rounds: board.rounds.length }
 }
 
 /** Immutably replace one clue. Used by every editor control in the builder. */
@@ -160,11 +160,11 @@ export function patchRound(board, roundIndex, patch) {
   }
 }
 
-/** Scatter daily doubles the way the show does — never on the cheapest row. */
-export function sprinkleDailyDoubles(round, count = 1) {
+/** Scatter Nitro tiles the way the show does — never on the cheapest row. */
+export function scatterNitro(round, count = 1) {
   const cleared = {
     ...round,
-    categories: round.categories.map((c) => ({ ...c, clues: c.clues.map((cl) => ({ ...cl, dailyDouble: false })) })),
+    categories: round.categories.map((c) => ({ ...c, clues: c.clues.map((cl) => ({ ...cl, nitro: false })) })),
   }
   const slots = []
   cleared.categories.forEach((cat, ci) => cat.clues.forEach((_, qi) => qi > 0 && slots.push([ci, qi])))
@@ -172,7 +172,7 @@ export function sprinkleDailyDoubles(round, count = 1) {
     const [ci, qi] = slots.splice(Math.floor(Math.random() * slots.length), 1)[0]
     cleared.categories[ci] = {
       ...cleared.categories[ci],
-      clues: cleared.categories[ci].clues.map((cl, j) => (j === qi ? { ...cl, dailyDouble: true } : cl)),
+      clues: cleared.categories[ci].clues.map((cl, j) => (j === qi ? { ...cl, nitro: true } : cl)),
     }
   }
   return cleared
@@ -253,7 +253,7 @@ const TRUTHY = new Set(["1", "y", "yes", "true", "dd", "daily", "x", "✓"])
 /**
  * Build a board from CSV or TSV.
  *
- * One clue per row: `category, value, clue, answer, daily double?`. Categories
+ * One clue per row: `category, value, clue, answer, nitro?`. Categories
  * become columns in the order they first appear and values become rows sorted
  * low to high, which is how people lay a quiz out in a spreadsheet anyway.
  *
@@ -305,7 +305,7 @@ export function parseBoardCsv(text, title = "Imported Game") {
       ...makeClue(value),
       prompt: prompt ?? "",
       answer: answer ?? "",
-      dailyDouble: TRUTHY.has(String(daily ?? "").trim().toLowerCase()),
+      nitro: TRUTHY.has(String(daily ?? "").trim().toLowerCase()),
     })
   })
 

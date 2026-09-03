@@ -148,7 +148,7 @@ function MiniBoard({ state, send }) {
                   }`}
                 >
                   {clue.value}
-                  {clue.dailyDouble && !played && <span className="absolute right-1 top-0.5 text-[0.6rem] text-live">✦</span>}
+                  {clue.nitro && !played && <span className="absolute right-1 top-0.5 text-[0.6rem] text-live">✦</span>}
                 </button>
               )
             }),
@@ -236,7 +236,7 @@ function StagePanel({ state, send, now }) {
     const max = Math.max(players.find((p) => p.id === wagerPlayer)?.score ?? 0, ...(state.board.round?.values ?? [0]))
     return (
       <div className="panel flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
-        <div className="font-display text-2xl text-live animate-glow">DAILY DOUBLE</div>
+        <div className="font-display text-2xl text-live animate-glow">NOGGIN&rsquo; NITRO</div>
         <div className="text-[12px] text-muted">Who found it, and what are they risking?</div>
         <select className="field max-w-xs" value={wagerPlayer} onChange={(e) => setWagerPlayer(e.target.value)}>
           {players.map((p) => (
@@ -275,7 +275,7 @@ function StagePanel({ state, send, now }) {
       <div className="flex items-center gap-2">
         <span className="label">{clue.category}</span>
         <span className="font-value text-2xl text-gold">{state.stake}</span>
-        {clue.dailyDouble && <span className="text-[10px] text-live">✦ daily double</span>}
+        {clue.nitro && <span className="text-[10px] text-live">✦ Noggin&rsquo; Nitro</span>}
         {wager?.playerId && <span className="text-[10px] text-muted">· {players.find((p) => p.id === wager.playerId)?.name} wagered {wager.amount}</span>}
         <div className="ml-auto flex gap-1.5">
           {state.canUndo && (

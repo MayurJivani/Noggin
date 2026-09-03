@@ -9,7 +9,7 @@ import { podiumUrl } from "../../lib/net"
 const REASONS = {
   correct: "correct",
   wrong: "wrong",
-  "daily-double": "daily double",
+  nitro: "Noggin’ Nitro",
   "final-correct": "final",
   "final-wrong": "final",
   adjust: "by hand",

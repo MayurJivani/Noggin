@@ -85,7 +85,7 @@ export const sfx = {
     tone(300, 0, 0.18, { type: "sawtooth", gain: 0.24 })
     tone(200, 0.14, 0.3, { type: "sawtooth", gain: 0.24 })
   },
-  dailyDouble: () => {
+  nitro: () => {
     const notes = [523, 659, 784, 1046, 1318]
     notes.forEach((f, i) => tone(f, i * 0.075, 0.5, { type: "triangle", gain: 0.26 }))
     noise(0.38, 0.5, 0.08)
@@ -113,8 +113,8 @@ export function playForEffect(effect) {
   switch (effect.kind) {
     case "clue-open":
       return sfx.select()
-    case "daily-double":
-      return sfx.dailyDouble()
+    case "nitro":
+      return sfx.nitro()
     case "buzz-in":
       return sfx.buzz()
     case "buzz-early":

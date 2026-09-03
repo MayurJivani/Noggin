@@ -122,7 +122,7 @@ const BOARD = {
           title: "STONE",
           clues: [
             { value: 200, prompt: "Black, veined with gold", answer: "marble" },
-            { value: 400, prompt: "Risk it all", answer: "double", dailyDouble: true },
+            { value: 400, prompt: "Risk it all", answer: "double", nitro: true },
           ],
         },
         {
@@ -158,7 +158,7 @@ test("a full round, over the wire", async (t) => {
     assert.equal(host.state.board.title, "Relay Night")
     assert.equal(screen.state.board.round.categories.length, 2)
     assert.equal(screen.state.board.round.categories[0].clues[0].prompt, undefined)
-    assert.equal(screen.state.board.round.categories[0].clues[1].dailyDouble, undefined, "no map of the daily doubles")
+    assert.equal(screen.state.board.round.categories[0].clues[1].nitro, undefined, "no map of the nitro tiles")
     assert.equal(alice.state.board.round.categories[0].clues[0].answer, undefined)
   })
 
@@ -210,7 +210,7 @@ test("a full round, over the wire", async (t) => {
     assert.equal(screen.state.board.round.categories[1].clues[0].status, "played")
   })
 
-  await t.test("a daily double hides its clue until the wager is in", async () => {
+  await t.test("a nitro tile hides its clue until the wager is in", async () => {
     host.send("clue:select", { catIndex: 0, clueIndex: 1 })
     await settle()
     assert.equal(host.state.phase, "wager")
@@ -223,8 +223,8 @@ test("a full round, over the wire", async (t) => {
 
     host.send("judge", { correct: true })
     await settle()
-    // 200 already, staking 150 on a daily double, which pays double.
-    assert.equal(host.state.players.find((p) => p.id === B).score, 200 + 150 * 2)
+    // 200 already, staking 150: 350 if it comes off.
+    assert.equal(host.state.players.find((p) => p.id === B).score, 350)
     host.send("clue:close")
     await settle()
   })

@@ -375,7 +375,7 @@ function Grid({ round, state, send }) {
                 }`}
               >
                 {clue.value}
-                {clue.dailyDouble && !played && <span className="absolute right-1 top-0.5 text-[0.55rem] text-live">✦</span>}
+                {clue.nitro && !played && <span className="absolute right-1 top-0.5 text-[0.55rem] text-live">✦</span>}
               </button>
             )
           }),

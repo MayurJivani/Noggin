@@ -148,28 +148,28 @@ test("when the last player misses, the buzzer stays shut", () => {
   assert.equal(room.buzzer.armed, false)
 })
 
-test("a daily double is wagered, solo, and ends on a miss", () => {
+test("a nitro tile is wagered, solo, and ends on a miss", () => {
   const room = setup()
-  G.currentRound(room).categories[2].clues[3].dailyDouble = true
+  G.currentRound(room).categories[2].clues[3].nitro = true
   room.players.get("p1").score = 900
 
-  assert.deepEqual(kinds(G.selectClue(room, 2, 3)), ["daily-double"])
+  assert.deepEqual(kinds(G.selectClue(room, 2, 3)), ["nitro"])
   assert.equal(room.phase, G.PHASE.WAGER)
 
   G.setWager(room, "p1", 700)
   assert.equal(room.phase, G.PHASE.CLUE)
   assert.equal(room.buzzer.winner, "p1", "no race — it is that player's clue")
   assert.equal(G.stake(room), 700)
-  assert.equal(G.armBuzzer(room).length, 0, "the buzzer cannot be opened on a daily double")
+  assert.equal(G.armBuzzer(room).length, 0, "the buzzer cannot be opened on a nitro tile")
 
   G.judge(room, false)
   assert.equal(room.players.get("p1").score, 200)
-  assert.equal(room.phase, G.PHASE.REVEAL, "a missed daily double ends the clue")
+  assert.equal(room.phase, G.PHASE.REVEAL, "a missed nitro tile ends the clue")
 })
 
 test("a wager is capped at the player's score, or the top tile if they are broke", () => {
   const room = setup()
-  G.currentRound(room).categories[0].clues[1].dailyDouble = true
+  G.currentRound(room).categories[0].clues[1].nitro = true
   room.players.get("p0").score = 50
 
   G.selectClue(room, 0, 1)
@@ -254,7 +254,7 @@ test("players and the big screen never receive unplayed clue contents", () => {
       for (const clue of cat.clues) {
         assert.equal(clue.prompt, undefined, `${role} got a prompt`)
         assert.equal(clue.answer, undefined, `${role} got an answer`)
-        assert.equal(clue.dailyDouble, undefined, `${role} got told where a daily double is`)
+        assert.equal(clue.nitro, undefined, `${role} got told where a nitro tile is`)
         assert.ok("value" in clue && "status" in clue, "but still enough to draw the board")
       }
     }
@@ -276,9 +276,9 @@ test("the answer to the live clue is withheld until it is revealed", () => {
   assert.equal(G.projectState(room, "display").clue.answer, "answer 0-0")
 })
 
-test("a daily double's prompt stays hidden while the wager is being set", () => {
+test("a nitro tile's prompt stays hidden while the wager is being set", () => {
   const room = setup()
-  G.currentRound(room).categories[0].clues[0].dailyDouble = true
+  G.currentRound(room).categories[0].clues[0].nitro = true
   G.selectClue(room, 0, 0)
 
   assert.equal(G.projectState(room, "display").clue.prompt, "", "no peeking before the bet")
@@ -539,10 +539,10 @@ test("a reading delay holds the buzzer shut until the clock runs out", () => {
   assert.equal(room.buzzer.armed, true)
 })
 
-test("auto-arm leaves a daily double alone", () => {
+test("auto-arm leaves a nitro tile alone", () => {
   const room = setup(3, { autoArm: true })
-  G.currentRound(room).categories[0].clues[0].dailyDouble = true
-  assert.deepEqual(kinds(G.selectClue(room, 0, 0)), ["daily-double"])
+  G.currentRound(room).categories[0].clues[0].nitro = true
+  assert.deepEqual(kinds(G.selectClue(room, 0, 0)), ["nitro"])
   assert.equal(room.buzzer.armed, false, "there is no race to open")
 })
 
@@ -584,36 +584,44 @@ test("a clue can be given back to everyone after they have all missed it", () =>
   assert.deepEqual(kinds(G.buzz(room, "p0", 1100)), ["buzz-in"], "they can try again")
 })
 
-test("reopening leaves a daily double alone", () => {
+test("reopening leaves a nitro tile alone", () => {
   const room = setup()
-  G.currentRound(room).categories[0].clues[0].dailyDouble = true
+  G.currentRound(room).categories[0].clues[0].nitro = true
   G.selectClue(room, 0, 0)
   G.setWager(room, "p0", 100)
   assert.equal(G.reopenBuzzer(room).length, 0, "it is one player's clue, not a race")
 })
 
-test("a daily double pays a multiple of the wager, but only costs the wager", () => {
-  const room = setup()
-  G.currentRound(room).categories[0].clues[0].dailyDouble = true
-  room.players.get("p0").score = 500
+test("a nitro tile pays the wager, and costs the wager", () => {
+  // 2000 in hand, 1000 staked: 3000 if it comes off, 1000 if it does not.
+  const won = setup()
+  G.currentRound(won).categories[0].clues[0].nitro = true
+  won.players.get("p0").score = 2000
+  G.selectClue(won, 0, 0)
+  G.setWager(won, "p0", 1000)
+  G.judge(won, true)
+  assert.equal(won.players.get("p0").score, 3000)
 
-  G.selectClue(room, 0, 0)
-  G.setWager(room, "p0", 300)
-  G.judge(room, true)
-  assert.equal(room.players.get("p0").score, 500 + 600, "won twice the stake")
-
-  // And a miss costs the stake itself — doubling the downside would make every
-  // daily double a coin flip nobody would take.
-  const other = setup()
-  G.currentRound(other).categories[0].clues[0].dailyDouble = true
-  other.players.get("p0").score = 500
-  G.selectClue(other, 0, 0)
-  G.setWager(other, "p0", 300)
-  G.judge(other, false)
-  assert.equal(other.players.get("p0").score, 200)
+  const lost = setup()
+  G.currentRound(lost).categories[0].clues[0].nitro = true
+  lost.players.get("p0").score = 2000
+  G.selectClue(lost, 0, 0)
+  G.setWager(lost, "p0", 1000)
+  G.judge(lost, false)
+  assert.equal(lost.players.get("p0").score, 1000)
 })
 
-test("an ordinary clue is unaffected by the daily double multiplier", () => {
+test("staking everything is what doubles a score — the wager is the whole risk", () => {
+  const room = setup()
+  G.currentRound(room).categories[0].clues[0].nitro = true
+  room.players.get("p0").score = 1500
+  G.selectClue(room, 0, 0)
+  G.setWager(room, "p0", 1500)
+  G.judge(room, true)
+  assert.equal(room.players.get("p0").score, 3000)
+})
+
+test("an ordinary clue pays its face value", () => {
   const room = setup()
   G.selectClue(room, 0, 1) // 400
   G.armBuzzer(room, 0)

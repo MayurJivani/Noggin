@@ -13,7 +13,7 @@ const SILENCE_LIMIT_MS = 12_000
  * without anyone walking over to tap it, and the projector machine must survive
  * the relay being restarted between rounds.
  *
- * `effects` are transient: a buzz, a correct ruling, a daily double splash.
+ * `effects` are transient: a buzz, a correct ruling, a Nitro splash.
  * They arrive alongside the snapshot and are handed to `onEffects` rather than
  * stored, because animating "someone just buzzed" twice on a reconnect would be
  * worse than missing it.

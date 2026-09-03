@@ -22,7 +22,7 @@ test("a spreadsheet becomes a board", () => {
   )
   assert.deepEqual(round.values, [200, 400], "rows are the value ladder, low to high")
   assert.equal(round.categories[0].clues[0].prompt, "Black veined with gold")
-  assert.equal(round.categories[0].clues[1].dailyDouble, true)
+  assert.equal(round.categories[0].clues[1].nitro, true)
   assert.equal(round.categories[1].clues[1].answer, "24")
 })
 
