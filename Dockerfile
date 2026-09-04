@@ -21,6 +21,11 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
 COPY server ./server
+# Operator tooling has to be *on the box*, or it may as well not exist. The
+# recovery-code script is the documented way back into a locked-out account:
+#
+#   docker compose exec noggin node scripts/recovery-code.js you@example.com
+COPY scripts/recovery-code.js ./scripts/recovery-code.js
 
 # Boards, saved games and clue media, when running without Postgres.
 RUN mkdir -p /app/data /app/uploads
