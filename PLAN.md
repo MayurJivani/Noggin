@@ -11,9 +11,10 @@ What exists, and what is deliberately left for later.
 - **Pause** — the room freezes, the buzzer shuts, and a running clock is banked
   rather than cancelled: resuming returns exactly the time that was left.
 - **Video clues** — alongside image and audio, served with range support.
-- **The soundboard** — fourteen cues fired by hand from the desk or the
-  controller, a music bed that ducks under a clue, and a transition cue for each
-  move the game makes. All synthesised; no assets ship.
+- **The soundboard** — fifteen CC0 samples fired by hand from the desk or the
+  controller, a music bed that ducks under a clue, and a cue for each move the
+  game makes. Samples for what the room reacts to, synthesis for the
+  latency-critical ones and as the fallback for every sample.
 - **Accounts** — host sign-in with scrypt and cookie sessions. Players never
   need one. Boards and saved games are owned; signups close after the first.
 - **Remote controller** (`/control`) — the in-depth surface for a second
@@ -102,7 +103,10 @@ holding, so it avoids things that are absent or hostile on real devices:
   desktop. The rolling scores used to freeze on a stale total there, silently.
   `src/lib/useRolling.js` commits the target on a timer as well as on the last
   frame, and skips the animation outright when the page is already hidden:
-  being right beats being pretty on the one screen the room is reading.
+  being right beats being pretty on the one screen the room is reading. The
+  clue card had the same disease and worse symptoms — it starts at `opacity: 0`
+  and is revealed *by* the animation, so on such a window the clue never
+  appeared at all. It now has the same net.
 
 ## Known limits
 

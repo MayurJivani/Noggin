@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
-import { readJson, removeStore, writeJson } from "../../lib/storage"
+import { readJson, readStore, removeStore, writeJson, writeStore } from "../../lib/storage"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
 import { FinalPanel } from "./FinalPanel"
 import { VeinLine } from "../ui/Vein"
 
 const STORAGE = "noggin.player"
+/** Whether this phone mirrors the clue. Per-device, not per-game. */
+const MIRROR = "noggin.player.mirror"
 
 /**
  * The thing in everyone's hand.
@@ -167,6 +169,24 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
   const { phase, buzzer, clue, lifeline } = state
   const now = useCallback(() => Date.now(), [])
 
+  /*
+    Mirroring the clue is a preference, not a rule.
+
+    The person at the back who can't see the TV wants it; everyone else would
+    rather have the extra inch of buzzer. It is per-device rather than a room
+    setting because it costs nobody else anything — the projection a phone
+    receives is already redacted, so an answer only appears here once the host
+    has put it on the big screen and the whole room can see it anyway.
+  */
+  const [mirror, setMirror] = useState(() => readStore(MIRROR, "1") !== "0")
+  const toggleMirror = () => {
+    setMirror((on) => {
+      writeStore(MIRROR, on ? "0" : "1")
+      return !on
+    })
+  }
+  const showClue = mirror && clue && phase !== "board"
+
   const iHoldIt = buzzer.winner === me?.id
   const spent = buzzer.spent.includes(me?.id)
   const lockedUntil = buzzer.lockedUntil?.[me?.id] ?? 0
@@ -227,11 +247,20 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
     setTimeout(() => setPressed(false), 220)
   }
 
+  /*
+    The page is exactly the window, and nothing scrolls it.
+
+    A phone that has to be scrolled to reach the buzzer is a phone that loses
+    the race, and the one thing this screen must guarantee is that the button is
+    under a thumb without anyone having to look for it. So the height is fixed,
+    the header, clue and footer take only what they need, and the buzzer gets
+    the rest — growing when the clue is turned off.
+  */
   return (
-    <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl flex-col overflow-hidden">
+    <div className="relative mx-auto flex h-dvh w-full max-w-2xl flex-col overflow-hidden">
       <Backdrop veins={4} glow={2} />
 
-      <header className="relative z-10 flex items-center gap-2 px-4 pt-3">
+      <header className="relative z-10 flex shrink-0 items-center gap-2 px-4 pt-3">
         <BrandMark className="text-base" />
         <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} />
         <div className="ml-auto text-right">
@@ -248,7 +277,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
         </div>
       </header>
 
-      <div className="relative z-10 px-4 pt-3">
+      <div className="relative z-10 shrink-0 px-4 pt-3">
         <div className={`text-center font-display uppercase tracking-[0.2em] ${connected ? tone : "text-bad"}`} style={{ fontSize: 13 }}>
           {connected ? status.text : "Reconnecting…"}
           {connected && onPenalty && <span className="ml-2 tabular-nums">{(penalty / 1000).toFixed(1)}s</span>}
@@ -263,11 +292,18 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
       {phase === "final" && <FinalPanel state={state} me={me} send={send} />}
 
       {/* The clue, quietly. Players look at the TV; this is for the person at
-          the back who can't, and for audio clues they want in their own ear. */}
-      {clue && phase !== "board" && (
-        <div className="relative z-10 mx-4 mt-3 max-h-[26vh] overflow-y-auto rounded-xl border border-edge bg-black/25 px-3 py-2.5">
-          <div className="label mb-1">
-            {clue.category} · {state.stake}
+          the back who can't, and for audio clues they want in their own ear.
+          Capped and scrolled *inside itself*, so a wordy clue never pushes the
+          buzzer off the screen. */}
+      {showClue && (
+        <div className="relative z-10 mx-4 mt-3 max-h-[24vh] shrink overflow-y-auto rounded-xl border border-edge bg-black/25 px-3 py-2.5">
+          <div className="mb-1 flex items-baseline gap-2">
+            <span className="label">
+              {clue.category} · {state.stake}
+            </span>
+            <button className="ml-auto shrink-0 text-[10px] text-faint transition-colors hover:text-muted" onClick={toggleMirror} title="Hide the clue on this phone">
+              hide
+            </button>
           </div>
           {clue.prompt && <div className="font-display text-[15px] leading-snug text-ink">{clue.prompt}</div>}
           {clue.media?.kind === "image" && <img src={resolveMediaUrl(clue.media.url)} alt="" className="mt-2 max-h-40 w-full rounded-lg object-contain" />}
@@ -283,11 +319,19 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
         </div>
       )}
 
-      <div className={`relative z-10 flex flex-1 items-center justify-center px-6 py-4 ${phase === "final" ? "hidden" : ""}`}>
-        <BuzzerButton canBuzz={canBuzz && connected} iHoldIt={iHoldIt} disabled={spent || onPenalty} pressed={pressed} onPress={press} offline={!connected} />
+      <div className={`relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-3 ${phase === "final" ? "hidden" : ""}`}>
+        <BuzzerButton
+          canBuzz={canBuzz && connected}
+          iHoldIt={iHoldIt}
+          disabled={spent || onPenalty}
+          pressed={pressed}
+          onPress={press}
+          offline={!connected}
+          roomy={!showClue}
+        />
       </div>
 
-      <footer className="relative z-10 space-y-2 px-4 pb-5">
+      <footer className="relative z-10 shrink-0 space-y-2 px-4 pb-5">
         <button
           className={`btn w-full py-2.5 ${lifeline?.playerId === me?.id ? "btn-gold" : ""}`}
           disabled={(me?.lifelines?.phone ?? 0) <= 0 || !!lifeline}
@@ -302,8 +346,13 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
           </span>
         </button>
 
-        <div className="flex items-center justify-between text-[10px] text-faint">
+        <div className="flex items-center gap-3 text-[10px] text-faint">
           <span>room {state.code}</span>
+          {/* The way back. Turning the clue off has to be undoable from
+              somewhere that is still on screen once it is gone. */}
+          <button className="ml-auto hover:text-muted" onClick={toggleMirror}>
+            {mirror ? "clue on" : "show clue"}
+          </button>
           <button className="hover:text-muted" onClick={onLeave}>
             leave
           </button>
@@ -325,7 +374,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
  * Events, and on those the buzzer simply did nothing. Falling back to `onClick`
  * would work but costs the ~300ms the fallback exists to avoid.
  */
-function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = false }) {
+function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = false, roomy = false }) {
   const lastFire = useRef(0)
 
   /**
@@ -352,12 +401,19 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = 
         ? "from-[#17161f] to-[#0a090e] border-edge text-faint"
         : "from-[#241038] to-[#0d0b13] border-gold-dim/50 text-muted"
 
+  /*
+    Sized against the shorter of what the viewport allows and what the row it
+    sits in has left, so the button can never be the thing that makes the page
+    scroll. It takes the extra room back when the mirrored clue is turned off.
+  */
   return (
     <button
       onPointerDown={fire}
       onTouchStart={fire}
       onContextMenu={(e) => e.preventDefault()}
-      className={`relative aspect-square w-[min(78vw,44vh,26rem)] select-none rounded-full border-4 bg-gradient-to-b shadow-2xl shadow-black/50 transition-transform duration-75 ${face} ${
+      className={`relative aspect-square ${
+        roomy ? "w-[min(78vw,42vh,26rem)]" : "w-[min(72vw,30vh,20rem)]"
+      } max-h-full select-none rounded-full border-4 bg-gradient-to-b shadow-2xl shadow-black/50 transition-transform duration-75 ${face} ${
         pressed ? "scale-95" : "active:scale-95"
       }`}
       style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTapHighlightColor: "transparent" }}

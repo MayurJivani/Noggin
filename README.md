@@ -295,6 +295,26 @@ support, so scrubbing works and Safari will play them at all.
 
 Uploads cap at 25MB (`NOGGIN_MAX_UPLOAD`).
 
+On the big screen the clue **fits, always, without scrolling** — nobody scrolls
+a projector. The words and the answer take the height they need and the picture
+takes whatever is left, so revealing an answer shrinks the image rather than
+pushing it off the bottom. Sizing media in `vh` was the bug: it knows the height
+of the window, not the height of the gap between a three-line clue and a
+revealed answer.
+
+## The buzzer screen
+
+Fixed to the window, never scrolled. A phone that has to be scrolled to reach
+the buzzer is a phone that loses the race, so the header, the mirrored clue and
+the footer take only what they need and the button gets the rest.
+
+The mirrored clue has a **hide** toggle (and a *show clue* link in the footer to
+bring it back). It is per-device and remembered: the person at the back who
+can't see the TV wants it, everyone else would rather have the extra inch of
+buzzer, and the button grows when it is off. It costs nobody anything to turn
+on, because what a phone receives is already redacted — an answer only appears
+there once the host has put it on the big screen and the whole room can see it.
+
 ## Reconnection
 
 Everything survives a reload, and everything survives the network going away.
@@ -328,32 +348,41 @@ about to look at their buzzer again. Players see their round-trip time, so
 
 ## Sound
 
-Everything is synthesised in the browser out of oscillators and noise — no
-assets, no licensing questions, no loading state on the one page that must never
-be loading. Browsers won't start audio without a gesture, so the big screen arms
-itself on the first click anywhere.
+Two layers, and the split is deliberate.
+
+**Samples** are what the room hears. Real recordings in `public/sfx/`, all CC0 —
+applause, ovation, crowd, drumroll, fanfare, airhorn, ta-da, ding, gong, sad
+trombone, boo, laugh, crickets, whoosh, wrong-buzzer, and a bossa-nova music
+bed. Oscillators can imitate a bell but not a crowd; a synthesised "round of
+applause" is static with ambitions. Provenance is in
+[`public/sfx/CREDITS.md`](public/sfx/CREDITS.md).
+
+**Synthesis** covers the tight, latency-critical cues — the buzz-in, the
+early-press reject, the countdown tick — where the sound has to land with the
+press and a decode is a risk not worth taking. It is also the fallback for every
+sample: **delete the whole `sfx/` folder and the game still makes all its
+noises**, just plainer.
 
 Three things come out of it:
 
-- **Game cues** fire themselves: the tile, the buzz, the verdict, the clock, and
-  a proper Noggin' Nitro sting — a rising sweep, a hit on the landing and an
-  arpeggio over the splash. Transitions are marked too (board opening, round
-  starting, into the final, that's the game), deliberately quieter than the
-  verdicts, since a sting on every screen change becomes noise the room stops
-  hearing.
-- **The soundboard** is fired by hand from the desk or the controller: applause,
-  ovation, cheer, drumroll, fanfare, airhorn, ka-ching, ding, sad trombone, boo,
-  crickets, suspense, whoosh, wrong-buzzer. Applause is rendered as a few
-  hundred scattered impulses in a narrow band around 2kHz, which is what a room
-  clapping actually is and far cheaper than scheduling the nodes for one.
-- **The music bed** (♪) is a four-bar vamp for the lobby and the dead air. It
-  ducks under a clue on its own rather than stopping, so the loop doesn't
-  restart on every tile.
+- **Game cues** fire themselves: the tile, the buzz, the verdict, the clock,
+  the Nitro fanfare, the gong into the final, an ovation when the game ends.
+- **The soundboard** is fired by hand from the desk or the controller — fifteen
+  buttons for the bits between the questions.
+- **The music bed** (♪) fills the lobby and the dead air, and ducks under a clue
+  rather than stopping, so it doesn't restart on every tile. It is the one file
+  fetched lazily: a room that never turns music on never pays the megabyte.
 
 Cues play on the **big screen** — that is where the speakers the room can hear
 are, and a cue coming out of the host's laptop is a cue only the host enjoys. A
 cue is a broadcast and changes nothing about the game; the music is *state*, so
 a display that reloads mid-round comes back with it still playing.
+
+Browsers won't start audio without a gesture, so the big screen arms itself on
+the first click anywhere and preloads every short sample then.
+
+**Swapping a sound**: drop an MP3 into `public/sfx/` with the same filename. It
+wins, and nothing else changes.
 
 ## Tests
 

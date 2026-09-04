@@ -18,11 +18,24 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName, timer, now 
   useEffect(() => {
     setFlown(false)
     const node = el.current
-    if (!node || !origin) {
-      // No known tile (a reload mid-clue): just rise into place.
-      requestAnimationFrame(() => setFlown(true))
-      return
+
+    /*
+      The card starts invisible and is revealed by the animation, which makes
+      the animation load-bearing — and `requestAnimationFrame` does not run in a
+      page the browser has stopped compositing. On a display window sitting
+      behind another, the clue therefore never appeared at all. This is the net:
+      whatever happens to the animation, the clue is on screen shortly.
+    */
+    const net = setTimeout(() => setFlown(true), 700)
+    const done = () => clearTimeout(net)
+
+    if (!node || !origin || (typeof document !== "undefined" && document.hidden)) {
+      // No known tile (a reload mid-clue), or nobody watching the transition:
+      // just be there.
+      setFlown(true)
+      return done
     }
+
     const to = node.getBoundingClientRect()
     const sx = origin.width / to.width
     const sy = origin.height / to.height
@@ -38,6 +51,7 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName, timer, now 
         setFlown(true)
       }),
     )
+    return done
   }, [clue?.id, origin])
 
   if (!clue) return null
@@ -64,41 +78,52 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName, timer, now 
       </div>
 
       {/*
-        `m-auto` on the inner column rather than `justify-center` on the outer
-        one. Both centre while there is room, but a centred *flex* child cannot
-        be scrolled back to once it overflows — its top goes above the scroll
-        origin — and the card clips. With auto margins the content simply stops
-        being centred when it stops fitting, and the overflow is reachable.
-      */}
-      <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto px-[6vmin] py-[3vmin] ${flown ? "" : "opacity-0"}`}>
-        <div className="m-auto flex w-full flex-col items-center gap-[2.5vmin]">
-          {clue.prompt && (
-            <p
-              className="max-w-[46ch] shrink-0 text-center font-display leading-[1.16] text-ink animate-rise"
-              style={{ fontSize: `max(20px, calc(var(--stage) * ${Math.max(2.1, 5.4 - clue.prompt.length / 90)}))`, animationDelay: "220ms" }}
-            >
-              {clue.prompt}
-            </p>
-          )}
-          {/* The picture yields to the answer. A tall image plus a revealed
-              answer is exactly the case that used to push the answer off the
-              bottom of the card, and of the two the answer is the one the room
-              is waiting for. */}
-          {clue.media && <Media media={clue.media} revealed={revealed} />}
+        Nothing here scrolls, because nobody scrolls a projector.
 
-          {revealed && (
-            <div className="mt-[1vmin] flex shrink-0 flex-col items-center gap-[1.5vmin] animate-slam">
-              <VeinLine className="w-[36vmin]" height={16} />
-              <div className="label" style={{ letterSpacing: "0.4em" }}>
-                Answer
-              </div>
-              <p className="max-w-[40ch] text-center font-display leading-tight text-gold brass" style={{ fontSize: "max(22px, calc(var(--stage) * 4))" }}>
-                {clue.answer}
-              </p>
-              {clue.answerMedia && <Media media={clue.answerMedia} compact />}
+        The words and the answer take the height they need; the picture takes
+        whatever is left. Sizing media in `vh` was the mistake — it knows the
+        height of the *window*, not the height of the gap between a three-line
+        clue and a revealed answer, so a tall image on a wordy clue ran off the
+        bottom of the card with no way to see it. Here the media sits in a
+        `flex-1 min-h-0` box and is `object-contain` inside it, which means it
+        is exactly as big as the space actually left over, always.
+      */}
+      <div
+        className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-[2vmin] overflow-hidden px-[6vmin] py-[2vmin] ${
+          flown ? "" : "opacity-0"
+        }`}
+      >
+        {clue.prompt && (
+          <p
+            className="max-w-[46ch] shrink-0 text-center font-display leading-[1.16] text-ink animate-rise"
+            style={{ fontSize: `max(18px, calc(var(--stage) * ${Math.max(2.1, 5.4 - clue.prompt.length / 90)}))`, animationDelay: "220ms" }}
+          >
+            {clue.prompt}
+          </p>
+        )}
+
+        {clue.media && (
+          <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+            <Media media={clue.media} />
+          </div>
+        )}
+
+        {revealed && (
+          <div className="flex shrink-0 flex-col items-center gap-[1.2vmin] animate-slam">
+            <VeinLine className="w-[36vmin]" height={14} />
+            <div className="label" style={{ letterSpacing: "0.4em" }}>
+              Answer
             </div>
-          )}
-        </div>
+            <p className="max-w-[40ch] text-center font-display leading-tight text-gold brass" style={{ fontSize: "max(20px, calc(var(--stage) * 3.6))" }}>
+              {clue.answer}
+            </p>
+            {clue.answerMedia && (
+              <div className="flex max-h-[22vh] min-h-0 items-center justify-center">
+                <Media media={clue.answerMedia} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -158,7 +183,12 @@ function ClueClock({ timer, now }) {
   )
 }
 
-function Media({ media, compact = false, revealed = false }) {
+/**
+ * Whatever is attached to the clue, sized by its container rather than by the
+ * viewport. `max-h-full max-w-full object-contain` is the whole trick: the box
+ * above has already worked out how much room is going spare.
+ */
+function Media({ media }) {
   const src = resolveMediaUrl(media.url)
 
   if (media.kind === "image") {
@@ -166,13 +196,13 @@ function Media({ media, compact = false, revealed = false }) {
       <img
         src={src}
         alt={media.alt ?? ""}
-        className="min-h-0 shrink rounded-[1vmin] border border-gold-deep/30 object-contain shadow-xl shadow-black/50 transition-all duration-500 animate-rise"
-        style={{ maxHeight: compact ? "24vh" : revealed ? "30vh" : "46vh", animationDelay: "300ms" }}
+        className="max-h-full max-w-full rounded-[1vmin] border border-gold-deep/30 object-contain shadow-xl shadow-black/50 animate-rise"
+        style={{ animationDelay: "300ms" }}
       />
     )
   }
-  if (media.kind === "video") return <VideoClue src={src} compact={compact} revealed={revealed} />
-  return <AudioClue src={src} label={media.alt} compact={compact} />
+  if (media.kind === "video") return <VideoClue src={src} />
+  return <AudioClue src={src} label={media.alt} />
 }
 
 /**
@@ -183,7 +213,7 @@ function Media({ media, compact = false, revealed = false }) {
  * audio cues, and that same gesture is what lets this play. Controls stay on so
  * the host can scrub or replay a clip the room asks to see again.
  */
-function VideoClue({ src, compact, revealed }) {
+function VideoClue({ src }) {
   const el = useRef(null)
 
   useEffect(() => {
@@ -202,8 +232,8 @@ function VideoClue({ src, compact, revealed }) {
       src={src}
       controls
       playsInline
-      className="min-h-0 w-auto shrink rounded-[1vmin] border border-gold-deep/30 bg-black object-contain shadow-xl shadow-black/50 transition-all duration-500 animate-rise"
-      style={{ maxHeight: compact ? "24vh" : revealed ? "30vh" : "46vh", animationDelay: "300ms" }}
+      className="max-h-full max-w-full rounded-[1vmin] border border-gold-deep/30 bg-black object-contain shadow-xl shadow-black/50 animate-rise"
+      style={{ animationDelay: "300ms" }}
     />
   )
 }
@@ -214,7 +244,7 @@ function VideoClue({ src, compact, revealed }) {
  * deliberately not tied to real analysis: one <audio> element feeding an
  * analyser across reloads is more failure than the effect is worth.
  */
-function AudioClue({ src, label, compact }) {
+function AudioClue({ src, label }) {
   const audio = useRef(null)
   const [playing, setPlaying] = useState(false)
 
@@ -231,7 +261,7 @@ function AudioClue({ src, label, compact }) {
   }, [src])
 
   return (
-    <div className={`flex flex-col items-center gap-[2vmin] animate-rise ${compact ? "scale-75" : ""}`} style={{ animationDelay: "260ms" }}>
+    <div className="flex max-h-full flex-col items-center justify-center gap-[2vmin] animate-rise" style={{ animationDelay: "260ms" }}>
       <audio ref={audio} src={src} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
       <div className="flex h-[12vmin] items-end gap-[0.8vmin]">
         {Array.from({ length: 13 }).map((_, i) => (
