@@ -84,8 +84,8 @@ What exists, and what is deliberately left for later.
   add and a different game — worth deciding it is wanted before building it.
 - **Question bank.** Boards can be duplicated; individual clues cannot be reused
   across games without copying the whole thing.
-- **Board library.** The relay stores boards; the builder lists them. Missing:
-  duplicate, rename, delete, and folders once there are more than a dozen.
+- **Board library.** Duplicate and delete shipped. Still missing: rename without
+  opening the board, and folders once there are more than a dozen.
 - **Spectator view.** A read-only `/display` variant for people watching from
   another room.
 - **Persisted game history.** Who won, what was missed, which clues nobody got.
