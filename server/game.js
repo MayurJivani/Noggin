@@ -49,6 +49,14 @@ export const DEFAULTS = {
   /** A wrong answer subtracts the clue value as well as failing to add it. */
   penaltyForWrong: true,
   /**
+   * Mirror the clue onto players' phones.
+   *
+   * On by default — it is how the person at the back who cannot see the TV
+   * plays at all. A host who wants every eye on the big screen turns it off,
+   * and then the phones are not *hiding* the clue, they are never sent it.
+   */
+  mirrorClue: true,
+  /**
    * Several phones sharing one score and one buzz. See the Teams section.
    * Off by default: a party of five plays as five, and turning this on when
    * nobody asked for it would silently merge everyone's scores.
@@ -1208,14 +1216,29 @@ export function projectState(room, role, viewerId = null) {
   }
 
   const showAnswer = privileged || room.revealed
+  /*
+    Whether a phone gets the words at all.
+
+    The host's setting is enforced here rather than in the player UI, so
+    "off" means the clue was never sent — not that it is one devtools panel
+    away. The category and the value still go, because a phone that shows
+    nothing at all looks broken; and the big screen is unaffected, since it is
+    the thing everyone is supposed to be reading.
+
+    The final is deliberately exempt: it is played *on* the phones, by writing
+    an answer, so withholding the clue there would not hide it — it would end
+    the round. See `projectFinal`.
+  */
+  const mirrored = privileged || role !== "player" || room.settings.mirrorClue !== false
+  const hidden = !mirrored || (room.phase === PHASE.WAGER && !privileged)
   const clue = active && {
     id: active.id,
     value: active.value,
-    prompt: room.phase === PHASE.WAGER && !privileged ? "" : active.prompt,
-    media: room.phase === PHASE.WAGER && !privileged ? null : active.media,
+    prompt: hidden ? "" : active.prompt,
+    media: hidden ? null : active.media,
     nitro: active.nitro,
-    answer: showAnswer ? active.answer : null,
-    answerMedia: showAnswer ? active.answerMedia : null,
+    answer: showAnswer && mirrored ? active.answer : null,
+    answerMedia: showAnswer && mirrored ? active.answerMedia : null,
     catIndex: room.active.catIndex,
     clueIndex: room.active.clueIndex,
     category: round?.categories[room.active.catIndex]?.title ?? "",

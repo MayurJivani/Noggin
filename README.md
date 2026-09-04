@@ -308,12 +308,19 @@ Fixed to the window, never scrolled. A phone that has to be scrolled to reach
 the buzzer is a phone that loses the race, so the header, the mirrored clue and
 the footer take only what they need and the button gets the rest.
 
-The mirrored clue has a **hide** toggle (and a *show clue* link in the footer to
-bring it back). It is per-device and remembered: the person at the back who
-can't see the TV wants it, everyone else would rather have the extra inch of
-buzzer, and the button grows when it is off. It costs nobody anything to turn
-on, because what a phone receives is already redacted — an answer only appears
-there once the host has put it on the big screen and the whole room can see it.
+Whether the clue is mirrored onto phones is the **host's** call — from the game
+rules in the builder, or from *Players' phones* on the run desk, which is where
+you actually are on the night. It takes effect immediately, no reload.
+
+On, it's how the person at the back who can't see the TV plays at all. Off, the
+room is looking at the big screen and everyone gets a bigger buzzer for it
+(293px instead of 244px on a 375pt phone).
+
+Off means the words are **never sent**, not hidden with CSS: a phone gets the
+category and the value so it doesn't look broken, and nothing else — the answer
+included, even on the reveal. The one exception is the final clue, which is
+played *on* the phones by writing an answer; withholding it there wouldn't hide
+the round, it would end it.
 
 ## Reconnection
 

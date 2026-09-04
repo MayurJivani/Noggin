@@ -480,6 +480,20 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 <span className="block text-[10px] text-faint">turn off for a friendlier game</span>
               </span>
             </label>
+            <label className="flex cursor-pointer items-start gap-2 text-[12px] text-muted">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={settings.mirrorClue !== false}
+                onChange={(e) => onSettings({ mirrorClue: e.target.checked })}
+              />
+              <span>
+                Show the clue on phones
+                <span className="block text-[10px] text-faint">
+                  for anyone who can't see the TV · off keeps every eye on the big screen, and gives them a bigger buzzer
+                </span>
+              </span>
+            </label>
           </div>
         </div>
 

@@ -2,15 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
-import { readJson, readStore, removeStore, writeJson, writeStore } from "../../lib/storage"
+import { readJson, removeStore, writeJson } from "../../lib/storage"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
 import { FinalPanel } from "./FinalPanel"
 import { VeinLine } from "../ui/Vein"
 
 const STORAGE = "noggin.player"
-/** Whether this phone mirrors the clue. Per-device, not per-game. */
-const MIRROR = "noggin.player.mirror"
 
 /**
  * The thing in everyone's hand.
@@ -170,22 +168,13 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
   const now = useCallback(() => Date.now(), [])
 
   /*
-    Mirroring the clue is a preference, not a rule.
+    Whether this phone shows the clue is the host's call, made from their desk.
 
-    The person at the back who can't see the TV wants it; everyone else would
-    rather have the extra inch of buzzer. It is per-device rather than a room
-    setting because it costs nobody else anything — the projection a phone
-    receives is already redacted, so an answer only appears here once the host
-    has put it on the big screen and the whole room can see it anyway.
+    There is nothing to toggle here: with the setting off the relay does not
+    send the words at all, so `clue.prompt` is simply empty. This only decides
+    whether to draw the panel around what did arrive.
   */
-  const [mirror, setMirror] = useState(() => readStore(MIRROR, "1") !== "0")
-  const toggleMirror = () => {
-    setMirror((on) => {
-      writeStore(MIRROR, on ? "0" : "1")
-      return !on
-    })
-  }
-  const showClue = mirror && clue && phase !== "board"
+  const showClue = clue && phase !== "board" && !!(clue.prompt || clue.media)
 
   const iHoldIt = buzzer.winner === me?.id
   const spent = buzzer.spent.includes(me?.id)
@@ -297,13 +286,8 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
           buzzer off the screen. */}
       {showClue && (
         <div className="relative z-10 mx-4 mt-3 max-h-[24vh] shrink overflow-y-auto rounded-xl border border-edge bg-black/25 px-3 py-2.5">
-          <div className="mb-1 flex items-baseline gap-2">
-            <span className="label">
-              {clue.category} · {state.stake}
-            </span>
-            <button className="ml-auto shrink-0 text-[10px] text-faint transition-colors hover:text-muted" onClick={toggleMirror} title="Hide the clue on this phone">
-              hide
-            </button>
+          <div className="label mb-1">
+            {clue.category} · {state.stake}
           </div>
           {clue.prompt && <div className="font-display text-[15px] leading-snug text-ink">{clue.prompt}</div>}
           {clue.media?.kind === "image" && <img src={resolveMediaUrl(clue.media.url)} alt="" className="mt-2 max-h-40 w-full rounded-lg object-contain" />}
@@ -346,13 +330,8 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
           </span>
         </button>
 
-        <div className="flex items-center gap-3 text-[10px] text-faint">
+        <div className="flex items-center justify-between text-[10px] text-faint">
           <span>room {state.code}</span>
-          {/* The way back. Turning the clue off has to be undoable from
-              somewhere that is still on screen once it is gone. */}
-          <button className="ml-auto hover:text-muted" onClick={toggleMirror}>
-            {mirror ? "clue on" : "show clue"}
-          </button>
           <button className="hover:text-muted" onClick={onLeave}>
             leave
           </button>

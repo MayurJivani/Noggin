@@ -83,6 +83,28 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
               Reset game
             </button>
           </div>
+          {/*
+            The same setting as the builder's, put where the host actually is on
+            the night. It comes up mid-game — a clue with a picture the room
+            should be looking at together, or a suspicion that phones are being
+            read instead of the screen.
+          */}
+          <div className="mt-3">
+            <div className="label mb-1.5">Players' phones</div>
+            <button
+              className={`btn w-full py-1.5 text-[11px] ${state.settings.mirrorClue !== false ? "btn-gold" : ""}`}
+              onClick={() => send("settings:set", { settings: { mirrorClue: state.settings.mirrorClue === false } })}
+              title="Whether the clue is mirrored onto players' phones. Off means it is never sent to them."
+            >
+              {state.settings.mirrorClue !== false ? "Clue is on phones" : "Clue is hidden"}
+            </button>
+            <div className="mt-1 text-[10px] leading-snug text-faint">
+              {state.settings.mirrorClue !== false
+                ? "Anyone who can't see the TV can read along."
+                : "Not sent to phones at all — and their buzzer is bigger for it."}
+            </div>
+          </div>
+
           <ControllerInvite send={send} controllerKey={controllerKey} code={code} />
           <SaveControls send={send} savedAt={savedAt} code={code} />
           <DeleteRoom send={send} code={code} players={players.length} />

@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   lifelines: { phone: 1 },
   penaltyForWrong: true,
   teams: false,
+  mirrorClue: true,
 }
 
 export const makeClue = (value = 200) => ({

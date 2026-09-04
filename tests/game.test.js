@@ -897,3 +897,52 @@ test("putting a clue up is itself a resume", () => {
   G.selectClue(room, 0, 1)
   assert.equal(room.paused, null, "the host moved on; the room is not still waiting")
 })
+
+// ── Mirroring the clue onto phones ───────────────────────────────────────────
+
+test("by default a player's phone is sent the clue", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 0)
+  const mine = G.projectState(room, "player", "p0")
+  assert.equal(mine.clue.prompt, "prompt 0-0")
+  assert.equal(mine.settings.mirrorClue, true)
+})
+
+test("with mirroring off the words are not sent, not merely hidden", () => {
+  const room = setup(2, { mirrorClue: false })
+  G.selectClue(room, 0, 0)
+
+  const mine = G.projectState(room, "player", "p0")
+  assert.equal(mine.clue.prompt, "", "a phone with devtools open learns nothing")
+  assert.equal(mine.clue.media, null)
+  // Enough to know which tile is in play, and what it is worth.
+  assert.equal(mine.clue.category, "CAT0")
+  assert.equal(mine.stake, 200)
+
+  // The screen everyone is meant to be reading is untouched.
+  assert.equal(G.projectState(room, "display").clue.prompt, "prompt 0-0")
+  assert.equal(G.projectState(room, "host").clue.prompt, "prompt 0-0")
+})
+
+test("mirroring off withholds the answer from phones on the reveal too", () => {
+  const room = setup(2, { mirrorClue: false })
+  G.selectClue(room, 0, 0)
+  G.revealAnswer(room)
+
+  assert.equal(G.projectState(room, "player", "p0").clue.answer, null)
+  assert.equal(G.projectState(room, "display").clue.answer, "answer 0-0", "the room still gets it")
+})
+
+test("the final is exempt — it is played on the phones", () => {
+  const room = setup(2, { mirrorClue: false })
+  room.board.final = { ...G.makeFinal(), enabled: true, category: "LAST", prompt: "the final clue", answer: "!" }
+  room.players.get("p0").score = 500
+  G.openFinal(room)
+  G.startFinal(room, 0)
+
+  assert.equal(
+    G.projectState(room, "player", "p0").final.prompt,
+    "the final clue",
+    "withholding this would not hide the round, it would end it",
+  )
+})
