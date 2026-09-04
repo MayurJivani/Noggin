@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { ThemeApp } from "../components/theme/ThemeApp"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — customise">
+  <ThemeApp client:only="react" />
+</Layout>

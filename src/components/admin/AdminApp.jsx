@@ -230,6 +230,11 @@ function HostDesk({ auth }) {
           <ScreenLink code={state?.code} />
           <ScreenLink code={state?.code} kind="podiums" />
           <ScreenLink code={state?.code} kind="scores" />
+          {state?.code && (
+            <a className="btn text-[11px]" href={`/theme?code=${state.code}`} title="Colours, fonts and sounds for this room">
+              Customise
+            </a>
+          )}
           <RoomSwitcher
             code={state?.code}
             refreshKey={roomsVersion}

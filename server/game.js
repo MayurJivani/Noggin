@@ -80,6 +80,98 @@ export const DEFAULTS = {
  */
 export const TEAM_PALETTE = ["#f2c96b", "#7ad1a8", "#8fb8ff", "#e08ac0", "#f09a5a", "#a86ce0", "#6fd6e0", "#d6d36a"]
 
+// ── Look and sound ───────────────────────────────────────────────────────────
+
+/**
+ * A room's own theme.
+ *
+ * Every field is optional and absence means "use the house default" — the theme
+ * is a *diff*, never a full palette. That is what keeps a room that changed one
+ * colour from being frozen against the rest of the design: everything it did not
+ * name keeps moving when the defaults do.
+ *
+ * Stored per room rather than per board, because the look belongs to the night.
+ * The same board run for a school and for a stag do wants different colours.
+ */
+export const THEME_COLORS = [
+  "void",
+  "onyx",
+  "royal",
+  "violet",
+  "amethyst",
+  "gold",
+  "gold-deep",
+  "gold-dim",
+  "ink",
+  "muted",
+  "faint",
+  "good",
+  "bad",
+  "live",
+  "panel",
+  "panel-2",
+  "edge",
+]
+
+const THEME_FONT_SLOTS = ["display", "value", "body"]
+const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+/** Cue ids the soundboard and the game know about, plus the bed. */
+const SOUND_KEY = /^[a-z][a-z0-9_-]{0,23}$/i
+
+/**
+ * Coerce whatever a customisation page sent into something safe to broadcast.
+ *
+ * This lands in every client's CSS custom properties and `<audio>` sources, so
+ * it gets the same treatment as a board: nothing is trusted, unknown keys are
+ * dropped, and anything that does not parse is simply left out rather than
+ * rejected — a bad colour should cost you that colour, not your theme.
+ */
+export function normaliseTheme(raw) {
+  if (!raw || typeof raw !== "object") return null
+  const out = {}
+
+  const colors = {}
+  for (const key of THEME_COLORS) {
+    const v = raw.colors?.[key]
+    if (typeof v === "string" && HEX.test(v.trim())) colors[key] = v.trim().toLowerCase()
+  }
+  if (Object.keys(colors).length) out.colors = colors
+
+  const fonts = {}
+  for (const slot of THEME_FONT_SLOTS) {
+    const f = raw.fonts?.[slot]
+    if (!f || typeof f !== "object") continue
+    const name = str(f.name, 60).replace(/["\\;{}]/g, "")
+    if (!name) continue
+    // A face is either one of the hosted families, or a file someone uploaded.
+    fonts[slot] = { name, url: assetUrl(f.url), google: !!f.google }
+  }
+  if (Object.keys(fonts).length) out.fonts = fonts
+
+  const sounds = {}
+  for (const [key, url] of Object.entries(raw.sounds ?? {})) {
+    if (!SOUND_KEY.test(key)) continue
+    const safe = assetUrl(url)
+    if (safe) sounds[key] = safe
+  }
+  if (Object.keys(sounds).length) out.sounds = sounds
+
+  return Object.keys(out).length ? out : null
+}
+
+/**
+ * An uploaded asset, or nothing.
+ *
+ * Only paths the relay itself serves. A theme is broadcast to every device in
+ * the room and turned into a `src`, so letting it name an arbitrary URL would
+ * make "customise your room" a way to point a dozen phones at anything.
+ */
+function assetUrl(url) {
+  if (typeof url !== "string") return null
+  const clean = url.trim().slice(0, 500)
+  return /^\/files\/[\w.\-%]+$/.test(clean) ? clean : null
+}
+
 /** How many score changes to remember per player. */
 const HISTORY_LIMIT = 30
 
@@ -295,6 +387,8 @@ export function createRoom(code, settings = {}) {
     paused: null,
     /** Whether the big screen is running the music bed. */
     music: false,
+    /** This room's own colours, fonts and sounds, or null for the house look. */
+    theme: null,
     /** {catIndex, clueIndex} of the clue on screen, or null. */
     active: null,
     /** Daily double bookkeeping for the clue on screen. */
@@ -1277,6 +1371,7 @@ export function snapshotRoom(room) {
     title: room.board.title,
     board: room.board,
     settings: room.settings,
+    theme: room.theme ?? null,
     phase: room.phase === PHASE.CLUE || room.phase === PHASE.WAGER || room.phase === PHASE.REVEAL ? PHASE.BOARD : room.phase,
     roundIndex: room.roundIndex,
     players: [...room.players.values()].map((p) => ({
@@ -1307,6 +1402,7 @@ export function restoreRoom(code, snapshot) {
   if (!snapshot) return room
 
   room.board = normaliseBoard(snapshot.board)
+  room.theme = normaliseTheme(snapshot.theme)
   room.roundIndex = Math.max(0, Math.min(num(snapshot.roundIndex, 0), room.board.rounds.length - 1))
   room.phase = Object.values(PHASE).includes(snapshot.phase) ? snapshot.phase : PHASE.LOBBY
   // Never resume into a clue: `snapshotRoom` refuses to save one, but a
@@ -1416,6 +1512,9 @@ export function projectState(room, role, viewerId = null) {
     paused: !!room.paused,
     music: !!room.music,
     unit: unitId,
+    // Everyone gets it: the look has to be the same on the projector, the
+    // phones and the podiums, or it is not a look.
+    theme: room.theme ?? null,
     // The whole board, every round, unredacted — host and controller only. The
     // builder needs this to adopt a resumed game's board, which it cannot
     // rebuild from the projection above (that carries the current round alone).

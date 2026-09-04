@@ -138,8 +138,9 @@ function Console({ state, send, connected, auth, viaKey }) {
           </div>
         </Panel>
 
-        {/* Hidden until sounds are chosen — see `SAMPLES_ENABLED` in lib/sfx.js. */}
-        {SAMPLES_ENABLED && (
+        {/* Hidden until sounds are chosen — either bundled (`SAMPLES_ENABLED`)
+            or uploaded for this room from `/theme`. */}
+        {(SAMPLES_ENABLED || Object.keys(state.theme?.sounds ?? {}).length > 0) && (
           <Panel title="Soundboard">
             <div className="grid grid-cols-5 gap-1.5">
               {BOARD_CUES.map((cue) => (

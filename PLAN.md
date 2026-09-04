@@ -22,6 +22,10 @@ What exists, and what is deliberately left for later.
   a sample engine, a fifteen-cue roster, a bed that ducks under a clue, relay
   messages to fire them. One constant (`SAMPLES_ENABLED`) and a folder of MP3s
   away from working. Game cues stay synthesised and are unaffected.
+- **Room themes** (`/theme`) — per-room colours, fonts and sounds, stored as a
+  diff against the house look so an unset field keeps following the default.
+  Applied by overriding the same CSS custom properties the design is built from,
+  so every screen follows without opting in.
 - **The cue cards** (`/cards`) — the tablet a host reads from: the clue, the
   answer, a grid to pick the next one, and the verdict under a thumb. The
   "slimmer host tab" the original plan wanted, finally.

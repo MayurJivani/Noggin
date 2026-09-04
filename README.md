@@ -24,6 +24,7 @@ or nothing else in the room can reach it.
 | `/host` | host | Build the quiz, then run it. Needs an account |
 | `/display` | the TV | The board, the clue, the scores — read-only |
 | `/play` | every player | A room code, a name, and one enormous button |
+| `/theme` | host | Colours, fonts and sounds for one room |
 | `/cards` | host, on a tablet | Cue cards — the clue, the answer, the verdict. Host-issued link |
 | `/control` | second operator | The in-depth controller. Account or host-issued link |
 | `/scores` | a second monitor | Every player at once: score, who's in, bets, call timer |
@@ -418,6 +419,40 @@ about to look at their buzzer again. Players see their round-trip time, so
 - The big screen holds no state at all and can be reloaded mid-clue.
 - The host desk rejoins the room code it opened last, rather than minting a new
   one that's already on a projector and in five phones.
+
+## Customising a room
+
+**Customise** on the host desk opens `/theme?code=XXXX`: colours, fonts and
+sounds, per room.
+
+A theme is a **diff against the house look**, never a full palette. A field left
+alone is not "black" or "Righteous" — it is absent, and the default flows
+through. That is what makes it safe: a room that changed one colour keeps every
+other decision the design makes, including ones made after tonight, and *Reset
+all* is simply sending nothing.
+
+It works because the whole design is already CSS custom properties. Tailwind's
+`@theme` block declares `--color-gold`, `--font-display` and the rest, and every
+utility resolves through them — so theming a room is overriding those same
+properties on `:root`, and the entire app follows without knowing it happened.
+No second stylesheet, no class on the body, no component that has to opt in.
+
+- **Colours** — the seventeen the design is made of, grouped into metal, stage,
+  type and signals. Click a swatch; ↺ puts one back.
+- **Fonts** — a hosted family for headings, numbers and body text, or upload a
+  `.woff2`/`.woff`/`.ttf`/`.otf`. Hosted families are fetched on demand.
+- **Sounds** — an MP3 for any soundboard cue or the music bed. Anything left
+  empty falls back to the built-in sound, and failing that to the synthesised
+  stand-in, so a partial set is fine. Uploading sounds also brings the
+  soundboard back on the desk and the controller.
+
+There is no save button. Every change goes to the relay and out to every screen
+at once — which is also the only honest preview, since a swatch on a laptop has
+never once predicted what gold looks like on a projector.
+
+Themes are stored with the room and come back with it. Assets must be files the
+relay itself serves: a theme reaches every device in the room and becomes a
+`src`, so it does not get to name arbitrary URLs.
 
 ## Sound
 

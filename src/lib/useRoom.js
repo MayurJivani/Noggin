@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getWsUrl } from "./mediaUrl"
+import { applyTheme } from "./theme"
+import { setSoundOverrides } from "./sfx"
 
 /** How often to ping. Frequent enough to notice a dead socket within seconds. */
 const PING_EVERY_MS = 5_000
@@ -40,6 +42,8 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
   const offsetRef = useRef(0)
   /** Round-trip time, so a player can see their connection is healthy. */
   const [rtt, setRtt] = useState(null)
+  /** Last theme applied, so a broadcast a second doesn't rebuild a font link. */
+  const themeRef = useRef(undefined)
   /**
    * Messages written while the socket was down.
    *
@@ -124,6 +128,20 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
 
         if (msg.type === "state") {
           offsetRef.current = msg.state.serverNow - Date.now()
+          /*
+            The room's look, applied here so no page has to remember to.
+
+            Every screen joins through this hook, so this is the one place that
+            sees a theme arrive — and it must run on the *first* snapshot, not
+            in some component's effect, or the big screen paints the house
+            colours for a frame before switching.
+          */
+          const themeNow = JSON.stringify(msg.state.theme ?? null)
+          if (themeNow !== themeRef.current) {
+            themeRef.current = themeNow
+            applyTheme(msg.state.theme)
+            setSoundOverrides(msg.state.theme?.sounds)
+          }
           setState(msg.state)
           if (msg.effects?.length) handlers.current.onEffects?.(msg.effects, msg.state)
           return

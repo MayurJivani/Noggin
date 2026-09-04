@@ -83,6 +83,8 @@ const MIME = {
   ".json": "application/json; charset=utf-8",
   ".woff2": "font/woff2",
   ".woff": "font/woff",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
   ".png": "image/png",
@@ -1119,6 +1121,18 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.assignTeam(room, msg.playerId, msg.teamId))
     case "team:autofill":
       return apply(room, G.autoTeams(room, msg.count))
+
+    /*
+      This room's own look and sound.
+
+      A whole-object replace rather than a patch: the customisation page holds
+      the theme it is editing and sends the result, so a reset is `null` and
+      there is no way for the two to drift into disagreeing about what is set.
+    */
+    case "theme:set": {
+      room.theme = G.normaliseTheme(msg.theme)
+      return apply(room, [{ kind: "theme" }])
+    }
 
     // ── Before the first clue ──
     case "buzzer:check":

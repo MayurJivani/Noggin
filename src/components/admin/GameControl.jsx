@@ -623,9 +623,9 @@ function BuzzerPanel({ state, send, now }) {
 function Soundboard({ state, send }) {
   const [flash, setFlash] = useState(null)
 
-  // No sounds chosen yet, so there is nothing to fire. The wiring stays —
-  // see `SAMPLES_ENABLED` in src/lib/sfx.js.
-  if (!SAMPLES_ENABLED) return null
+  // Nothing to fire unless sounds ship with the app or this room has uploaded
+  // its own. See `SAMPLES_ENABLED` in src/lib/sfx.js and `/theme`.
+  if (!SAMPLES_ENABLED && !Object.keys(state.theme?.sounds ?? {}).length) return null
 
   const fire = (id) => {
     send("sfx:play", { cue: id })

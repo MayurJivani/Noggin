@@ -1,3 +1,5 @@
+import { resolveMediaUrl } from "./mediaUrl"
+
 /**
  * Sound.
  *
@@ -84,45 +86,85 @@ export const isUnlocked = () => !!ctx && ctx.state === "running"
 
 // ── Samples ──────────────────────────────────────────────────────────────────
 
-/** Where the files live. Same origin as the page, so no CORS to think about. */
+/** Where the bundled files live. Same origin, so no CORS to think about. */
 const SFX_BASE = "/sfx"
+
+/**
+ * A room's own sounds, from its theme.
+ *
+ * These win over the bundled set and work even with `SAMPLES_ENABLED` off —
+ * that flag is about whether *defaults* ship, and a room that has uploaded its
+ * own applause has plainly chosen. Keyed by cue id; anything not overridden
+ * falls through to the bundled file and then to the synthesised stand-in.
+ */
+let overrides = {}
+
+export function setSoundOverrides(map) {
+  const next = map ?? {}
+  // Drop the decoded buffer for anything whose URL changed, or the old sound
+  // keeps playing after the host has replaced it.
+  for (const [id, url] of Object.entries({ ...overrides, ...next })) {
+    if (overrides[id] !== next[id]) {
+      buffers.delete(`@${id}`)
+      loading.delete(`@${id}`)
+      missing.delete(`@${id}`)
+    }
+    void url
+  }
+  overrides = next
+}
+
+export const hasCustomSounds = () => Object.keys(overrides).length > 0
 
 const buffers = new Map()
 const loading = new Map()
 /** Files we have already failed to find — don't ask again on every press. */
 const missing = new Set()
 
-function load(id) {
-  if (!ctx || missing.has(id)) return Promise.reject(new Error(id))
-  if (buffers.has(id)) return Promise.resolve(buffers.get(id))
-  if (loading.has(id)) return loading.get(id)
+/**
+ * Where a cue's audio comes from, and what to file it under.
+ *
+ * A room's own upload is cached separately from the bundled file (`@applause`
+ * vs `applause`) so switching rooms — or clearing an override — falls straight
+ * back to the default without a re-fetch.
+ */
+function sourceFor(id) {
+  const custom = overrides[id]
+  if (custom) return { key: `@${id}`, url: resolveMediaUrl(custom) }
+  return SAMPLES_ENABLED ? { key: id, url: `${SFX_BASE}/${id}.mp3` } : null
+}
 
-  const job = fetch(`${SFX_BASE}/${id}.mp3`)
+function load(id) {
+  const src = sourceFor(id)
+  if (!ctx || !src || missing.has(src.key)) return Promise.reject(new Error(id))
+  if (buffers.has(src.key)) return Promise.resolve(buffers.get(src.key))
+  if (loading.has(src.key)) return loading.get(src.key)
+
+  const job = fetch(src.url)
     .then((res) => {
       if (!res.ok) throw new Error(`${id}: ${res.status}`)
       return res.arrayBuffer()
     })
     .then((bytes) => ctx.decodeAudioData(bytes))
     .then((buf) => {
-      buffers.set(id, buf)
-      loading.delete(id)
+      buffers.set(src.key, buf)
+      loading.delete(src.key)
       return buf
     })
     .catch((err) => {
       // A missing or undecodable file is not an error worth breaking a quiz
       // over. Remember it and let the synth take over.
-      missing.add(id)
-      loading.delete(id)
+      missing.add(src.key)
+      loading.delete(src.key)
       throw err
     })
 
-  loading.set(id, job)
+  loading.set(src.key, job)
   return job
 }
 
 /** Everything except the bed, which is a megabyte and can wait for its cue. */
 function preload() {
-  if (!SAMPLES_ENABLED) return
   for (const id of Object.keys(SAMPLES)) load(id).catch(() => {})
 }
 
@@ -147,12 +189,13 @@ function playBuffer(buf, { bus, gain = 1, loop = false, when = 0 } = {}) {
  */
 function sample(id, fallback, opts = {}) {
   if (!ctx) return
-  // No samples chosen yet: the stand-in *is* the sound, and asking for a file
-  // that is not there would be a 404 per cue per page.
-  if (!SAMPLES_ENABLED) return fallback?.()
-  const warm = buffers.get(id)
+  const src = sourceFor(id)
+  // Nothing chosen for this cue: the stand-in *is* the sound, and asking for a
+  // file that is not there would be a 404 per cue per page.
+  if (!src) return fallback?.()
+  const warm = buffers.get(src.key)
   if (warm) return playBuffer(warm, opts)
-  if (missing.has(id)) return fallback?.()
+  if (missing.has(src.key)) return fallback?.()
   load(id).then(
     (buf) => playBuffer(buf, opts),
     () => fallback?.(),
@@ -389,8 +432,8 @@ export const music = {
   },
 
   start(level = 0.45) {
-    // There is no bed until someone picks one. See `SAMPLES_ENABLED`.
-    if (!SAMPLES_ENABLED) return
+    // No bed until one is bundled or the room uploads its own.
+    if (!SAMPLES_ENABLED && !overrides.music) return
     unlock()
     if (!ctx || bedWanted) return
     bedWanted = true

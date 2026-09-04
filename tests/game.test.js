@@ -1104,3 +1104,62 @@ test("correction never applies to the sound-check or an early press", () => {
   G.selectClue(room, 0, 0)
   assert.deepEqual(kinds(G.buzz(room, "p0", 20)), ["buzz-early"], "jumping the gun is still jumping the gun")
 })
+
+// ── Room themes ──────────────────────────────────────────────────────────────
+
+test("a theme is a diff, so an empty one is no theme at all", () => {
+  assert.equal(G.normaliseTheme(null), null)
+  assert.equal(G.normaliseTheme({}), null)
+  assert.equal(G.normaliseTheme({ colors: {}, fonts: {}, sounds: {} }), null, "nothing named means the house look")
+})
+
+test("only real colours, and only ones the design has", () => {
+  const t = G.normaliseTheme({
+    colors: { gold: "#FF0000", ink: "#abc", void: "not a colour", nonsense: "#000000", bad: "#12345678" },
+  })
+  assert.deepEqual(t.colors, { gold: "#ff0000", ink: "#abc", bad: "#12345678" })
+  assert.equal("void" in t.colors, false, "unparseable is dropped, not defaulted")
+  assert.equal("nonsense" in t.colors, false, "and so is a key the design does not have")
+})
+
+test("assets must be files this relay serves", () => {
+  const t = G.normaliseTheme({
+    sounds: {
+      applause: "/files/clap.mp3",
+      drumroll: "https://example.com/evil.mp3",
+      boo: "/etc/passwd",
+      "bad key!": "/files/x.mp3",
+    },
+    fonts: { display: { name: "Bungee", google: true }, body: { name: "Mine", url: "https://cdn.example.com/f.woff2" } },
+  })
+  assert.deepEqual(t.sounds, { applause: "/files/clap.mp3" }, "a theme reaches every phone — it does not get to name arbitrary URLs")
+  assert.equal(t.fonts.display.name, "Bungee")
+  assert.equal(t.fonts.body.url, null, "an off-site font file is refused the same way")
+})
+
+test("a font name cannot break out of the CSS it lands in", () => {
+  const t = G.normaliseTheme({ fonts: { display: { name: 'X";}body{display:none}@font-face{font-family:"Y', google: true } } })
+  assert.equal(/["\;{}]/.test(t.fonts.display.name), false)
+})
+
+test("everyone is told the room's look", () => {
+  const room = setup(2)
+  room.theme = G.normaliseTheme({ colors: { gold: "#00ff00" } })
+  for (const role of ["host", "display", "player"]) {
+    assert.deepEqual(G.projectState(room, role, "p0").theme.colors, { gold: "#00ff00" }, `${role} sees it`)
+  }
+})
+
+test("a theme survives being saved and reopened", () => {
+  const room = setup(2)
+  room.theme = G.normaliseTheme({ colors: { royal: "#123456" }, sounds: { applause: "/files/a.mp3" } })
+  const back = G.restoreRoom("TEST", G.snapshotRoom(room))
+  assert.deepEqual(back.theme.colors, { royal: "#123456" })
+  assert.deepEqual(back.theme.sounds, { applause: "/files/a.mp3" })
+})
+
+test("a room with no theme stays on the house look", () => {
+  const room = setup(2)
+  assert.equal(G.projectState(room, "display").theme, null)
+  assert.equal(G.restoreRoom("TEST", G.snapshotRoom(room)).theme, null)
+})
