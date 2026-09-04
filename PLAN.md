@@ -22,7 +22,7 @@ What exists, and what is deliberately left for later.
   a sample engine, a fifteen-cue roster, a bed that ducks under a clue, relay
   messages to fire them. One constant (`SAMPLES_ENABLED`) and a folder of MP3s
   away from working. Game cues stay synthesised and are unaffected.
-- **The lectern** (`/lectern`) — the tablet a host reads from: the clue, the
+- **The cue cards** (`/cards`) — the tablet a host reads from: the clue, the
   answer, a grid to pick the next one, and the verdict under a thumb. The
   "slimmer host tab" the original plan wanted, finally.
 - **Accounts** — host sign-in with scrypt and cookie sessions. Players never

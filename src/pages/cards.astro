@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { CardsApp } from "../components/cards/CardsApp"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — cue cards">
+  <CardsApp client:only="react" />
+</Layout>

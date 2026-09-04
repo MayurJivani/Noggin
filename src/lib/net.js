@@ -46,10 +46,10 @@ export async function playerUrl(code) {
  * type — and both are the same key, because the two are a layout difference
  * rather than a permission one.
  *
- * `lectern` is the tablet the host reads from; `control` is the in-depth desk.
+ * `cards` is the tablet the host reads from; `control` is the in-depth desk.
  */
-export async function lecternUrl(code, key) {
-  return `${await originForLan()}/lectern?code=${code}&key=${encodeURIComponent(key)}`
+export async function cardsUrl(code, key) {
+  return `${await originForLan()}/cards?code=${code}&key=${encodeURIComponent(key)}`
 }
 
 export async function controllerUrl(code, key) {

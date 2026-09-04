@@ -8,7 +8,7 @@ import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 
 /**
- * The lectern: what the host holds.
+ * Cue cards: what the host holds.
  *
  * The full desk at `/host` is a workshop — a builder, a roster, a soundboard, a
  * room menu. None of that is any use to someone standing up with a microphone,
@@ -16,14 +16,14 @@ import { BrandMark } from "../ui/Brand"
  * out** and **was that right**.
  *
  * So this is the other half of the original split. The controller at `/control`
- * drives the game in depth; this is a tablet the host reads from. Big type, a
- * grid to pick the next clue, and the verdict under a thumb. Everything else is
- * deliberately absent.
+ * drives the game in depth; this is the stack of cards the host reads from. Big
+ * type, a grid to pick the next clue, and the verdict under a thumb. Everything
+ * else is deliberately absent.
  *
  * It joins as a controller — same privileges, same commands, same key — because
  * a second privileged client is a layout problem, not a protocol one.
  */
-export function LecternApp() {
+export function CardsApp() {
   const params = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams()
   const [code, setCode] = useState((params.get("code") ?? "").toUpperCase())
   const [key] = useState(params.get("key") ?? "")
@@ -44,7 +44,7 @@ export function LecternApp() {
 
   if (!auth.ready) return <AuthLoading />
   // A key stands in for an account — that is the point of handing one out.
-  if (!auth.user && !key) return <SignIn auth={auth} what="pick up the lectern" />
+  if (!auth.user && !key) return <SignIn auth={auth} what="pick up the cue cards" />
 
   if (!entered || !state) {
     return (
@@ -61,10 +61,10 @@ export function LecternApp() {
     )
   }
 
-  return <Lectern state={state} send={send} connected={connected} />
+  return <CueCards state={state} send={send} connected={connected} />
 }
 
-function Lectern({ state, send, connected }) {
+function CueCards({ state, send, connected }) {
   const { phase, clue, board, buzzer } = state
   const now = useCallback(() => Date.now(), [])
   /** The grid, pulled up over a clue when the host wants to see what's left. */
@@ -80,7 +80,7 @@ function Lectern({ state, send, connected }) {
 
       <header className="relative z-10 flex shrink-0 items-center gap-3 px-4 pt-3">
         <BrandMark className="text-base" />
-        <span className="label">lectern</span>
+        <span className="label">cue cards</span>
         <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} />
         {state.paused && <span className="label text-gold">paused</span>}
         <div className="ml-auto flex items-center gap-3">
@@ -298,7 +298,7 @@ function Resting({ state, send }) {
 }
 
 /**
- * The final, from the lectern: the clue to read, the answer, and whoever is
+ * The final, from the cue cards: the clue to read, the answer, and whoever is
  * being turned over. The wagers and the running of it stay on the desk.
  */
 function FinalNotes({ state, send }) {
@@ -381,7 +381,7 @@ function CodePrompt({ code, setCode, onGo, error, connecting }) {
         }}
       >
         <BrandMark className="text-xl" />
-        <div className="label pt-2">lectern</div>
+        <div className="label pt-2">cue cards</div>
         <input
           className="field text-center font-display text-3xl uppercase tracking-[0.3em]"
           maxLength={4}
@@ -392,7 +392,7 @@ function CodePrompt({ code, setCode, onGo, error, connecting }) {
           onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
         />
         <button className="btn btn-gold w-full py-2.5" disabled={code.trim().length < 3 || connecting}>
-          {connecting ? "Connecting…" : "Take the lectern"}
+          {connecting ? "Connecting…" : "Take the cue cards"}
         </button>
         {error && <div className="text-xs text-bad">{error.message}</div>}
       </form>

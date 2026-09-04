@@ -24,6 +24,7 @@ or nothing else in the room can reach it.
 | `/host` | host | Build the quiz, then run it. Needs an account |
 | `/display` | the TV | The board, the clue, the scores — read-only |
 | `/play` | every player | A room code, a name, and one enormous button |
+| `/cards` | host, on a tablet | Cue cards — the clue, the answer, the verdict. Host-issued link |
 | `/control` | second operator | The in-depth controller. Account or host-issued link |
 | `/scores` | a second monitor | Every player at once: score, who's in, bets, call timer |
 | `/podium` | one player's booth | Their name and their score, filling the screen |
@@ -56,9 +57,9 @@ Sessions are an HttpOnly cookie holding a random token; only its SHA-256 is
 stored, so a leaked database does not hand over live sessions. Passwords go
 through scrypt from node's own crypto — no native module to build.
 
-## The lectern
+## The cue cards
 
-`/lectern` is the tablet the host holds. The desk at `/host` is a workshop — a
+`/cards` is the tablet the host holds. The desk at `/host` is a workshop — a
 builder, a roster, a room menu — and none of it is any use to someone standing
 up with a microphone, while all of it is in the way of the two things that are:
 **the words to read out** and **was that right**.

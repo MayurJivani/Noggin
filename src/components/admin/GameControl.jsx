@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
-import { controllerUrl, lecternUrl } from "../../lib/net"
+import { controllerUrl, cardsUrl } from "../../lib/net"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
 import { nameOf, rows as sideRows } from "../../lib/sides"
 import { QrBlock } from "../ui/QrBlock"
@@ -675,16 +675,16 @@ function Soundboard({ state, send }) {
  * board is rarely the person who wrote the quiz.
  */
 function ControllerInvite({ send, controllerKey, code }) {
-  const [urls, setUrls] = useState({ lectern: "", control: "" })
+  const [urls, setUrls] = useState({ cards: "", control: "" })
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!controllerKey) {
-      setUrls({ lectern: "", control: "" })
+      setUrls({ cards: "", control: "" })
       return
     }
-    Promise.all([lecternUrl(code, controllerKey), controllerUrl(code, controllerKey)]).then(([lectern, control]) =>
-      setUrls({ lectern, control }),
+    Promise.all([cardsUrl(code, controllerKey), controllerUrl(code, controllerKey)]).then(([cards, control]) =>
+      setUrls({ cards, control }),
     )
   }, [controllerKey, code])
 
@@ -710,20 +710,20 @@ function ControllerInvite({ send, controllerKey, code }) {
         </>
       ) : (
         <div className="mt-1.5 space-y-1.5">
-          <div className="rounded-lg border border-edge bg-black/30 px-2 py-1.5 text-[10px] break-all text-muted">{urls.lectern || "…"}</div>
+          <div className="rounded-lg border border-edge bg-black/30 px-2 py-1.5 text-[10px] break-all text-muted">{urls.cards || "…"}</div>
           <div className="flex gap-1.5">
             <button
               className="btn btn-gold flex-1 py-1.5 text-[11px]"
-              disabled={!urls.lectern}
+              disabled={!urls.cards}
               onClick={() => {
-                navigator.clipboard?.writeText(urls.lectern)
+                navigator.clipboard?.writeText(urls.cards)
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1800)
               }}
             >
               {copied ? "Copied ✓" : "Copy link"}
             </button>
-            <a className="btn px-2.5 py-1.5 text-[11px]" href={urls.lectern || "#"} target="_blank" rel="noreferrer">
+            <a className="btn px-2.5 py-1.5 text-[11px]" href={urls.cards || "#"} target="_blank" rel="noreferrer">
               Open ↗
             </a>
           </div>
