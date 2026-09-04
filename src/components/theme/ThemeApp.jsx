@@ -10,6 +10,10 @@ import {
   DEFAULT_FONTS,
   FONT_CHOICES,
   FONT_SLOTS,
+  PALETTES,
+  metalFrom,
+  normaliseHex,
+  paletteColors,
   tidyTheme,
   themeIsSet,
 } from "../../lib/theme"
@@ -70,6 +74,12 @@ function Editor({ state, send, code, banner, connected }) {
     push({ ...theme, colors })
   }
 
+  /** Several at once — a palette, or a derived set of metals. */
+  const setColors = (patch) => {
+    if (!patch) return
+    push({ ...theme, colors: { ...(theme.colors ?? {}), ...patch } })
+  }
+
   const setFont = (slot, font) => {
     const fonts = { ...(theme.fonts ?? {}) }
     if (font) fonts[slot] = font
@@ -116,7 +126,7 @@ function Editor({ state, send, code, banner, connected }) {
 
       <main className="relative z-10 mx-auto grid w-full max-w-6xl gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,26rem)]">
         <div className="min-w-0 space-y-4">
-          <Colours theme={theme} setColor={setColor} />
+          <Colours theme={theme} setColor={setColor} setColors={setColors} />
           <Fonts theme={theme} setFont={setFont} />
           <Sounds theme={theme} setSound={setSound} />
         </div>
@@ -137,20 +147,59 @@ function Editor({ state, send, code, banner, connected }) {
 
 // ── Colours ──────────────────────────────────────────────────────────────────
 
-function Colours({ theme, setColor }) {
+function Colours({ theme, setColors, setColor }) {
+  const [metal, setMetal] = useState(theme.colors?.gold ?? DEFAULT_COLORS.gold)
+
   return (
     <section className="panel p-4">
       <div className="label mb-1">Colours</div>
-      <p className="mb-3 text-[11px] text-faint">Click a swatch to change it. The dot marks one you've changed.</p>
+      <p className="mb-3 text-[11px] text-faint">
+        Start from a look, or set any colour exactly. ↺ puts one back to the default.
+      </p>
 
-      <div className="space-y-4">
+      {/* A whole look in one click. Each is a diff like anything else, so
+          changing one colour afterwards behaves no differently. */}
+      <div className="flex flex-wrap gap-1.5">
+        {PALETTES.map((p) => (
+          <button
+            key={p.id}
+            className="flex items-center gap-1.5 rounded-lg border border-edge px-2 py-1 text-[11px] transition-colors hover:border-gold-dim"
+            onClick={() => setColors(paletteColors(p))}
+            title={`Set the metal, the stage purple and the buzzed-in colour to ${p.name}`}
+          >
+            <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-black/40" style={{ background: p.metal }} />
+            <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-black/40" style={{ background: p.royal }} />
+            <span className="text-muted">{p.name}</span>
+          </button>
+        ))}
+      </div>
+
+      {/*
+        Three metals from one. Gold, deep and dim have to read as the same
+        material under different light; picked separately they end up three
+        unrelated yellows.
+      */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-edge px-2.5 py-2">
+        <span className="text-[11px] text-muted">Metal from one colour</span>
+        <HexField value={metal} onChange={setMetal} />
+        <button className="btn px-2.5 py-1 text-[11px]" onClick={() => setColors(metalFrom(metal))}>
+          Derive shades
+        </button>
+        <span className="flex gap-1">
+          {Object.values(metalFrom(metal) ?? {}).map((c) => (
+            <span key={c} className="h-5 w-5 rounded border border-edge" style={{ background: c }} />
+          ))}
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-4">
         {COLOR_GROUPS.map((group) => (
           <div key={group.title}>
             <div className="flex items-baseline gap-2">
               <span className="text-[12px] font-semibold text-ink">{group.title}</span>
               <span className="text-[10px] text-faint">{group.hint}</span>
             </div>
-            <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            <div className="mt-1.5 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {group.keys.map((key) => (
                 <Swatch key={key} name={key} value={theme.colors?.[key]} onChange={(v) => setColor(key, v)} />
               ))}
@@ -162,36 +211,83 @@ function Colours({ theme, setColor }) {
   )
 }
 
+/**
+ * A hex someone can actually type.
+ *
+ * Held locally while it is being edited and only pushed up when it parses, so
+ * deleting the last character to retype it does not blank the colour on every
+ * screen in the room mid-keystroke.
+ */
+function HexField({ value, onChange, className = "" }) {
+  const [draft, setDraft] = useState(value)
+  const [focused, setFocused] = useState(false)
+
+  // Follow the outside world, but never while it is being typed into.
+  useEffect(() => {
+    if (!focused) setDraft(value)
+  }, [value, focused])
+
+  const ok = !!normaliseHex(draft)
+
+  return (
+    <input
+      className={`field w-[7.5rem] px-2 py-1 font-body text-[11px] uppercase ${ok ? "" : "border-bad text-bad"} ${className}`}
+      value={draft}
+      spellCheck={false}
+      aria-label="Hex colour"
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false)
+        setDraft(value)
+      }}
+      onChange={(e) => {
+        setDraft(e.target.value)
+        const hex = normaliseHex(e.target.value)
+        if (hex) onChange(hex)
+      }}
+    />
+  )
+}
+
+/**
+ * One colour, two ways: drag it or type it.
+ *
+ * Both, because they are different jobs. The native well is how you *find* a
+ * colour; the hex field is how you enter the one you already have, which is the
+ * common case for anyone matching a logo or a brand sheet.
+ */
 function Swatch({ name, value, onChange }) {
   const current = value ?? DEFAULT_COLORS[name]
   const custom = !!value
+
   return (
-    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-edge px-2 py-1.5 transition-colors hover:border-gold-dim">
-      <span className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md border border-edge" style={{ background: current }}>
+    <div
+      className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors ${
+        custom ? "border-gold-deep/50 bg-royal/20" : "border-edge hover:border-gold-dim"
+      }`}
+    >
+      <label className="relative h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-md border border-edge" style={{ background: current }}>
         <input
           type="color"
           className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          aria-label={COLOR_LABELS[name] ?? name}
           value={current.slice(0, 7)}
           onChange={(e) => onChange(e.target.value)}
         />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11px] text-ink">{COLOR_LABELS[name] ?? name}</span>
-        <span className="block font-body text-[9px] uppercase text-faint">{current}</span>
-      </span>
-      {custom && (
-        <button
-          className="shrink-0 text-[10px] text-faint transition-colors hover:text-bad"
-          title="Back to the default"
-          onClick={(e) => {
-            e.preventDefault()
-            onChange(null)
-          }}
-        >
-          ↺
-        </button>
-      )}
-    </label>
+      </label>
+
+      <span className="min-w-0 flex-1 truncate text-[11px] text-ink">{COLOR_LABELS[name] ?? name}</span>
+
+      <HexField value={current} onChange={onChange} className="shrink-0" />
+
+      <button
+        className={`shrink-0 px-0.5 text-[11px] transition-colors ${custom ? "text-faint hover:text-bad" : "invisible"}`}
+        title="Back to the default"
+        onClick={() => onChange(null)}
+      >
+        ↺
+      </button>
+    </div>
   )
 }
 

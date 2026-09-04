@@ -100,6 +100,84 @@ export const FONT_CHOICES = {
   body: ["Space Grotesk", "Inter", "Rubik", "Barlow", "Source Sans 3", "Lato"],
 }
 
+// ── Working with colours ─────────────────────────────────────────────────────
+
+/**
+ * Accept a hex the way a person types one.
+ *
+ * The native colour well is fine for *choosing* a colour and useless for
+ * *entering* one — a host with a brand hex on a sticky note cannot drag a
+ * gradient to `#0d3b66`. So the field takes text, and takes it loosely: with or
+ * without the hash, three digits or six or eight, any case. Anything it cannot
+ * read comes back null and the caller leaves the colour alone rather than
+ * blanking it half way through a keystroke.
+ */
+export function normaliseHex(input) {
+  if (typeof input !== "string") return null
+  const raw = input.trim().replace(/^#/, "").toLowerCase()
+  if (!/^([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/.test(raw)) return null
+  // Expand shorthand, so what is stored is always what a picker can show.
+  const full = raw.length === 3 ? raw.replace(/./g, (c) => c + c) : raw
+  return `#${full}`
+}
+
+const toRgb = (hex) => {
+  const h = normaliseHex(hex) ?? "#000000"
+  return [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+}
+
+const toHex = (rgb) => `#${rgb.map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join("")}`
+
+/**
+ * Move a colour towards black or white, keeping its hue.
+ *
+ * Mixing towards the endpoint rather than scaling the channels: scaling turns
+ * a dark colour black and leaves a light one nearly unchanged, which is exactly
+ * wrong for deriving a set of shades that have to look related.
+ */
+export function shade(hex, amount) {
+  const target = amount < 0 ? 0 : 255
+  const k = Math.abs(amount)
+  return toHex(toRgb(hex).map((c) => c + (target - c) * k))
+}
+
+/**
+ * Three metals from one.
+ *
+ * Gold, deep gold and dim gold have to read as the same material under
+ * different light — picking them separately is fiddly and usually ends up with
+ * three unrelated yellows. One colour and two darkenings is what the house
+ * palette is, so it is what the shortcut does.
+ */
+export function metalFrom(hex) {
+  const base = normaliseHex(hex)
+  if (!base) return null
+  return { gold: base, "gold-deep": shade(base, -0.28), "gold-dim": shade(base, -0.58) }
+}
+
+/**
+ * Whole looks, as a starting point.
+ *
+ * Each is a *diff* like any other theme — it names the metal, the purple the
+ * stage is lit with, and the buzzed-in colour, and leaves everything else to
+ * the defaults. So picking one and then changing a single colour behaves
+ * exactly the same as changing a single colour from scratch.
+ */
+export const PALETTES = [
+  { id: "house", name: "Black marble & gold", metal: "#f2c96b", royal: "#241038", live: "#ffcf3d" },
+  { id: "emerald", name: "Emerald", metal: "#5fd6a4", royal: "#0d2b22", live: "#7dffcb" },
+  { id: "ruby", name: "Ruby", metal: "#ff8a8a", royal: "#3a0d18", live: "#ff6b8a" },
+  { id: "ice", name: "Ice", metal: "#a8d8ff", royal: "#0e2338", live: "#9fe8ff" },
+  { id: "sunset", name: "Sunset", metal: "#ff9f5a", royal: "#2e1030", live: "#ffc46b" },
+  { id: "chrome", name: "Chrome", metal: "#dfe3ea", royal: "#1a1c22", live: "#ffffff" },
+  { id: "neon", name: "Neon", metal: "#d98cff", royal: "#160b2e", live: "#61f5ff" },
+]
+
+/** The colours a palette sets, ready to merge over whatever is already there. */
+export function paletteColors(palette) {
+  return { ...metalFrom(palette.metal), royal: palette.royal, live: palette.live }
+}
+
 const STYLE_ID = "noggin-theme"
 const LINK_ID = "noggin-theme-fonts"
 

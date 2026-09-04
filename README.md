@@ -438,7 +438,17 @@ properties on `:root`, and the entire app follows without knowing it happened.
 No second stylesheet, no class on the body, no component that has to opt in.
 
 - **Colours** — the seventeen the design is made of, grouped into metal, stage,
-  type and signals. Click a swatch; ↺ puts one back.
+  type and signals. Each has a picker *and* a hex field, because those are
+  different jobs: the well is how you find a colour, the field is how you enter
+  the one already on your brand sheet. It takes hex loosely — with or without
+  the hash, three digits or six or eight — and ignores anything it can't read
+  rather than blanking the colour mid-keystroke. ↺ puts one back.
+- **Palettes** — seven whole looks (Emerald, Ruby, Ice, Sunset, Chrome, Neon,
+  and the house black-and-gold) as a starting point. Each is a diff like any
+  other, so changing one colour afterwards behaves no differently.
+- **Metal from one colour** — gold, deep and dim have to read as the same
+  material under different light, and picked separately they end up three
+  unrelated yellows. Give it one colour and it derives the other two.
 - **Fonts** — a hosted family for headings, numbers and body text, or upload a
   `.woff2`/`.woff`/`.ttf`/`.otf`. Hosted families are fetched on demand.
 - **Sounds** — an MP3 for any soundboard cue or the music bed. Anything left
