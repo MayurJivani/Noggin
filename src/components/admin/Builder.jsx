@@ -451,6 +451,20 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 max={60}
               />
             )}
+            <label className="flex cursor-pointer items-start gap-2 text-[12px] text-muted">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={!!settings.pingCorrection}
+                onChange={(e) => onSettings({ pingCorrection: e.target.checked })}
+              />
+              <span>
+                Even out connections
+                <span className="block text-[10px] text-faint">
+                  judge the race on reaction time, not on whose wifi is faster · holds each race open a moment longer
+                </span>
+              </span>
+            </label>
             <Rule
               label="Early-buzz penalty"
               hint="ms locked out for jumping the gun"

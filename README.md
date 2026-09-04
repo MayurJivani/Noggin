@@ -218,6 +218,36 @@ what a spreadsheet paste gives you), and quoted commas inside a clue survive.
 Bad rows are reported by line number rather than failing the file — you get told
 which two of forty are wrong. Nothing is replaced until you confirm the preview.
 
+## Evening out connections
+
+Off by default; **Even out connections** in the game rules. Without it the race
+is partly a broadband test: the buzzer opens at the relay, a player on 300ms
+doesn't *see* it open for 150ms, and their press takes another 150ms coming
+back — so they are racing someone on 30ms with a 270ms handicap they can't do
+anything about.
+
+Turned on, each press is credited its own round trip and the race is judged on
+reaction instead. Two things keep it honest:
+
+- **The relay measures the lag itself**, timing protocol-level pings every 5s
+  and taking the median of the last five, so one wifi hiccup doesn't become
+  somebody's handicap. The figure a phone reports about itself is never used
+  here — a client that could claim to be slow would learn to.
+- **The credit is capped at 500ms.** Someone genuinely on two seconds isn't
+  getting a fair race whatever we do, and an uncapped credit would hand them
+  the win for pressing a second late.
+
+The catch is that the fast player's press still *arrives* first, so awarding on
+arrival would undo the whole thing. The race therefore stays open for a beat —
+as long as the worst connection in the room needs, capped at 400ms — and then
+the best corrected time wins. Players who pressed see "In — settling the race";
+the host's list of contenders is re-sorted into the finish that was judged.
+
+With no measurements yet, the settling window is zero and the buzzer behaves
+exactly as it always did. It cannot be made perfect: latency isn't constant,
+and someone who stalls their own connection can still buy a little credit. It's
+a party correction, not a tournament one.
+
 ## How the buzzer is fair
 
 The relay is the referee. A phone never decides anything — it sends "I pressed"

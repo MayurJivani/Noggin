@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   penaltyForWrong: true,
   teams: false,
   mirrorClue: true,
+  pingCorrection: false,
 }
 
 export const makeClue = (value = 200) => ({

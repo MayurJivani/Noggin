@@ -42,6 +42,16 @@ const UPLOAD_DIR = path.resolve(process.env.NOGGIN_UPLOAD_DIR ?? path.join(ROOT,
 /** How long a disconnected player keeps their seat and score. */
 const PLAYER_GRACE_MS = Number(process.env.NOGGIN_PLAYER_GRACE_MS ?? 5 * 60_000)
 const MAX_UPLOAD_BYTES = Number(process.env.NOGGIN_MAX_UPLOAD ?? 25 * 1024 * 1024)
+/** How often the relay times a player's round trip, and how many it remembers. */
+const LAG_PING_MS = 5_000
+const LAG_SAMPLES = 5
+
+/** Middle sample, so one wifi hiccup does not become someone's handicap. */
+function median(values) {
+  if (!values.length) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.floor(sorted.length / 2)]
+}
 /**
  * Signups are open only until the first account exists.
  *
@@ -680,6 +690,8 @@ function closeLiveRoom(code, message = "The host closed this game.") {
   }
   clearTimeout(deadlines.get(code))
   deadlines.delete(code)
+  clearTimeout(settles.get(code))
+  settles.delete(code)
   clearTimeout(saveTimers.get(code))
   saveTimers.delete(code)
   for (const p of room.players.values()) clearTimeout(p.expire)
@@ -744,9 +756,34 @@ function scheduleDeadline(room) {
   deadlines.set(room.code, t)
 }
 
+/**
+ * Closing a corrected race.
+ *
+ * Separate from `deadlines` on purpose: this is a sub-second window that must
+ * not appear as a countdown on the big screen, and it has to survive whatever
+ * else is using the room's one visible timer slot.
+ */
+const settles = new Map()
+
+function scheduleSettle(room) {
+  clearTimeout(settles.get(room.code))
+  settles.delete(room.code)
+  const at = room.buzzer?.settleUntil
+  if (!at) return
+  const t = setTimeout(() => {
+    settles.delete(room.code)
+    const live = rooms.get(room.code)
+    if (!live || live.buzzer.settleUntil !== at) return
+    apply(live, G.resolveBuzz(live))
+  }, Math.max(0, at - Date.now()))
+  t.unref?.()
+  settles.set(room.code, t)
+}
+
 /** Every mutation funnels through here so nobody forgets to re-broadcast. */
 function apply(room, effects) {
   scheduleDeadline(room)
+  scheduleSettle(room)
   broadcast(room, effects)
   markDirty(room)
 }
@@ -788,8 +825,35 @@ wss.on("connection", (ws, req) => {
   // the same way an HTTP request is — no second token to mint or leak.
   ws.upgradeReq = req
   ws.isAlive = true
+  // The interval below needs to know whose socket this is.
+  ws.nogginMeta = meta
+  /** Recent round-trip samples, newest last. See `lagPings`. */
+  ws.lagSamples = []
+  ws.lagPingAt = 0
+
   ws.on("pong", () => {
     ws.isAlive = true
+    if (!ws.lagPingAt) return
+
+    /*
+      A round trip the *relay* timed, at the protocol level.
+
+      This is the number ping correction runs on, and it has to be measured
+      here rather than reported by the phone: correction credits a slow
+      connection, so a client that could name its own latency would name a
+      generous one. A WebSocket pong is answered by the browser's networking
+      stack, which page script does not get to schedule.
+
+      The median of the last few samples, not the latest — wifi produces the
+      occasional 900ms outlier and one of those should not decide a race.
+    */
+    ws.lagSamples.push(Date.now() - ws.lagPingAt)
+    ws.lagPingAt = 0
+    if (ws.lagSamples.length > LAG_SAMPLES) ws.lagSamples.shift()
+
+    const room = meta.code ? rooms.get(meta.code) : null
+    const player = meta.playerId && room?.players.get(meta.playerId)
+    if (player) player.lag = median(ws.lagSamples)
   })
 
   ws.on("message", (raw) => {
@@ -1212,6 +1276,24 @@ const pick = (obj, keys) => {
   for (const k of keys) if (k in obj) out[k] = obj[k]
   return out
 }
+
+/**
+ * Time each phone's round trip, often enough to be current.
+ *
+ * Separate from the liveness heartbeat below, which is deliberately left alone:
+ * that one is proven and reaping sockets is not something to risk for a
+ * measurement. This only pings sockets that are seated players, and never
+ * stacks a second ping on an unanswered one.
+ */
+const lagPings = setInterval(() => {
+  for (const ws of wss.clients) {
+    const meta = ws.nogginMeta
+    if (!meta?.playerId || ws.readyState !== ws.OPEN || ws.lagPingAt) continue
+    ws.lagPingAt = Date.now()
+    ws.ping()
+  }
+}, LAG_PING_MS)
+wss.on("close", () => clearInterval(lagPings))
 
 // Reap half-open sockets — phones that sleep or leave wifi never send a close frame.
 const heartbeat = setInterval(() => {

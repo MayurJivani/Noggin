@@ -437,7 +437,10 @@ function BuzzerCheck({ state, send }) {
           >
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.connected ? "bg-good" : "bg-bad"}`} />
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
-            <Latency ms={p.rtt} />
+            {/* The relay's own measurement when it has one — that is the number
+                ping correction runs on. The phone's own figure fills in until
+                the first pong comes back. */}
+            <Latency ms={p.lag ?? p.rtt} />
             <span className={`w-16 shrink-0 text-right ${hit(p.id) ? "text-good" : "text-faint"}`}>
               {hit(p.id) ? "✓ heard" : p.connected ? "waiting…" : "away"}
             </span>

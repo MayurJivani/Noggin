@@ -1016,3 +1016,91 @@ test("opening the board ends the test too", () => {
   G.startGame(room)
   assert.equal(room.check, null)
 })
+
+// ── Evening out connections ──────────────────────────────────────────────────
+
+/** A room where p0 is on the router and p1 is on the hotel wifi. */
+function laggy(settings = {}) {
+  const room = setup(2, { answerSeconds: 0, ...settings })
+  room.players.get("p0").lag = 30
+  room.players.get("p1").lag = 300
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  return room
+}
+
+test("without correction the faster connection simply wins", () => {
+  const room = laggy()
+  // Both react in 200ms. Their presses arrive 30ms and 300ms later.
+  G.buzz(room, "p0", 230)
+  G.buzz(room, "p1", 500)
+  assert.equal(room.buzzer.winner, "p0", "which is a broadband test, not a quiz")
+})
+
+test("with correction the better reaction wins, whatever the wifi", () => {
+  const room = laggy({ pingCorrection: true })
+
+  // p1 reacts in 150ms, p0 in 200ms. p0's press still *arrives* first.
+  G.buzz(room, "p1", 450) // 150 reaction + 300 lag
+  G.buzz(room, "p0", 230) // 200 reaction + 30 lag
+  assert.equal(room.buzzer.winner, null, "nothing is decided while the race is open")
+
+  G.resolveBuzz(room, 600)
+  assert.equal(room.buzzer.winner, "p1", "the quicker reaction takes it")
+  assert.equal(room.buzzer.winnerMs, 150)
+  assert.equal(room.buzzer.armed, false)
+})
+
+test("the race is held open only as long as the worst connection needs", () => {
+  const room = laggy({ pingCorrection: true })
+  G.buzz(room, "p0", 230)
+  assert.equal(room.buzzer.settleUntil, 230 + 300, "the 300ms player could still be on their way")
+  assert.equal(room.buzzer.armed, true, "and must still be able to get in")
+})
+
+test("a room with no measurements behaves exactly as it did before", () => {
+  const room = setup(2, { answerSeconds: 0, pingCorrection: true })
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+
+  assert.equal(G.settleWindow(room), 0, "nothing to correct for, so nothing to wait for")
+  assert.deepEqual(kinds(G.buzz(room, "p0", 100)), ["buzz-in"])
+  assert.equal(room.buzzer.winner, "p0")
+})
+
+test("the credit is capped, so a terrible connection cannot buy the buzz", () => {
+  const room = setup(2, { answerSeconds: 0, pingCorrection: true })
+  room.players.get("p0").lag = 30
+  room.players.get("p1").lag = 4000 // claimed or genuine, it makes no difference
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+
+  G.buzz(room, "p0", 230) // reaction 200
+  G.buzz(room, "p1", 900) // credited at most 500, so judged at 400
+  G.resolveBuzz(room, 1200)
+  assert.equal(room.buzzer.winner, "p0", "500ms of credit is the most anyone gets")
+})
+
+test("the host's finish order is the one that was judged", () => {
+  const room = laggy({ pingCorrection: true })
+  G.buzz(room, "p0", 230)
+  G.buzz(room, "p1", 450)
+  G.resolveBuzz(room, 600)
+
+  const order = G.projectState(room, "host").buzzer.order
+  assert.deepEqual(order.map((e) => e.playerId), ["p1", "p0"], "sorted by reaction, not by arrival")
+  assert.equal(order[0].behind, 0)
+  assert.equal(order[1].behind, 50, "p0 reacted 50ms slower")
+})
+
+test("correction never applies to the sound-check or an early press", () => {
+  const room = setup(2, { pingCorrection: true })
+  room.players.get("p0").lag = 300
+
+  G.startCheck(room, 0)
+  assert.deepEqual(kinds(G.buzz(room, "p0", 10)), ["check-hit"])
+  G.stopCheck(room)
+
+  G.selectClue(room, 0, 0)
+  assert.deepEqual(kinds(G.buzz(room, "p0", 20)), ["buzz-early"], "jumping the gun is still jumping the gun")
+})

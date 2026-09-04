@@ -197,10 +197,17 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
   const canBuzz = testing ? connected : live && buzzer.armed && !iHoldIt && !spent && !onPenalty && !lifeline
 
   // Keep the last state around for a beat so "wrong" doesn't vanish instantly.
+  // With connections evened out the race stays open for a moment, so a press
+  // is registered before it is decided. Saying so beats a button that has
+  // visibly been pressed and a screen that says nothing happened.
+  const settling = !!buzzer.settleUntil && buzzer.order?.some((e) => e.playerId === me?.id)
+
   const status = testing
     ? heard
       ? { text: "Buzzer works ✓", tone: "good" }
       : { text: "Buzzer test — press it", tone: "live" }
+    : settling
+    ? { text: "In — settling the race", tone: "live" }
     : state.paused
     ? { text: "Paused", tone: "dim" }
     : iHoldIt
@@ -420,7 +427,21 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = 
       style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTapHighlightColor: "transparent" }}
     >
       {canBuzz && <span className="pointer-events-none absolute inset-0 rounded-full border-2 border-gold animate-pulse-ring" />}
-      <span className="pointer-events-none absolute inset-x-[12%] top-[8%] h-[28%] rounded-full bg-white/18 blur-md" />
+
+      {/*
+        Gloss, clipped to the face.
+
+        It was a flat white slab with a blur on it, and the blur had nothing to
+        stop it: it smeared past the rim and washed the top third of the button
+        into grey, which read as a rendering fault rather than a highlight. The
+        wrapper clips it to the circle — and has to be a wrapper, because the
+        pulse ring above scales to 1.35 and must not be clipped with it. Fading
+        to nothing downward is what makes it look like light on a curve instead
+        of paint.
+      */}
+      <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
+        <span className="absolute inset-x-[14%] top-[4%] h-[30%] rounded-[50%] bg-gradient-to-b from-white/28 via-white/10 to-transparent blur-lg" />
+      </span>
       <span className="relative font-display uppercase leading-none tracking-[0.08em]" style={{ fontSize: "clamp(28px, min(12vw, 7vh), 72px)" }}>
         {label}
       </span>

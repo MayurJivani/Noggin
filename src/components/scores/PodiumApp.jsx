@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { holdsBuzz, isCalling, isSpent, rows as sideRows, wagerOf } from "../../lib/sides"
-import { useRolling } from "../../lib/useRolling"
+import { scoreSize, useRolling } from "../../lib/useRolling"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
@@ -196,8 +196,11 @@ function Score({ value, solo }) {
   const [shown, moving] = useRolling(value)
   return (
     <div
-      className={`font-value leading-[0.85] tabular-nums ${shown < 0 ? "text-bad" : "text-gold"} ${moving ? "" : "brass"}`}
-      style={{ fontSize: `max(${solo ? 56 : 34}px, calc(var(--stage) * ${solo ? 16 : 8}))` }}
+      className={`max-w-full whitespace-nowrap font-value leading-[0.9] tabular-nums ${shown < 0 ? "text-bad" : "text-gold"} ${moving ? "" : "brass"}`}
+      // Sized against the value, not just the viewport — see `scoreSize`. The
+      // rolling value rather than the target, so it shrinks as it grows into a
+      // longer number instead of jumping a size at the end.
+      style={{ fontSize: scoreSize(shown, solo ? 16 : 8, solo ? 56 : 34) }}
     >
       {shown}
     </div>

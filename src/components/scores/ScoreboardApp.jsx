@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { holdsBuzz, isCalling, isSpent, nameOf, raceOf, rows as sideRows, wagerOf } from "../../lib/sides"
-import { useRolling } from "../../lib/useRolling"
+import { scoreSize, useRolling } from "../../lib/useRolling"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
@@ -223,8 +223,8 @@ function Rolling({ value }) {
   const [shown] = useRolling(value)
   return (
     <div
-      className={`font-value leading-none tabular-nums ${shown < 0 ? "text-bad" : "text-gold brass-sm"}`}
-      style={{ fontSize: "max(24px, calc(var(--stage) * 5))" }}
+      className={`max-w-full whitespace-nowrap font-value leading-none tabular-nums ${shown < 0 ? "text-bad" : "text-gold brass-sm"}`}
+      style={{ fontSize: scoreSize(shown, 5, 24) }}
     >
       {shown}
     </div>

@@ -11,6 +11,10 @@ What exists, and what is deliberately left for later.
 - **Pause** — the room freezes, the buzzer shuts, and a running clock is banked
   rather than cancelled: resuming returns exactly the time that was left.
 - **Video clues** — alongside image and audio, served with range support.
+- **Ping correction** — judge the race on reaction rather than on whose wifi is
+  faster. The relay measures each phone's round trip itself, credits it back
+  capped at 500ms, and holds the race open briefly so the corrected winner can
+  actually win it.
 - **Buzzer sound-check** — prove every phone's button reaches the relay before
   the first clue, with each phone's round-trip beside it. A test press scores
   nothing and is not a race entry.

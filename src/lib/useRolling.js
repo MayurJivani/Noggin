@@ -20,6 +20,24 @@ import { useEffect, useRef, useState } from "react"
  * Returns `[shown, moving]`; `moving` is for suppressing the brass sheen while
  * the digits are changing, since the effect smears at speed.
  */
+/**
+ * A font size for a score that fits the space it is given.
+ *
+ * The scoreboards size their numbers off the viewport, which is right for "0"
+ * and wrong for "-12400": on a five-column podium wall at 1920 the latter came
+ * out 402px wide in a 370px panel and was quietly clipped — a scoreboard
+ * showing "-1240" is worse than one showing nothing, because it is believable.
+ *
+ * So longer numbers get proportionally smaller. Three characters is the
+ * reference width; a minus sign counts, since it is what usually tips a score
+ * over the edge. The floor stops a runaway total from vanishing.
+ */
+export function scoreSize(value, stages, floorPx) {
+  const len = String(value ?? 0).length
+  const shrink = Math.max(0.45, Math.min(1, 3.5 / Math.max(3.5, len)))
+  return `max(${floorPx}px, calc(var(--stage) * ${(stages * shrink).toFixed(2)}))`
+}
+
 export function useRolling(value) {
   const [shown, setShown] = useState(value)
   /** What is on screen right now — so an interrupted roll resumes from there. */

@@ -49,6 +49,13 @@ export const DEFAULTS = {
   /** A wrong answer subtracts the clue value as well as failing to add it. */
   penaltyForWrong: true,
   /**
+   * Judge the race on reaction time rather than on arrival time.
+   *
+   * Off by default, because it changes what "first" means and a host should
+   * opt into that knowingly. See the Lag section.
+   */
+  pingCorrection: false,
+  /**
    * Mirror the clue onto players' phones.
    *
    * On by default — it is how the person at the back who cannot see the TV
@@ -85,6 +92,65 @@ const HISTORY_LIMIT = 30
  * A photo finish is decided in tenths; anything beyond this is not a contender.
  */
 const LATE_GRACE_MS = 1500
+
+// ── Lag ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Correcting for the connection, when the host asks for it.
+ *
+ * A press arrives at the relay having made a full round trip: the buzzer opened
+ * at T, the player did not *see* it open until T + downstream, they reacted,
+ * and the press then took upstream to come back. So the arrival time is
+ * `reaction + rtt`, and someone on hotel wifi at 300ms is racing someone on the
+ * router at 30ms with a 270ms head start against them. That is not a quiz, it
+ * is a broadband test.
+ *
+ * Subtracting each player's own round trip compares reactions instead. Two
+ * things make it honest:
+ *
+ * - **The relay measures the lag itself**, with protocol-level pings — see
+ *   `server/index.js`. The number a phone reports about itself is never used
+ *   here, because a client that could claim to be slow would learn to.
+ * - **The credit is capped.** Someone genuinely on 2s is not going to have a
+ *   fair race whatever we do, and an uncapped credit would hand them the win
+ *   for pressing a second late.
+ *
+ * It cannot be made perfect. Latency is not constant, and a player who stalls
+ * their own connection can still buy some credit. It is a party correction, not
+ * a tournament one.
+ */
+const LAG_CREDIT_CAP_MS = 500
+
+/**
+ * How long a race is held open once someone presses.
+ *
+ * The catch with correcting: the fast player's press *arrives* first even when
+ * the slow player pressed first. Awarding the buzz on arrival would undo the
+ * whole correction, so the race stays open briefly — long enough that a press
+ * which deserves to win can still get there.
+ */
+const SETTLE_CAP_MS = 400
+
+/** A player's measured round trip, capped. 0 when nothing has been measured. */
+function lagOf(room, playerId) {
+  if (!room.settings.pingCorrection) return 0
+  const lag = room.players.get(playerId)?.lag
+  return Number.isFinite(lag) ? Math.min(Math.max(0, lag), LAG_CREDIT_CAP_MS) : 0
+}
+
+/** How long to hold the race open: the worst connection in the room, capped. */
+export function settleWindow(room) {
+  if (!room.settings.pingCorrection) return 0
+  let worst = 0
+  for (const p of room.players.values()) {
+    if (!p.connected || !Number.isFinite(p.lag)) continue
+    worst = Math.max(worst, Math.min(p.lag, LAG_CREDIT_CAP_MS))
+  }
+  return Math.min(worst, SETTLE_CAP_MS)
+}
+
+/** Lowest corrected time wins; a dead heat falls back to who actually arrived. */
+const byCorrected = (a, b) => a.adjusted - b.adjusted || a.ms - b.ms
 
 let seq = 0
 const uid = (prefix) => `${prefix}_${Date.now().toString(36)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -250,6 +316,8 @@ export function createRoom(code, settings = {}) {
       lockedUntil: {},
       /** Players who have already answered this clue and got it wrong. */
       spent: [],
+      /** Epoch by which the corrected race is decided. See `settleWindow`. */
+      settleUntil: null,
     },
     /** { openedAt, hits } while the host is testing the buzzers. */
     check: null,
@@ -618,6 +686,7 @@ export function armBuzzer(room, now = Date.now()) {
   // Each arming is its own race. Leaving the previous order in place would bar
   // anyone already in it from pressing again.
   room.buzzer.order = []
+  room.buzzer.settleUntil = null
   const secs = room.settings.answerSeconds
   room.timer = null
   return [{ kind: "buzzer-open", answerSeconds: secs }]
@@ -662,7 +731,7 @@ export function everyoneSpent(room) {
 }
 
 function resetBuzzerState(room) {
-  room.buzzer = { armed: false, opened: false, openedAt: 0, order: [], winner: null, winnerMs: null, lockedUntil: {}, spent: [] }
+  room.buzzer = { armed: false, opened: false, openedAt: 0, order: [], winner: null, winnerMs: null, lockedUntil: {}, spent: [], settleUntil: null }
 }
 
 /**
@@ -696,6 +765,8 @@ export function buzz(room, playerId, now = Date.now()) {
   }
 
   const ms = Math.max(0, now - room.buzzer.openedAt)
+  // What the press is judged on. Without correction these are the same number.
+  const adjusted = Math.max(0, ms - lagOf(room, playerId))
 
   // The gate is already shut: someone won, or the host locked it. Losing a race
   // by 60ms is not an offence and must not be punished like jumping the gun —
@@ -703,20 +774,56 @@ export function buzz(room, playerId, now = Date.now()) {
   // later is someone fiddling while the host deliberates, and filing it with a
   // fifteen-second time makes the list of contenders useless.
   if (!room.buzzer.armed) {
-    const contender = room.buzzer.winnerMs != null && ms - room.buzzer.winnerMs <= LATE_GRACE_MS
+    const contender = room.buzzer.winnerMs != null && adjusted - room.buzzer.winnerMs <= LATE_GRACE_MS
     if (!contender) return []
-    room.buzzer.order.push({ playerId, ms })
-    return [{ kind: "buzz-late", playerId, ms }]
+    room.buzzer.order.push({ playerId, ms, adjusted })
+    return [{ kind: "buzz-late", playerId, ms: adjusted }]
   }
 
-  room.buzzer.order.push({ playerId, ms })
-  room.buzzer.winner = playerId
-  room.buzzer.winnerMs = ms
+  room.buzzer.order.push({ playerId, ms, adjusted })
+
+  /*
+    With correction on, the first press to *arrive* is not necessarily the
+    winner, so the race stays open for a moment. The buzzer remains armed —
+    everyone else can still get in — and `resolveBuzz` picks the best corrected
+    time when the window closes.
+  */
+  const settle = settleWindow(room)
+  if (settle > 0) {
+    if (!room.buzzer.settleUntil) room.buzzer.settleUntil = now + settle
+    return [{ kind: "buzz-pending", playerId, ms: adjusted }]
+  }
+
+  return award(room, { playerId, ms: adjusted }, now)
+}
+
+/** Hand the floor to a press and start the answer clock. */
+function award(room, best, now) {
+  room.buzzer.winner = best.playerId
+  room.buzzer.winnerMs = best.ms
   room.buzzer.armed = false
+  room.buzzer.settleUntil = null
   if (room.settings.answerSeconds > 0) {
     room.timer = { kind: "answer", duration: room.settings.answerSeconds, endsAt: now + room.settings.answerSeconds * 1000 }
   }
-  return [{ kind: "buzz-in", playerId, ms }]
+  return [{ kind: "buzz-in", playerId: best.playerId, ms: best.ms }]
+}
+
+/**
+ * Close a corrected race and declare the winner.
+ *
+ * Called by the relay when the settling window expires. The order is re-sorted
+ * by corrected time so the host's list of contenders shows the finish that was
+ * actually judged, rather than the order the packets happened to arrive in.
+ */
+export function resolveBuzz(room, now = Date.now()) {
+  if (!room.buzzer.settleUntil) return []
+  room.buzzer.settleUntil = null
+  if (room.phase !== PHASE.CLUE || !room.buzzer.order.length) return []
+
+  room.buzzer.order.sort(byCorrected)
+  const best = room.buzzer.order[0]
+  return award(room, { playerId: best.playerId, ms: best.adjusted }, now)
 }
 
 /**
@@ -792,6 +899,7 @@ export function judge(room, correct, target = judgeTarget(room)) {
     // Fresh race — see armBuzzer.
     room.buzzer.order = []
     room.buzzer.winnerMs = null
+    room.buzzer.settleUntil = null
     effects.push({ kind: "buzzer-open", answerSeconds: room.settings.answerSeconds })
   } else {
     room.buzzer.armed = false
@@ -1334,9 +1442,15 @@ export function projectState(room, role, viewerId = null) {
       openedAt: room.buzzer.openedAt,
       winner: room.buzzer.winner,
       spent: room.buzzer.spent,
+      /** Set while a corrected race is still open. See `settleWindow`. */
+      settleUntil: room.buzzer.settleUntil,
       // Margins behind the winner read better than absolute times: "+40ms" is
       // the thing being adjudicated, "1240ms" is trivia about the host's pace.
-      order: room.buzzer.order.map((e) => ({ ...e, behind: room.buzzer.winnerMs == null ? 0 : e.ms - room.buzzer.winnerMs })),
+      // The margin is on corrected times, because those are what was judged.
+      order: room.buzzer.order.map((e) => ({
+        ...e,
+        behind: room.buzzer.winnerMs == null ? 0 : (e.adjusted ?? e.ms) - room.buzzer.winnerMs,
+      })),
       lockedUntil: room.buzzer.lockedUntil,
     },
     /*
@@ -1374,9 +1488,12 @@ export function projectState(room, role, viewerId = null) {
           teamId: room.settings.teams ? (p.teamId ?? null) : null,
           score: unit.score,
           connected: p.connected,
-          // Self-reported round-trip. Diagnostic only — never used to order a
-          // race, because a client that can say "I am fast" would.
+          // Self-reported round-trip, for the phone's own benefit.
           rtt: p.rtt ?? null,
+          // What the relay measured, with its own pings. This is the number
+          // ping correction runs on, precisely because the phone cannot
+          // choose it.
+          lag: Number.isFinite(p.lag) ? p.lag : null,
           lifelines: unit.lifelines,
           // The working behind the total. Everyone can see it — it is a
           // scoreboard, not a secret — but it is trimmed for the wire.

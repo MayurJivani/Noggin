@@ -1,5 +1,5 @@
 import { holdsBuzz, isCalling, isSpent } from "../../lib/sides"
-import { useRolling } from "../../lib/useRolling"
+import { scoreSize, useRolling } from "../../lib/useRolling"
 
 /**
  * Podiums along the bottom of the big screen.
@@ -58,8 +58,8 @@ function Rolling({ value }) {
   const [shown, moving] = useRolling(value)
   return (
     <div
-      className={`font-value tabular-nums leading-none ${shown < 0 ? "text-bad" : "text-gold"} ${moving ? "" : "brass-sm"}`}
-      style={{ fontSize: "max(20px, calc(var(--stage) * 3.4))" }}
+      className={`max-w-full whitespace-nowrap font-value tabular-nums leading-none ${shown < 0 ? "text-bad" : "text-gold"} ${moving ? "" : "brass-sm"}`}
+      style={{ fontSize: scoreSize(shown, 3.4, 20) }}
     >
       {shown}
     </div>

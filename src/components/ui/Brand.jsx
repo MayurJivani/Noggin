@@ -65,7 +65,19 @@ function RingO() {
   // the line box centre, so the ring is nudged up to share an optical centre
   // with the letters either side.
   return (
-    <span className="relative inline-block animate-float align-middle" style={{ width: "0.705em", height: "1em" }}>
+    /*
+      The bloom is not decoration here, it is what makes the O belong.
+
+      `.brass` gives every other letter a warm 22px halo, which lights the black
+      immediately around it. The ring had only its own hard black shadow, so the
+      page behind the O stayed unlit while the page behind N, G, G, I, N glowed
+      — and the O read as sitting on a darker patch than the rest of the word.
+      Same values as `.brass`, so it matches whatever the letters are doing.
+    */
+    <span
+      className="relative inline-block animate-float align-middle"
+      style={{ width: "0.705em", height: "1em", filter: "drop-shadow(0 0 22px rgba(242, 201, 107, 0.22))" }}
+    >
       <svg
         viewBox="0 0 100 100"
         width="0.82em"
@@ -87,7 +99,6 @@ function RingO() {
             <stop offset="100%" stopColor="#8a6516" stopOpacity="0" />
           </linearGradient>
 
-          {/* Shadow shaped by the ring itself, so nothing darkens the counter. */}
           <filter id={`${id}-lift`} x="-40%" y="-40%" width="180%" height="180%">
             <feDropShadow dx="2" dy="5" stdDeviation="3.5" floodColor="#000" floodOpacity="0.65" />
           </filter>
