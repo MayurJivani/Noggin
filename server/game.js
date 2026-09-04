@@ -295,6 +295,18 @@ export function createRoom(code, settings = {}) {
     paused: null,
     /** Whether the big screen is running the music bed. */
     music: false,
+    /**
+     * Who is currently driving, keyed by connection.
+     *
+     * A host desk, a set of cue cards and a controller are three screens with
+     * the same authority, and until now none of them could see the others. Two
+     * people arm the buzzer within a second of each other, both assume it did
+     * not work, and lock it again between them. Filled in by the relay, which
+     * is the only thing that knows about sockets.
+     */
+    operators: new Map(),
+    /** The last thing an operator did, so the other screens can see it. */
+    lastAction: null,
     /** {catIndex, clueIndex} of the clue on screen, or null. */
     active: null,
     /** Daily double bookkeeping for the clue on screen. */
@@ -1426,6 +1438,11 @@ export function projectState(room, role, viewerId = null) {
     board,
     clue,
     stake: stake(room),
+    // Only the people driving need to know who else is. A player seeing the
+    // host's name attached to every ruling is noise, and on the big screen it
+    // would be worse than noise.
+    operators: privileged ? [...room.operators.values()] : undefined,
+    lastAction: privileged ? (room.lastAction ?? null) : undefined,
     canUndo: privileged && !!room.lastJudgement,
     everyoneSpent: everyoneSpent(room),
     // The buzzer sound-check. Everyone sees it: a player needs to know their

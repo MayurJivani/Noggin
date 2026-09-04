@@ -122,8 +122,8 @@ export async function createPostgresStore(url) {
       // ON CONFLICT DO NOTHING rather than a read-then-write: the unique index
       // on email is the only thing that can settle a race between two signups.
       const rows = await sql`
-        INSERT INTO noggin_users (id, email, name, password_hash)
-        VALUES (${user.id}, ${user.email}, ${user.name}, ${user.passwordHash})
+        INSERT INTO noggin_users (id, email, name, password_hash, recovery_hash)
+        VALUES (${user.id}, ${user.email}, ${user.name}, ${user.passwordHash}, ${user.recoveryHash ?? null})
         ON CONFLICT (email) DO NOTHING
         RETURNING id
       `
@@ -132,9 +132,41 @@ export async function createPostgresStore(url) {
 
     async findUserByEmail(email) {
       const rows = await sql`
-        SELECT id, email, name, password_hash FROM noggin_users WHERE email = ${String(email ?? "").toLowerCase()}
+        SELECT id, email, name, password_hash, recovery_hash FROM noggin_users WHERE email = ${String(email ?? "").toLowerCase()}
       `
-      return rows[0] ? { id: rows[0].id, email: rows[0].email, name: rows[0].name, passwordHash: rows[0].password_hash } : null
+      return rows[0]
+        ? {
+            id: rows[0].id,
+            email: rows[0].email,
+            name: rows[0].name,
+            passwordHash: rows[0].password_hash,
+            recoveryHash: rows[0].recovery_hash,
+          }
+        : null
+    },
+
+    /** Only the fields a reset touches. Everything else is read-only from here. */
+    async updateUser(id, patch) {
+      const rows = await sql`
+        UPDATE noggin_users SET
+          password_hash = COALESCE(${patch.passwordHash ?? null}, password_hash),
+          recovery_hash = COALESCE(${patch.recoveryHash ?? null}, recovery_hash),
+          name          = COALESCE(${patch.name ?? null}, name)
+        WHERE id = ${String(id ?? "")}
+        RETURNING id, email, name
+      `
+      return rows[0] ?? null
+    },
+
+    /**
+     * Turn out every session this account has.
+     *
+     * A password reset that leaves the old sessions alive has not reset
+     * anything — whoever prompted the reset is still signed in somewhere.
+     */
+    async deleteSessionsForUser(userId) {
+      const rows = await sql`DELETE FROM noggin_sessions WHERE user_id = ${String(userId ?? "")} RETURNING token_hash`
+      return rows.length
     },
 
     async findUserById(id) {

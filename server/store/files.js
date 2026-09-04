@@ -165,6 +165,38 @@ export function createFileStore() {
       return readAll(USER_DIR).length
     },
 
+    /** Only the fields a reset touches. Everything else is read-only from here. */
+    async updateUser(id, patch) {
+      const file = fileFor(USER_DIR, id)
+      if (!file || !existsSync(file)) return null
+      const user = readJson(file)
+      if (!user) return null
+      for (const key of ["passwordHash", "recoveryHash", "name"]) {
+        if (patch[key] !== undefined) user[key] = patch[key]
+      }
+      writeJson(file, user)
+      return user
+    },
+
+    /**
+     * Turn out every session this account has.
+     *
+     * A password reset that leaves the old sessions alive has not reset
+     * anything — whoever prompted the reset is still signed in somewhere.
+     */
+    async deleteSessionsForUser(userId) {
+      const all = readJson(SESSION_FILE) ?? {}
+      let n = 0
+      for (const [hash, row] of Object.entries(all)) {
+        if (row.userId === userId) {
+          delete all[hash]
+          n++
+        }
+      }
+      if (n) writeJson(SESSION_FILE, all)
+      return n
+    },
+
     async createSession(tokenHash, userId, expiresAt) {
       const all = readJson(SESSION_FILE) ?? {}
       all[tokenHash] = { userId, expiresAt }

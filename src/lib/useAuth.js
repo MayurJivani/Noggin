@@ -59,7 +59,22 @@ export function useAuth() {
       const j = await post("signup", { email, password, name })
       setUser(j.user)
       setSignupOpen(false)
-      return j.user
+      // The recovery code comes back once and is never readable again — the
+      // caller has to put it in front of somebody.
+      return j
+    },
+    [post],
+  )
+
+  /**
+   * Back in with a recovery code. One step, so there is no intermediate token
+   * to leak: the code proves who you are and sets the password together.
+   */
+  const forgot = useCallback(
+    async (email, code, password) => {
+      const j = await post("forgot", { email, code, password })
+      setUser(j.user)
+      return j
     },
     [post],
   )
@@ -70,5 +85,5 @@ export function useAuth() {
     await refresh()
   }, [post, refresh])
 
-  return { user, ready, signupOpen, offline, login, signup, logout, refresh }
+  return { user, ready, signupOpen, offline, login, signup, forgot, logout, refresh }
 }

@@ -24,12 +24,13 @@ const SILENCE_LIMIT_MS = 12_000
  * @param {string} [opts.name]      – player display name
  * @param {string} [opts.playerId]  – stable id so a reload keeps its score
  * @param {string} [opts.key]       – controller key, for driving without an account
+ * @param {'desk'|'cards'|'control'} [opts.surface] – which privileged screen this is
  * @param {(effects: any[], state: any) => void} [opts.onEffects]
  * @param {(err: {code:string,message:string}) => void} [opts.onError]
  * @param {(msg: any) => void} [opts.onMessage] – anything this hook doesn't model
  * @param {boolean} [opts.enabled]  – hold off connecting until the user is ready
  */
-export function useRoom({ role, code, name, playerId, key, onEffects, onError, onMessage, enabled = true }) {
+export function useRoom({ role, code, name, playerId, key, surface, onEffects, onError, onMessage, enabled = true }) {
   const [state, setState] = useState(null)
   const [connected, setConnected] = useState(false)
   const [identity, setIdentity] = useState(null)
@@ -54,8 +55,8 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
 
   const handlers = useRef({})
   handlers.current = { onEffects, onError, onMessage }
-  const joinRef = useRef({ role, code, name, playerId, key })
-  joinRef.current = { role, code, name, playerId, key }
+  const joinRef = useRef({ role, code, name, playerId, key, surface })
+  joinRef.current = { role, code, name, playerId, key, surface }
 
   useEffect(() => {
     if (!enabled) return
@@ -81,7 +82,7 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
         lastSeen = Date.now()
         setConnected(true)
         const j = joinRef.current
-        ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, playerId: j.playerId, key: j.key }))
+        ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, playerId: j.playerId, key: j.key, surface: j.surface }))
 
         // Anything the player did while we were away, if it is still worth
         // saying. Sent after the join so the relay knows who is speaking.

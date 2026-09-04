@@ -57,6 +57,34 @@ Sessions are an HttpOnly cookie holding a random token; only its SHA-256 is
 stored, so a leaked database does not hand over live sessions. Passwords go
 through scrypt from node's own crypto — no native module to build.
 
+### Forgetting your password
+
+There is no email here, and there should not be: this runs on a box in
+somebody's house, and making a password reset depend on an SMTP account is a
+whole subsystem to maintain for something needed once a year. So the account
+carries its own way back in.
+
+**Signing up hands you a recovery code**, once — twenty characters, grouped,
+from an alphabet with no I, O, 0 or 1, because it gets written on paper and read
+back. Only its hash is stored, so that really is the only time it can be seen.
+
+**Forgotten your password?** on the sign-in page takes the email, the code and
+the password you want instead. One step, so there is no intermediate token to
+leak or expire, and it is spent on use — a fresh code is issued in the same
+breath, and every session the account had is turned out, because a reset that
+leaves the old ones alive has reset nothing. A wrong code and an unknown email
+give the same message, for the same reason the login route does.
+
+**Lost the code, or the account predates all this?** On the server:
+
+```bash
+node scripts/recovery-code.js you@example.com
+```
+
+Whatever code the account had stops working the moment that prints a new one.
+Since signups close after the first account, that first one is usually the one
+that needs it.
+
 ## The cue cards
 
 `/cards` is the tablet the host holds. The desk at `/host` is a workshop — a
@@ -92,6 +120,24 @@ Two ways in:
   minted on demand, lives only in the relay's memory, and dies with the room —
   it works tonight and not next Tuesday. **Create a controller link** on the
   host desk copies it; **revoke** kicks any controller using it.
+
+## Two people driving
+
+The desk, the cue cards and the controller have the same authority, and until
+recently none of them could see the others. That produces one quiet, specific
+failure: two operators arm the buzzer within a second of each other, both see it
+armed, both assume their own press did it — and one of them locks it again
+thinking they double-pressed. Nothing in the state contradicted them.
+
+So the privileged screens now carry a small strip naming everyone connected and
+what the last one of them did — *"Alice armed the buzzer · 3s ago"*, with the
+surface they were on, since "Alice on the cue cards" and "Alice on the
+controller" are different facts to the person reading it. It disappears after a
+minute; a line that is always there stops being read, and it is only useful in
+the few seconds when you might be about to do the same thing.
+
+Operators are shown to operators only. Players never see it, and neither does
+the big screen.
 
 ## Podium and scoreboard screens
 

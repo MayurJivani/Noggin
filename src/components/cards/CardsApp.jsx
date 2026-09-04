@@ -6,6 +6,7 @@ import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
+import { Operators } from "../ui/Operators"
 
 /**
  * Cue cards: what the host holds.
@@ -33,6 +34,7 @@ export function CardsApp() {
   const auth = useAuth()
   const { state, connected, send } = useRoom({
     role: "controller",
+    surface: "cards",
     code,
     key,
     enabled: entered && !!code && (auth.ready ? !!auth.user || !!key : false),
@@ -83,6 +85,7 @@ function CueCards({ state, send, connected }) {
         <span className="label">cue cards</span>
         <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} />
         {state.paused && <span className="label text-gold">paused</span>}
+        <Operators state={state} className="hidden sm:flex" />
         <div className="ml-auto flex items-center gap-3">
           {clue && (
             <button

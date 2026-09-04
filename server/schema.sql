@@ -18,8 +18,14 @@ CREATE TABLE IF NOT EXISTS noggin_users (
   email         text        NOT NULL UNIQUE,
   name          text        NOT NULL DEFAULT '',
   password_hash text        NOT NULL,
+  -- The way back into an account without an SMTP server. Hashed like a
+  -- password, because it is worth exactly as much as one. Nullable: accounts
+  -- made before this existed have none until `scripts/recovery-code.js` runs.
+  recovery_hash text,
   created_at    timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE noggin_users ADD COLUMN IF NOT EXISTS recovery_hash text;
 
 -- Only the SHA-256 of each token is stored, so a leaked table does not hand
 -- over live sessions.

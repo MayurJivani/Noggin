@@ -57,6 +57,38 @@ export const hashToken = (token) => createHash("sha256").update(String(token)).d
 /** Short, shareable, and scoped to one room for one night. */
 export const newControllerKey = () => randomBytes(9).toString("base64url")
 
+// ── Recovery ─────────────────────────────────────────────────────────────────
+
+/**
+ * The way back into an account.
+ *
+ * There is no email here and there should not be: this thing runs on a box in
+ * somebody's house, and making a password reset depend on an SMTP account is
+ * a whole subsystem to maintain for something used once a year. So the account
+ * carries its own way back in — a code handed over once, at signup, and stored
+ * only as a hash. It is worth exactly as much as the password, so it is treated
+ * exactly like one.
+ *
+ * Twenty characters, grouped, from an alphabet with no I, O, 0 or 1 — it gets
+ * written on paper and read back, and those four are where that goes wrong.
+ */
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+export function newRecoveryCode() {
+  const bytes = randomBytes(20)
+  const chars = [...bytes].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length])
+  return chars.join("").replace(/(.{4})(?=.)/g, "$1-")
+}
+
+/** Accept it however it comes back — spaced, lowercase, dashes wherever. */
+export const tidyRecoveryCode = (code) =>
+  String(code ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+
+export const hashRecoveryCode = (code) => hashPassword(tidyRecoveryCode(code))
+export const verifyRecoveryCode = (code, stored) => verifyPassword(tidyRecoveryCode(code), stored)
+
 // ── Validation ───────────────────────────────────────────────────────────────
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/

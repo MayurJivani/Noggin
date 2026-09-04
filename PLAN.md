@@ -25,8 +25,15 @@ What exists, and what is deliberately left for later.
 - **The cue cards** (`/cards`) — the tablet a host reads from: the clue, the
   answer, a grid to pick the next one, and the verdict under a thumb. The
   "slimmer host tab" the original plan wanted, finally.
+- **Operators** — the desk, the cue cards and the controller can see each other
+  and what the last one of them did, with the surface they did it from. Shown to
+  operators only; players and the big screen see none of it.
 - **Accounts** — host sign-in with scrypt and cookie sessions. Players never
   need one. Boards and saved games are owned; signups close after the first.
+- **Password recovery** — a code handed over once at signup and kept only as a
+  hash; one step to redeem, spent on use, and every open session turned out with
+  it. `scripts/recovery-code.js` mints one for accounts that predate it. No
+  email server involved, deliberately.
 - **Remote controller** (`/control`) — the in-depth surface for a second
   operator, reachable with an account or a host-issued key (with QR) that dies
   with the room.
@@ -65,13 +72,8 @@ What exists, and what is deliberately left for later.
 
 ## Next
 
-- **Who did what.** Two privileged clients can both press Arm. The relay's
-  mutators are idempotent enough that this is harmless, but neither screen shows
-  which operator acted, and two people will eventually fight over the buzzer.
-- **Presence between operators.** Neither the host nor the controller can see
-  that the other is connected, or notice when they drop.
-- **Password reset.** There is no recovery flow. A forgotten password currently
-  means editing the database.
+- Nothing ranked. The three that were here — operator attribution, presence
+  between operators, and password reset — all shipped; see below.
 
 ## Later, unranked
 
@@ -123,9 +125,11 @@ holding, so it avoids things that are absent or hostile on real devices:
 - Players are still unauthenticated by design: anyone on the wifi who knows a
   room code can take a seat under any name. That is the right trade for a party.
   Hosting, resuming and controlling are all gated; joining is not.
-- No rate limiting on the login route. On a LAN that is fine; on a public URL a
-  patient attacker can grind passwords. scrypt makes each attempt expensive, but
-  expensive is not the same as blocked.
+- No rate limiting on the login route, and now `/auth/forgot` is a second one
+  with the same property. On a LAN that is fine; on a public URL a patient
+  attacker can grind both. scrypt makes each attempt expensive, and a recovery
+  code is 20 characters from a 32-symbol alphabet — roughly 100 bits, so
+  guessing it is not the worry. Expensive is still not the same as blocked.
 - Saved rooms are never expired. A machine that has hosted a hundred quizzes
   accumulates a hundred rows; the front page shows the most recent and the rest
   just sit there.

@@ -16,17 +16,26 @@ export function SignIn({ auth, what = "host a game" }) {
   const [email, setEmail] = useState("")
   const [name, setName] = useState("")
   const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  /**
+   * The one moment a recovery code is readable. It is stored only as a hash, so
+   * if this is dismissed without being written down it is gone — which is why
+   * it takes over the screen rather than sitting in a corner.
+   */
+  const [recovery, setRecovery] = useState(null)
 
   const signup = mode === "signup" && auth.signupOpen
+  const forgot = mode === "forgot"
 
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      if (signup) await auth.signup(email, password, name)
+      if (forgot) setRecovery((await auth.forgot(email, code, password)).recoveryCode)
+      else if (signup) setRecovery((await auth.signup(email, password, name)).recoveryCode)
       else await auth.login(email, password)
     } catch (err) {
       setError(err.message)
@@ -34,6 +43,8 @@ export function SignIn({ auth, what = "host a game" }) {
       setBusy(false)
     }
   }
+
+  if (recovery) return <RecoveryCode code={recovery} />
 
   return (
     <div className="relative flex min-h-dvh items-center justify-center px-5 py-10">
@@ -64,6 +75,13 @@ export function SignIn({ auth, what = "host a game" }) {
             </div>
           )}
 
+          {forgot && (
+            <p className="rounded-lg border border-edge bg-black/25 px-3 py-2 text-[11px] leading-relaxed text-muted">
+              Enter the recovery code you were given when the account was made, and the password you'd like instead. Lost it? Run{" "}
+              <code className="text-ink">node scripts/recovery-code.js {email || "you@example.com"}</code> on the server for a new one.
+            </p>
+          )}
+
           {signup && (
             <label className="block">
               <div className="label mb-1">Your name</div>
@@ -84,8 +102,23 @@ export function SignIn({ auth, what = "host a game" }) {
             />
           </label>
 
+          {forgot && (
+            <label className="block">
+              <div className="label mb-1">Recovery code</div>
+              <input
+                className="field text-center font-body uppercase tracking-[0.15em]"
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                autoComplete="one-time-code"
+                spellCheck={false}
+                placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
+              />
+            </label>
+          )}
+
           <label className="block">
-            <div className="label mb-1">Password</div>
+            <div className="label mb-1">{forgot ? "New password" : "Password"}</div>
             <input
               className="field"
               type="password"
@@ -93,18 +126,29 @@ export function SignIn({ auth, what = "host a game" }) {
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete={signup ? "new-password" : "current-password"}
-              placeholder={signup ? "At least 8 characters" : "••••••••"}
+              autoComplete={signup || forgot ? "new-password" : "current-password"}
+              placeholder={signup || forgot ? "At least 8 characters" : "••••••••"}
             />
           </label>
 
           {error && <div className="text-xs text-bad">{error}</div>}
 
           <button className="btn btn-gold w-full py-2.5" disabled={busy}>
-            {busy ? "…" : signup ? "Create account" : "Sign in"}
+            {busy ? "…" : forgot ? "Set a new password" : signup ? "Create account" : "Sign in"}
           </button>
 
-          {!auth.signupOpen && (
+          <button
+            type="button"
+            className="w-full text-center text-[0.7rem] text-faint transition-colors hover:text-muted"
+            onClick={() => {
+              setError(null)
+              setMode(forgot ? "login" : "forgot")
+            }}
+          >
+            {forgot ? "← Back to signing in" : "Forgotten your password?"}
+          </button>
+
+          {!auth.signupOpen && !forgot && (
             <p className="text-center text-[0.7rem] leading-relaxed text-faint">
               Signups are closed on this server. Set <code className="text-muted">NOGGIN_ALLOW_SIGNUP=1</code> to open them.
             </p>
@@ -116,6 +160,61 @@ export function SignIn({ auth, what = "host a game" }) {
           <a className="text-muted transition-colors hover:text-gold" href="/play">
             Join with a room code →
           </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The recovery code, once.
+ *
+ * Only its hash is stored, so this is genuinely the only time it can be read —
+ * which is why it takes the whole screen and why continuing needs a deliberate
+ * press rather than a stray click. Everything else on the page is gone: there
+ * is nothing here to do except write it down.
+ */
+function RecoveryCode({ code }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="relative flex min-h-dvh items-center justify-center px-5 py-10">
+      <Backdrop veins={6} glow={3} />
+      <div className="relative z-10 w-full max-w-md text-center">
+        <Brand size="clamp(2.25rem, 7vw, 3.5rem)" />
+        <VeinLine className="mx-auto mt-2 w-48" height={16} />
+
+        <div className="panel mt-6 p-6">
+          <div className="label" style={{ letterSpacing: "0.35em" }}>
+            Recovery code
+          </div>
+          <p className="mt-2 text-[12px] leading-relaxed text-muted">
+            The way back into this account if the password goes. Write it down now — it is stored only as a hash, so this is the one
+            time it can be shown.
+          </p>
+
+          <div className="mt-4 select-all break-all rounded-xl border border-gold-deep/50 bg-black/40 px-4 py-4 font-body text-[15px] uppercase tracking-[0.18em] text-gold">
+            {code}
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <button
+              className="btn flex-1 py-2 text-[12px]"
+              onClick={() => {
+                navigator.clipboard?.writeText(code)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1800)
+              }}
+            >
+              {copied ? "Copied ✓" : "Copy"}
+            </button>
+            <button className="btn btn-gold flex-1 py-2 text-[12px]" onClick={() => location.reload()}>
+              I've written it down
+            </button>
+          </div>
+
+          <p className="mt-3 text-[10px] leading-relaxed text-faint">
+            Lost it later? <code className="text-muted">node scripts/recovery-code.js</code> on the server mints another.
+          </p>
         </div>
       </div>
     </div>

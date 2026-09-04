@@ -9,6 +9,7 @@ import { displayUrl, podiumsUrl, scoresUrl } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
+import { Operators } from "../ui/Operators"
 import { RoomSwitcher } from "./RoomSwitcher"
 import { Builder } from "./Builder"
 import { GameControl } from "./GameControl"
@@ -80,6 +81,7 @@ function HostDesk({ auth }) {
 
   const { state, connected, identity, send } = useRoom({
     role: "host",
+    surface: "desk",
     code,
     onEffects,
     onError: (e) => setBanner(e.message),
@@ -237,6 +239,7 @@ function HostDesk({ auth }) {
             onNew={() => goToRoom(null)}
             onDelete={deleteRoom}
           />
+          <Operators state={state} />
           <span className={`h-2 w-2 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} title={connected ? "connected" : "reconnecting"} />
           <button className="text-[0.7rem] text-faint transition-colors hover:text-bad" onClick={auth.logout}>
             sign out

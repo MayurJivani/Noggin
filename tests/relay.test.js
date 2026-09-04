@@ -1055,3 +1055,153 @@ test("an ignored press does not re-broadcast the room", async (t) => {
 
   for (const c of [host, alice, screen]) c.ws.close()
 })
+
+test("operators can see each other, and who moved last", async (t) => {
+  const host = client("host", { surface: "desk" })
+  await host.ready
+  const code = host.identity.code
+  host.send("board:set", { board: BOARD })
+  await settle()
+
+  await t.test("alone, there is nobody to report", () => {
+    assert.equal(host.state.operators.length, 1)
+    assert.equal(host.state.operators[0].surface, "desk")
+  })
+
+  // A second pair of hands, on a key rather than an account.
+  host.send("controller:invite")
+  await settle()
+  const key = await new Promise((resolve) => {
+    host.ws.on("message", (raw) => {
+      const m = JSON.parse(raw.toString())
+      if (m.type === "controller-key") resolve(m.key)
+    })
+    host.send("controller:invite")
+  })
+
+  const cards = client("controller", { code, key, surface: "cards" }, "")
+  await cards.ready
+  await settle()
+
+  await t.test("both screens see both operators", () => {
+    for (const c of [host, cards]) {
+      const surfaces = c.state.operators.map((o) => o.surface).sort()
+      assert.deepEqual(surfaces, ["cards", "desk"], "each knows the other is there")
+    }
+    assert.equal(cards.state.operators.find((o) => o.surface === "cards").name, "Guest", "a key-holder has no account name")
+  })
+
+  await t.test("a move is attributed to whoever made it", async () => {
+    host.send("game:start")
+    await settle()
+    host.send("clue:select", { catIndex: 0, clueIndex: 0 })
+    await settle()
+    cards.send("buzzer:arm")
+    await settle()
+
+    assert.equal(host.state.lastAction.what, "armed the buzzer")
+    assert.equal(host.state.lastAction.surface, "cards", "the desk can see it was the cue cards, not itself")
+    assert.equal(host.state.lastAction.by, cards.state.operators.find((o) => o.surface === "cards").id)
+  })
+
+  await t.test("players are told none of it", async () => {
+    const phone = client("player", { code, name: "Ann" })
+    await phone.ready
+    await settle()
+    assert.equal(phone.state.operators, undefined, "who is driving is not a player's business")
+    assert.equal(phone.state.lastAction, undefined)
+    phone.ws.close()
+  })
+
+  await t.test("leaving empties the seat", async () => {
+    cards.ws.close()
+    await settle(300)
+    assert.deepEqual(host.state.operators.map((o) => o.surface), ["desk"])
+  })
+
+  host.ws.close()
+})
+
+test("a forgotten password can be recovered without an email server", async (t) => {
+  const email = "forgetful@example.com"
+  const signup = await fetch(`http://127.0.0.1:${PORT}/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: "the first password", name: "Forgetful" }),
+  })
+  const created = await signup.json()
+  assert.equal(signup.status, 200)
+
+  await t.test("signup hands over a recovery code, once", () => {
+    assert.match(created.recoveryCode, /^[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4}){4}$/, "grouped, and no I O 0 1 to misread")
+  })
+
+  const forgot = (body) =>
+    fetch(`http://127.0.0.1:${PORT}/auth/forgot`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+
+  await t.test("a wrong code says the same thing as a wrong email", async () => {
+    const bad = await forgot({ email, code: "XXXX-XXXX-XXXX-XXXX-XXXX", password: "a new password" })
+    const unknown = await forgot({ email: "nobody@example.com", code: created.recoveryCode, password: "a new password" })
+    assert.equal(bad.status, 401)
+    assert.equal(unknown.status, 401)
+    assert.equal((await bad.json()).error, (await unknown.json()).error, "or this becomes a way to find out who has an account")
+  })
+
+  await t.test("a short password is refused before the code is even checked", async () => {
+    const res = await forgot({ email, code: created.recoveryCode, password: "short" })
+    assert.equal(res.status, 400)
+  })
+
+  let second
+  await t.test("the right code sets the password and issues a fresh one", async () => {
+    // Typed back the way a person would: lowercase, spaces instead of dashes.
+    const typed = created.recoveryCode.toLowerCase().replace(/-/g, " ")
+    const res = await forgot({ email, code: typed, password: "the second password" })
+    assert.equal(res.status, 200)
+    second = (await res.json()).recoveryCode
+    assert.notEqual(second, created.recoveryCode, "a used code is spent")
+    assert.ok(res.headers.get("set-cookie"), "and you are signed in on the spot")
+  })
+
+  await t.test("the old code no longer works", async () => {
+    assert.equal((await forgot({ email, code: created.recoveryCode, password: "a third password" })).status, 401)
+  })
+
+  await t.test("the new password is the one that signs in", async () => {
+    const login = (password) =>
+      fetch(`http://127.0.0.1:${PORT}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+    assert.equal((await login("the first password")).status, 401)
+    assert.equal((await login("the second password")).status, 200)
+    assert.ok(second)
+  })
+})
+
+test("a reset turns out the sessions that were already open", async () => {
+  const email = "compromised@example.com"
+  const signup = await fetch(`http://127.0.0.1:${PORT}/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: "original password", name: "Comp" }),
+  })
+  const { recoveryCode } = await signup.json()
+  const jar = (signup.headers.get("set-cookie") ?? "").split(";")[0]
+
+  const me = () => fetch(`http://127.0.0.1:${PORT}/auth/me`, { headers: { Cookie: jar } }).then((r) => r.json())
+  assert.equal((await me()).user.email, email, "signed in to begin with")
+
+  await fetch(`http://127.0.0.1:${PORT}/auth/forgot`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code: recoveryCode, password: "replacement password" }),
+  })
+
+  assert.equal((await me()).user, null, "a reset that leaves the old session alive has reset nothing")
+})

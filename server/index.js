@@ -26,14 +26,17 @@ import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
   hashPassword,
+  hashRecoveryCode,
   hashToken,
   newControllerKey,
+  newRecoveryCode,
   newSessionToken,
   parseCookies,
   publicUser,
   sessionCookie,
   validateCredentials,
   verifyPassword,
+  verifyRecoveryCode,
 } from "./auth.js"
 
 const PORT = Number(process.env.NOGGIN_PORT ?? 4332)
@@ -520,17 +523,60 @@ async function handleAuth(req, res, url, me) {
     const check = validateCredentials(payload)
     if (check.error) return json(res, 400, { error: check.error })
 
+    // Handed over once, here, and never recoverable again — only its hash is
+    // kept. See `newRecoveryCode`.
+    const recoveryCode = newRecoveryCode()
     const user = {
       id: `u_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`,
       email: check.email,
       name: check.name,
       passwordHash: await hashPassword(check.password),
+      recoveryHash: await hashRecoveryCode(recoveryCode),
       createdAt: Date.now(),
     }
     const created = await store.createUser(user)
     if (!created) return json(res, 409, { error: "That email is already registered." })
     console.log(`[auth] account created for ${user.email}`)
-    return startSession(res, req, user.id, { user: publicUser(user) })
+    return startSession(res, req, user.id, { user: publicUser(user), recoveryCode })
+  }
+
+  /**
+   * Back in without an email server.
+   *
+   * Deliberately one step: the code proves who you are and sets the new
+   * password in the same request, so there is no intermediate token to leak or
+   * expire. Every existing session is turned out, because a reset that leaves
+   * the old ones alive has not reset anything.
+   */
+  if (route === "forgot" && req.method === "POST") {
+    let payload
+    try {
+      payload = JSON.parse(await readBody(req, 8 * 1024))
+    } catch {
+      return json(res, 400, { error: "Bad request." })
+    }
+
+    const password = String(payload?.password ?? "")
+    if (password.length < 8) return json(res, 400, { error: "The new password needs at least 8 characters." })
+
+    const email = String(payload?.email ?? "").trim().toLowerCase()
+    const user = await store.findUserByEmail(email)
+    const ok = user?.recoveryHash && (await verifyRecoveryCode(payload?.code, user.recoveryHash))
+    // One message for both failures, so this cannot be used to work out which
+    // emails have accounts — the same reason the login route says one thing.
+    if (!ok) return json(res, 401, { error: "That email and recovery code don't match." })
+
+    // A code is spent once used. Minting the replacement in the same breath is
+    // what stops a reset leaving the account with no way back in next time.
+    const next = newRecoveryCode()
+    await store.updateUser(user.id, {
+      passwordHash: await hashPassword(password),
+      recoveryHash: await hashRecoveryCode(next),
+    })
+    const killed = await store.deleteSessionsForUser(user.id)
+    console.log(`[auth] password reset for ${user.email} (${killed} session(s) ended)`)
+
+    return startSession(res, req, user.id, { user: publicUser(user), recoveryCode: next })
   }
 
   if (route === "login" && req.method === "POST") {
@@ -892,6 +938,9 @@ wss.on("connection", (ws, req) => {
     const room = rooms.get(meta.code)
     if (!room) return
     room.sockets.delete(ws)
+    // Someone stopped driving. The others should see the seat empty rather
+    // than assume a silent screen is still watching.
+    if (meta.opId) room.operators.delete(meta.opId)
 
     if (meta.role === "player" && meta.playerId) {
       const player = room.players.get(meta.playerId)
@@ -916,6 +965,9 @@ wss.on("connection", (ws, req) => {
     sweep(meta.code)
   })
 })
+
+/** Which screen a privileged client is. See `handleJoin`. */
+const SURFACES = new Set(["desk", "cards", "control"])
 
 async function handleJoin(ws, meta, msg, req) {
   const role = ["host", "display", "player", "controller"].includes(msg.role) ? msg.role : "display"
@@ -963,6 +1015,22 @@ async function handleJoin(ws, meta, msg, req) {
   meta.code = room.code
   meta.role = role
   room.sockets.set(ws, meta)
+
+  /*
+    Name the operator, so the other privileged screens can see them.
+
+    The surface matters as much as the person: `/cards` and `/control` both
+    join as controllers because they have the same authority, but "Alice on the
+    cue cards" and "Alice on the controller" are different facts to the person
+    reading it — one is holding a tablet and reading aloud, the other is driving
+    the board.
+  */
+  if (privileged) {
+    meta.opId = `op_${Math.random().toString(36).slice(2, 10)}`
+    meta.opName = user?.name || user?.email?.split("@")[0] || "Guest"
+    meta.surface = SURFACES.has(msg.surface) ? msg.surface : role === "host" ? "desk" : "control"
+    room.operators.set(meta.opId, { id: meta.opId, name: meta.opName, surface: meta.surface, since: Date.now() })
+  }
 
   if (role === "player") {
     let name = String(msg.name ?? "").trim().slice(0, 16) || "Player"
@@ -1023,7 +1091,47 @@ function findSeat(room, playerId, name) {
   return [...room.players.values()].find((p) => !p.connected && sameName(p.name, name)) ?? null
 }
 
+/**
+ * What each command is called, when someone else has to read about it.
+ *
+ * Only the ones worth reporting. A settings toggle or a score nudge is a fact
+ * on screen already; "armed the buzzer" is the one that matters, because it is
+ * the one two operators press at once.
+ */
+const ACTION_LABELS = {
+  "game:start": "opened the board",
+  "clue:select": "picked a clue",
+  "buzzer:arm": "armed the buzzer",
+  "buzzer:lock": "locked the buzzer",
+  "buzzer:reset": "reset the race",
+  "buzzer:reopen": "reopened the buzzer",
+  "buzzer:check": "started a buzzer test",
+  "buzzer:check-stop": "ended the buzzer test",
+  judge: "ruled on an answer",
+  "judge:undo": "took back a ruling",
+  "clue:reveal": "revealed the answer",
+  "clue:close": "closed the clue",
+  "round:next": "started the next round",
+  "game:pause": "paused the room",
+  "game:resume": "let the room go",
+  "wager:set": "locked a wager",
+  "final:open": "opened the final",
+  "final:start": "showed the final clue",
+  "final:reveal": "started revealing",
+  "final:judge": "ruled on the final",
+  "lifeline:grant": "started a phone call",
+  "game:reset": "reset the game",
+  "room:delete": "deleted the game",
+}
+
 function handleHostMessage(room, meta, ws, msg) {
+  // Note who moved before doing it, so the effects that go out carry the name
+  // of whoever caused them rather than arriving from nowhere.
+  const label = ACTION_LABELS[msg.type]
+  if (label) {
+    room.lastAction = { by: meta.opId, name: meta.opName, surface: meta.surface, what: label, at: Date.now() }
+  }
+
   switch (msg.type) {
     case "board:set": {
       // Replacing the board mid-clue would pull the rug out from under the
