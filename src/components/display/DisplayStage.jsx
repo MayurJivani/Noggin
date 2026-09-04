@@ -167,7 +167,7 @@ function Stage({ code, state, connected, error, audioOn, flash, splash, origin, 
       <div className="bulbs relative z-10 mx-[2.5vmin] shrink-0" />
 
       <main className="relative z-10 min-h-0 flex-1">
-        {phase === "lobby" && <Lobby code={state.code} players={players} teams={state.teams} title={board.title} />}
+        {phase === "lobby" && <Lobby code={state.code} players={players} teams={state.teams} title={board.title} check={state.check} />}
         {phase === "final" && <FinalStage state={state} now={() => Date.now()} />}
         {phase === "intermission" && <Interlude title="Round cleared" rows={rows} sub={board.round?.name} />}
         {phase === "ended" && <Interlude title="Final scores" rows={rows} final />}
@@ -233,7 +233,8 @@ function PausedCard() {
   )
 }
 
-function Lobby({ code, players, teams, title }) {
+function Lobby({ code, players, teams, title, check }) {
+  const heard = check ? players.filter((p) => check.hits?.[p.id]).length : 0
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[4vmin]">
       <Brand size={Math.min(120, Math.max(48, window.innerWidth / 12))} />
@@ -241,6 +242,23 @@ function Lobby({ code, players, teams, title }) {
       <div className="text-center font-display text-gold/85" style={{ fontSize: "max(16px, calc(var(--stage) * 2.6))" }}>
         {title}
       </div>
+
+      {/* The host is asking the room to do something, so the room should be
+          told what — and be able to see it landing. */}
+      {check && (
+        <div
+          className={`rounded-[1.2vmin] border-[0.3vmin] px-[3vmin] py-[1.4vmin] text-center ${
+            check.complete ? "border-good bg-good/10" : "border-live bg-live/10 animate-glow"
+          }`}
+        >
+          <div className="font-display uppercase tracking-[0.2em] text-ink" style={{ fontSize: "max(14px, calc(var(--stage) * 2.4))" }}>
+            {check.complete ? "All buzzers working" : "Press your buzzer"}
+          </div>
+          <div className="font-value tabular-nums text-gold" style={{ fontSize: "max(18px, calc(var(--stage) * 3.2))" }}>
+            {heard} / {players.length}
+          </div>
+        </div>
+      )}
 
       <JoinCard code={code} size={Math.round(Math.min(260, Math.max(150, window.innerWidth / 7)))} />
 

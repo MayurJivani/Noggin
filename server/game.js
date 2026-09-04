@@ -251,6 +251,8 @@ export function createRoom(code, settings = {}) {
       /** Players who have already answered this clue and got it wrong. */
       spent: [],
     },
+    /** { openedAt, hits } while the host is testing the buzzers. */
+    check: null,
     /** { kind, endsAt, duration } — one visible countdown at a time. */
     timer: null,
     /** { type, playerId, endsAt } while a lifeline is running. */
@@ -495,7 +497,50 @@ export function startGame(room) {
   if (room.phase !== PHASE.LOBBY && room.phase !== PHASE.INTERMISSION) return []
   room.phase = PHASE.BOARD
   room.roundIndex = room.phase === PHASE.INTERMISSION ? room.roundIndex : 0
+  // Whatever the host was testing, they are done testing it.
+  room.check = null
   return [{ kind: "game-start" }]
+}
+
+// ── Sound-checking the buzzers ───────────────────────────────────────────────
+
+/**
+ * Prove every phone works before the first clue.
+ *
+ * "Is everyone in?" and "does everyone's button actually reach the relay?" are
+ * different questions, and only the first was answerable — a phone can be sat
+ * in the lobby with a seat and a name and still be on a dead socket, a locked
+ * screen, or an in-app browser that swallows the press. That is discovered on
+ * clue one, in front of everybody, which is the worst possible moment.
+ *
+ * A test press is deliberately inert: it is not a race entry, nothing scores,
+ * nobody is spent, and it works *outside* a clue precisely because that is when
+ * you want to check. All it records is that the press arrived.
+ */
+export function startCheck(room, now = Date.now()) {
+  if (room.phase === PHASE.CLUE || room.phase === PHASE.WAGER || room.phase === PHASE.REVEAL || room.phase === PHASE.FINAL) return []
+  room.check = { openedAt: now, hits: {} }
+  return [{ kind: "check-start" }]
+}
+
+export function stopCheck(room) {
+  if (!room.check) return []
+  room.check = null
+  return [{ kind: "check-stop" }]
+}
+
+export function checkBuzz(room, playerId, now = Date.now()) {
+  if (!room.check || !room.players.has(playerId)) return []
+  const prev = room.check.hits[playerId]
+  room.check.hits[playerId] = { at: now, count: (prev?.count ?? 0) + 1 }
+  // First press is the news; the rest are someone enjoying the button.
+  return prev ? [] : [{ kind: "check-hit", playerId }]
+}
+
+/** Everyone seated has pressed at least once. */
+export function checkComplete(room) {
+  if (!room.check || room.players.size === 0) return false
+  return [...room.players.keys()].every((id) => room.check.hits[id])
 }
 
 export function selectClue(room, catIndex, clueIndex) {
@@ -511,8 +556,10 @@ export function selectClue(room, catIndex, clueIndex) {
   room.timer = null
   room.lifeline = null
   // Putting a clue up *is* resuming. The banked clock belonged to the last one
-  // and would be wrong to hand to this one.
+  // and would be wrong to hand to this one — and a test left running would
+  // swallow every press of the clue that just went up.
   room.paused = null
+  room.check = null
   resetBuzzerState(room)
 
   if (clue.nitro) {
@@ -627,6 +674,9 @@ function resetBuzzerState(room) {
  * moment the clue appears.
  */
 export function buzz(room, playerId, now = Date.now()) {
+  // A sound-check press goes nowhere near the race. See `startCheck`.
+  if (room.check) return checkBuzz(room, playerId, now)
+
   const player = room.players.get(playerId)
   if (!player || room.phase !== PHASE.CLUE) return []
   // A frozen room takes no presses. The clue is still on screen and the button
@@ -967,6 +1017,7 @@ export function resetGame(room) {
     t.history = []
   }
   room.paused = null
+  room.check = null
   room.phase = PHASE.LOBBY
   room.roundIndex = 0
   room.active = null
@@ -1269,6 +1320,10 @@ export function projectState(room, role, viewerId = null) {
     stake: stake(room),
     canUndo: privileged && !!room.lastJudgement,
     everyoneSpent: everyoneSpent(room),
+    // The buzzer sound-check. Everyone sees it: a player needs to know their
+    // press landed, and the big screen showing "testing" beats it showing a
+    // lobby while the host is plainly doing something.
+    check: room.check ? { since: room.check.openedAt, hits: room.check.hits, complete: checkComplete(room) } : null,
     final: projectFinal(room, privileged, viewerId),
     wager: room.wager,
     revealed: room.revealed,
@@ -1319,6 +1374,9 @@ export function projectState(room, role, viewerId = null) {
           teamId: room.settings.teams ? (p.teamId ?? null) : null,
           score: unit.score,
           connected: p.connected,
+          // Self-reported round-trip. Diagnostic only — never used to order a
+          // race, because a client that can say "I am fast" would.
+          rtt: p.rtt ?? null,
           lifelines: unit.lifelines,
           // The working behind the total. Everyone can see it — it is a
           // scoreboard, not a secret — but it is trimmed for the wire.

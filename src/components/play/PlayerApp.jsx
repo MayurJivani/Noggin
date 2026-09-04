@@ -183,11 +183,25 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
   const onPenalty = (penalty ?? 0) > 0
 
   const live = phase === "clue" && !!me && !state.paused
-  const canBuzz = live && buzzer.armed && !iHoldIt && !spent && !onPenalty && !lifeline
   const team = state.teams?.find((t) => t.members.includes(me?.id))
 
+  /*
+    The host is sound-checking. The button is live but the game is not: a press
+    scores nothing and costs nothing, it just proves the path from this thumb to
+    the relay works — which is the one thing nobody could confirm before the
+    first clue.
+  */
+  const testing = !!state.check
+  const heard = testing && !!state.check.hits?.[me?.id]
+
+  const canBuzz = testing ? connected : live && buzzer.armed && !iHoldIt && !spent && !onPenalty && !lifeline
+
   // Keep the last state around for a beat so "wrong" doesn't vanish instantly.
-  const status = state.paused
+  const status = testing
+    ? heard
+      ? { text: "Buzzer works ✓", tone: "good" }
+      : { text: "Buzzer test — press it", tone: "live" }
+    : state.paused
     ? { text: "Paused", tone: "dim" }
     : iHoldIt
     ? { text: "You're in — answer!", tone: "live" }
@@ -223,6 +237,13 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
   const BUZZ_TTL_MS = 2000
 
   const press = () => {
+    if (testing) {
+      setPressed(true)
+      send("buzz", {}, BUZZ_TTL_MS)
+      buzz(35)
+      setTimeout(() => setPressed(false), 220)
+      return
+    }
     if (!canBuzz) {
       // Still send it. An early press is a real event the relay wants to see —
       // silently swallowing it would let a player mash with no consequence.
@@ -306,8 +327,9 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
       <div className={`relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-3 ${phase === "final" ? "hidden" : ""}`}>
         <BuzzerButton
           canBuzz={canBuzz && connected}
-          iHoldIt={iHoldIt}
-          disabled={spent || onPenalty}
+          iHoldIt={iHoldIt || heard}
+          label={testing ? (heard ? "✓" : "TEST") : iHoldIt ? "GO" : "BUZZ"}
+          disabled={!testing && (spent || onPenalty)}
           pressed={pressed}
           onPress={press}
           offline={!connected}
@@ -353,7 +375,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
  * Events, and on those the buzzer simply did nothing. Falling back to `onClick`
  * would work but costs the ~300ms the fallback exists to avoid.
  */
-function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = false, roomy = false }) {
+function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = false, roomy = false, label = "BUZZ" }) {
   const lastFire = useRef(0)
 
   /**
@@ -400,7 +422,7 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = 
       {canBuzz && <span className="pointer-events-none absolute inset-0 rounded-full border-2 border-gold animate-pulse-ring" />}
       <span className="pointer-events-none absolute inset-x-[12%] top-[8%] h-[28%] rounded-full bg-white/18 blur-md" />
       <span className="relative font-display uppercase leading-none tracking-[0.08em]" style={{ fontSize: "clamp(28px, min(12vw, 7vh), 72px)" }}>
-        {iHoldIt ? "GO" : "BUZZ"}
+        {label}
       </span>
       {offline && (
         <span className="pointer-events-none absolute inset-x-0 bottom-[18%] text-center text-[0.7rem] uppercase tracking-widest text-bad">

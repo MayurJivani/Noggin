@@ -141,6 +141,9 @@ export function useRoom({ role, code, name, playerId, key, onEffects, onError, o
           if (pingSentAt) {
             const round = now - pingSentAt
             setRtt(round)
+            // Tell the room, so the host can see which phone is on bad wifi
+            // before the game rather than after someone loses every buzz.
+            if (role === "player") ws.send(JSON.stringify({ type: "rtt", ms: round }))
             // Halve the round trip to estimate one-way, so a countdown is not
             // skewed by the time the reply spent coming back.
             offsetRef.current = msg.serverNow - (now - round / 2)

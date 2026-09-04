@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { controllerUrl } from "../../lib/net"
-import { BOARD_CUES } from "../../lib/sfx"
+import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
 import { nameOf, rows as sideRows } from "../../lib/sides"
 import { QrBlock } from "../ui/QrBlock"
 import { PlayerRoster } from "./PlayerRoster"
@@ -212,14 +212,12 @@ function StagePanel({ state, send, now }) {
   if (phase === "lobby") {
     return (
       <Empty>
-        <div className="text-center">
+        <div className="w-full max-w-md text-center">
           <div className="font-display text-xl text-gold">Ready when you are.</div>
           <p className="mx-auto mt-2 max-w-sm text-[12px] text-muted">
             Players join with the room code. Open the board when everyone's in — the big screen follows this desk.
           </p>
-          <button className="btn btn-gold mt-4 px-6 py-2.5" onClick={() => send("game:start")}>
-            Open the board
-          </button>
+          <BuzzerCheck state={state} send={send} />
         </div>
       </Empty>
     )
@@ -382,6 +380,98 @@ function StagePanel({ state, send, now }) {
   )
 }
 
+/**
+ * Prove the buzzers work before the first clue.
+ *
+ * "Everyone has joined" and "everyone's button reaches the relay" are different
+ * questions, and only the first was answerable from this desk. A phone can hold
+ * a seat and a name on a socket that died ten minutes ago, or sit in an in-app
+ * browser that swallows the press — and the way you found out was clue one, in
+ * front of everybody.
+ *
+ * So: ask the room to press it, and watch them arrive. A test press scores
+ * nothing and spends nobody; it only proves the path.
+ */
+function BuzzerCheck({ state, send }) {
+  const { check, players } = state
+  const hit = (id) => !!check?.hits?.[id]
+  const heard = players.filter((p) => hit(p.id)).length
+
+  if (!players.length) {
+    return (
+      <div className="mt-4">
+        <div className="text-[12px] text-faint">Nobody has joined yet — nothing to test.</div>
+        <button className="btn mt-3 px-6 py-2.5 opacity-60" disabled>
+          Open the board
+        </button>
+      </div>
+    )
+  }
+
+  if (!check) {
+    return (
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+        <button className="btn px-5 py-2.5" onClick={() => send("buzzer:check")} title="Ask everyone to press their buzzer, and watch them land">
+          Test the buzzers
+        </button>
+        <button className="btn btn-gold px-6 py-2.5" onClick={() => send("game:start")}>
+          Open the board
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-4">
+      <div className={`font-display text-lg ${check.complete ? "text-good" : "text-live animate-glow"}`}>
+        {check.complete ? `All ${players.length} buzzers working` : `${heard} of ${players.length} — tell them to press it`}
+      </div>
+
+      <div className="mx-auto mt-3 max-w-sm space-y-1 text-left">
+        {players.map((p) => (
+          <div
+            key={p.id}
+            className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
+              hit(p.id) ? "border-good/60 bg-good/10" : p.connected ? "border-edge" : "border-bad/50 bg-bad/5"
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.connected ? "bg-good" : "bg-bad"}`} />
+            <span className="min-w-0 flex-1 truncate">{p.name}</span>
+            <Latency ms={p.rtt} />
+            <span className={`w-16 shrink-0 text-right ${hit(p.id) ? "text-good" : "text-faint"}`}>
+              {hit(p.id) ? "✓ heard" : p.connected ? "waiting…" : "away"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+        <button className="btn px-4 py-2" onClick={() => send("buzzer:check-stop")}>
+          Stop test
+        </button>
+        <button className={`btn px-6 py-2.5 ${check.complete ? "btn-gold animate-pop" : ""}`} onClick={() => send("game:start")}>
+          Open the board
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A phone's round-trip, as the phone reports it. Diagnostic only — it never
+ * touches the ordering of a race — but it is the difference between "Bob keeps
+ * losing" and "Bob is on the wifi in the kitchen".
+ */
+function Latency({ ms }) {
+  if (ms == null) return <span className="w-12 shrink-0 text-right text-[10px] text-faint">—</span>
+  const tone = ms < 150 ? "text-faint" : ms < 400 ? "text-live" : "text-bad"
+  return (
+    <span className={`w-12 shrink-0 text-right font-body text-[10px] tabular-nums ${tone}`} title="round trip to the relay">
+      {ms}ms
+    </span>
+  )
+}
+
 function MediaPreview({ media }) {
   const src = resolveMediaUrl(media.url)
   if (media.kind === "image") return <img src={src} alt={media.alt ?? ""} className="mt-3 max-h-40 rounded-lg border border-edge object-contain" />
@@ -438,6 +528,21 @@ function BuzzerPanel({ state, send, now }) {
         <button className="btn" disabled={!live} onClick={() => send("buzzer:reset")}>
           Reset <Kbd>esc</Kbd>
         </button>
+
+        {/* Re-testing between rounds: a phone that has gone flat or wandered
+            out of range since the lobby is worth finding now, not on the tile
+            somebody was about to win. */}
+        {(phase === "board" || phase === "intermission") && (
+          <button
+            className={`btn ${state.check ? "btn-gold" : ""}`}
+            onClick={() => send(state.check ? "buzzer:check-stop" : "buzzer:check")}
+            title="Ask everyone to press their buzzer — nothing scores"
+          >
+            {state.check
+              ? `Testing · ${players.filter((p) => state.check.hits?.[p.id]).length}/${players.length}`
+              : "Test buzzers"}
+          </button>
+        )}
         {/* Surfaced only when it is the answer to something. Arming on its own
             cannot help here: everyone is spent, so the buzzer would open and
             nobody could press it. */}
@@ -514,6 +619,10 @@ function BuzzerPanel({ state, send, now }) {
  */
 function Soundboard({ state, send }) {
   const [flash, setFlash] = useState(null)
+
+  // No sounds chosen yet, so there is nothing to fire. The wiring stays —
+  // see `SAMPLES_ENABLED` in src/lib/sfx.js.
+  if (!SAMPLES_ENABLED) return null
 
   const fire = (id) => {
     send("sfx:play", { cue: id })

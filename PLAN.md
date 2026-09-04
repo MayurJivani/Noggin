@@ -11,10 +11,13 @@ What exists, and what is deliberately left for later.
 - **Pause** — the room freezes, the buzzer shuts, and a running clock is banked
   rather than cancelled: resuming returns exactly the time that was left.
 - **Video clues** — alongside image and audio, served with range support.
-- **The soundboard** — fifteen CC0 samples fired by hand from the desk or the
-  controller, a music bed that ducks under a clue, and a cue for each move the
-  game makes. Samples for what the room reacts to, synthesis for the
-  latency-critical ones and as the fallback for every sample.
+- **Buzzer sound-check** — prove every phone's button reaches the relay before
+  the first clue, with each phone's round-trip beside it. A test press scores
+  nothing and is not a race entry.
+- **The soundboard** — built, and **switched off** until sounds are chosen:
+  a sample engine, a fifteen-cue roster, a bed that ducks under a clue, relay
+  messages to fire them. One constant (`SAMPLES_ENABLED`) and a folder of MP3s
+  away from working. Game cues stay synthesised and are unaffected.
 - **Accounts** — host sign-in with scrypt and cookie sessions. Players never
   need one. Boards and saved games are owned; signups close after the first.
 - **Remote controller** (`/control`) — the in-depth surface for a second

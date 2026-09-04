@@ -1007,3 +1007,51 @@ test("the soundboard reaches the big screen without changing the game", async ()
   host.ws.close()
   screen.ws.close()
 })
+
+test("an ignored press does not re-broadcast the room", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  host.send("board:set", { board: BOARD })
+  await settle()
+  const alice = client("player", { code, name: "Alice" })
+  const screen = client("display", { code })
+  await Promise.all([alice.ready, screen.ready])
+  await settle()
+
+  await t.test("a repeat sound-check press is silent", async () => {
+    host.send("buzzer:check")
+    await settle()
+
+    alice.send("buzz")
+    await settle()
+    assert.ok(screen.state.check.hits[alice.identity.playerId], "the first one lands")
+
+    let seen = 0
+    screen.ws.on("message", (raw) => {
+      if (JSON.parse(raw.toString()).type === "state") seen++
+    })
+    for (let i = 0; i < 8; i++) alice.send("buzz")
+    await settle(300)
+    assert.equal(seen, 0, "eight more presses tell the room nothing, so it is not told")
+
+    host.send("buzzer:check-stop")
+    await settle()
+  })
+
+  await t.test("but a real buzz still reaches everyone", async () => {
+    host.send("game:start")
+    await settle()
+    host.send("clue:select", { catIndex: 0, clueIndex: 0 })
+    host.send("buzzer:arm")
+    await settle()
+
+    screen.drain()
+    alice.send("buzz")
+    await settle()
+    assert.ok(screen.drain().includes("buzz-in"))
+    assert.equal(screen.state.buzzer.winner, alice.identity.playerId)
+  })
+
+  for (const c of [host, alice, screen]) c.ws.close()
+})

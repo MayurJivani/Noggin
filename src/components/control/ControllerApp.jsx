@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { useAuth } from "../../lib/useAuth"
-import { BOARD_CUES } from "../../lib/sfx"
+import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
 import { holdsBuzz, isSpent, nameOf, rows as sideRows } from "../../lib/sides"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { Backdrop } from "../ui/Backdrop"
@@ -138,27 +138,30 @@ function Console({ state, send, connected, auth, viaKey }) {
           </div>
         </Panel>
 
-        <Panel title="Soundboard">
-          <div className="grid grid-cols-5 gap-1.5">
-            {BOARD_CUES.map((cue) => (
-              <button
-                key={cue.id}
-                className="flex flex-col items-center gap-0.5 rounded-lg border border-edge py-1.5 active:border-gold"
-                onClick={() => send("sfx:play", { cue: cue.id })}
-                title={cue.label}
-              >
-                <span className="text-base leading-none">{cue.icon}</span>
-                <span className="w-full truncate px-0.5 text-center text-[0.55rem] leading-tight text-muted">{cue.label}</span>
-              </button>
-            ))}
-          </div>
-          <button
-            className={`btn mt-2 w-full py-2 text-xs ${state.music ? "btn-gold" : ""}`}
-            onClick={() => send("music:set", { on: !state.music })}
-          >
-            {state.music ? "♪ Music on" : "♪ Music off"}
-          </button>
-        </Panel>
+        {/* Hidden until sounds are chosen — see `SAMPLES_ENABLED` in lib/sfx.js. */}
+        {SAMPLES_ENABLED && (
+          <Panel title="Soundboard">
+            <div className="grid grid-cols-5 gap-1.5">
+              {BOARD_CUES.map((cue) => (
+                <button
+                  key={cue.id}
+                  className="flex flex-col items-center gap-0.5 rounded-lg border border-edge py-1.5 active:border-gold"
+                  onClick={() => send("sfx:play", { cue: cue.id })}
+                  title={cue.label}
+                >
+                  <span className="text-base leading-none">{cue.icon}</span>
+                  <span className="w-full truncate px-0.5 text-center text-[0.55rem] leading-tight text-muted">{cue.label}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              className={`btn mt-2 w-full py-2 text-xs ${state.music ? "btn-gold" : ""}`}
+              onClick={() => send("music:set", { on: !state.music })}
+            >
+              {state.music ? "♪ Music on" : "♪ Music off"}
+            </button>
+          </Panel>
+        )}
 
         <Panel title="Clock">
           <div className="flex flex-wrap items-center gap-1.5">

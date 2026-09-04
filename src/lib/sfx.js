@@ -20,6 +20,22 @@
  * click anywhere and everything after that works.
  */
 
+/**
+ * Samples are off until someone picks them.
+ *
+ * The recordings that were here were placeholders and have been taken out
+ * rather than left playing in a real game. Everything below still works —
+ * `sample()` simply goes straight to its synthesised stand-in, so the game
+ * keeps making its own noises and no request is made for a file that is not
+ * there.
+ *
+ * **To turn sound back on:** drop MP3s into `public/sfx/` named for the keys of
+ * `SAMPLES` below (`applause.mp3`, `drumroll.mp3`, … and `music.mp3` for the
+ * bed) and set this to `true`. Nothing else changes: the soundboard reappears
+ * on the host desk and the controller, and the bed becomes available.
+ */
+export const SAMPLES_ENABLED = false
+
 let ctx = null
 let master = null
 let cueBus = null
@@ -106,6 +122,7 @@ function load(id) {
 
 /** Everything except the bed, which is a megabyte and can wait for its cue. */
 function preload() {
+  if (!SAMPLES_ENABLED) return
   for (const id of Object.keys(SAMPLES)) load(id).catch(() => {})
 }
 
@@ -130,6 +147,9 @@ function playBuffer(buf, { bus, gain = 1, loop = false, when = 0 } = {}) {
  */
 function sample(id, fallback, opts = {}) {
   if (!ctx) return
+  // No samples chosen yet: the stand-in *is* the sound, and asking for a file
+  // that is not there would be a 404 per cue per page.
+  if (!SAMPLES_ENABLED) return fallback?.()
   const warm = buffers.get(id)
   if (warm) return playBuffer(warm, opts)
   if (missing.has(id)) return fallback?.()
@@ -369,6 +389,8 @@ export const music = {
   },
 
   start(level = 0.45) {
+    // There is no bed until someone picks one. See `SAMPLES_ENABLED`.
+    if (!SAMPLES_ENABLED) return
     unlock()
     if (!ctx || bedWanted) return
     bedWanted = true

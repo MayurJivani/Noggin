@@ -127,6 +127,24 @@ this month's skeleton, with fresh ids so the copy is its own record) or deleted.
 Rounds are deleted from an ✕ on the round tab you're looking at; the last
 remaining round has no ✕, since a board with no rounds is not a board.
 
+Before the first clue, **Test the buzzers**. "Everyone has joined" and
+"everyone's button reaches the relay" are different questions, and only the
+first was answerable from the desk — a phone can hold a seat and a name on a
+socket that died ten minutes ago, or sit in an in-app browser that swallows the
+press, and you'd find out on clue one in front of everybody.
+
+So the room is asked to press, and you watch them land: a tick per phone, its
+round-trip beside it, and *Open the board* turning gold once every seat has been
+heard from. A test press is inert — it scores nothing, spends nobody and is not
+a race entry — and it works outside a clue precisely because that is when you
+want to check. The same button is on the run desk between rounds, for a phone
+that has gone flat since the lobby.
+
+The round-trip figure is self-reported by each phone and is **diagnostic only**;
+it never touches the ordering of a race, because a client that could claim to be
+fast eventually would. It is the difference between "Bob keeps losing" and "Bob
+is on the wifi in the kitchen".
+
 **Run** is the desk during the show:
 
 - The mini board on the left is how you pick. The big screen follows.
@@ -355,41 +373,26 @@ about to look at their buzzer again. Players see their round-trip time, so
 
 ## Sound
 
-Two layers, and the split is deliberate.
+The game makes its own noises — the tile, the buzz-in, the early-press reject,
+the verdict, the countdown, the Nitro — synthesised in the browser from
+oscillators and noise. No assets, no licensing questions, and no loading state
+on the one page that must never be loading. Browsers won't start audio without a
+gesture, so the big screen arms itself on the first click anywhere.
 
-**Samples** are what the room hears. Real recordings in `public/sfx/`, all CC0 —
-applause, ovation, crowd, drumroll, fanfare, airhorn, ta-da, ding, gong, sad
-trombone, boo, laugh, crickets, whoosh, wrong-buzzer, and a bossa-nova music
-bed. Oscillators can imitate a bell but not a crowd; a synthesised "round of
-applause" is static with ambitions. Provenance is in
-[`public/sfx/CREDITS.md`](public/sfx/CREDITS.md).
+**The soundboard and the music bed are currently off**, pending a choice of
+sounds. The wiring is all there and unused: a sample engine, a fifteen-cue
+roster, a looping bed that ducks under a clue, and relay messages to fire them.
+Turning it on is dropping MP3s into `public/sfx/` and flipping one constant —
+see [`public/sfx/README.md`](public/sfx/README.md) for the filenames.
 
-**Synthesis** covers the tight, latency-critical cues — the buzz-in, the
-early-press reject, the countdown tick — where the sound has to land with the
-press and a decode is a risk not worth taking. It is also the fallback for every
-sample: **delete the whole `sfx/` folder and the game still makes all its
-noises**, just plainer.
-
-Three things come out of it:
-
-- **Game cues** fire themselves: the tile, the buzz, the verdict, the clock,
-  the Nitro fanfare, the gong into the final, an ovation when the game ends.
-- **The soundboard** is fired by hand from the desk or the controller — fifteen
-  buttons for the bits between the questions.
-- **The music bed** (♪) fills the lobby and the dead air, and ducks under a clue
-  rather than stopping, so it doesn't restart on every tile. It is the one file
-  fetched lazily: a room that never turns music on never pays the megabyte.
+The split it is built around, for when that happens: **samples** for what the
+room reacts to, because oscillators can imitate a bell but not a crowd;
+**synthesis** for the tight cues where the sound has to land *with* the press and
+a decode is a risk not worth taking. Synthesis is also the fallback for every
+sample, so a missing file costs you the recording, not the cue.
 
 Cues play on the **big screen** — that is where the speakers the room can hear
-are, and a cue coming out of the host's laptop is a cue only the host enjoys. A
-cue is a broadcast and changes nothing about the game; the music is *state*, so
-a display that reloads mid-round comes back with it still playing.
-
-Browsers won't start audio without a gesture, so the big screen arms itself on
-the first click anywhere and preloads every short sample then.
-
-**Swapping a sound**: drop an MP3 into `public/sfx/` with the same filename. It
-wins, and nothing else changes.
+are, and a cue coming out of the host's laptop is a cue only the host enjoys.
 
 ## Tests
 

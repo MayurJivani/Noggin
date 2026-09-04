@@ -946,3 +946,73 @@ test("the final is exempt — it is played on the phones", () => {
     "withholding this would not hide the round, it would end it",
   )
 })
+
+// ── Sound-checking the buzzers ───────────────────────────────────────────────
+
+test("a test press proves the path and touches nothing else", () => {
+  const room = setup(3)
+  G.startCheck(room, 0)
+
+  assert.deepEqual(kinds(G.buzz(room, "p0", 100)), ["check-hit"])
+  assert.equal(room.check.hits.p0.count, 1)
+  assert.equal(room.players.get("p0").score, 0, "nothing scores")
+  assert.deepEqual(room.buzzer.order, [], "and it is not a race entry")
+  assert.deepEqual(room.buzzer.spent, [])
+})
+
+test("only the first press is news; the rest are someone enjoying the button", () => {
+  const room = setup(2)
+  G.startCheck(room, 0)
+  assert.deepEqual(kinds(G.buzz(room, "p0", 10)), ["check-hit"])
+  assert.deepEqual(G.buzz(room, "p0", 20), [], "no second announcement")
+  assert.equal(room.check.hits.p0.count, 2, "though it is still counted")
+})
+
+test("the test is complete when every seat has been heard from", () => {
+  const room = setup(3)
+  G.startCheck(room, 0)
+  assert.equal(G.checkComplete(room), false)
+  G.buzz(room, "p0", 10)
+  G.buzz(room, "p1", 20)
+  assert.equal(G.checkComplete(room), false, "two of three is not all of them")
+  G.buzz(room, "p2", 30)
+  assert.equal(G.checkComplete(room), true)
+})
+
+test("everyone can see the test, including the phone being tested", () => {
+  const room = setup(2)
+  G.startCheck(room, 0)
+  G.buzz(room, "p0", 10)
+
+  for (const role of ["host", "display", "player"]) {
+    const view = G.projectState(room, role, "p0")
+    assert.ok(view.check, `${role} is told a test is running`)
+    assert.ok(view.check.hits.p0, `${role} sees the press land`)
+  }
+})
+
+test("a test cannot be opened over a live clue", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 0)
+  assert.deepEqual(G.startCheck(room, 0), [], "the buzzer is doing its real job")
+  assert.equal(room.check, null)
+})
+
+test("putting a clue up ends any test, so presses count again", () => {
+  const room = setup(2)
+  G.startCheck(room, 0)
+  G.selectClue(room, 0, 0)
+  assert.equal(room.check, null, "or the test would swallow every buzz of the clue")
+
+  G.armBuzzer(room, 0)
+  assert.deepEqual(kinds(G.buzz(room, "p0", 40)), ["buzz-in"])
+})
+
+test("opening the board ends the test too", () => {
+  const room = G.createRoom("TEST")
+  room.board = G.makeBoard()
+  room.players.set("p0", G.makePlayer("p0", "Player 0"))
+  G.startCheck(room, 0)
+  G.startGame(room)
+  assert.equal(room.check, null)
+})

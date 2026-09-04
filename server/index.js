@@ -1056,6 +1056,12 @@ function handleHostMessage(room, meta, ws, msg) {
     case "team:autofill":
       return apply(room, G.autoTeams(room, msg.count))
 
+    // ── Before the first clue ──
+    case "buzzer:check":
+      return apply(room, G.startCheck(room))
+    case "buzzer:check-stop":
+      return apply(room, G.stopCheck(room))
+
     // ── The room, held ──
     case "game:pause":
       return apply(room, G.pauseGame(room))
@@ -1154,8 +1160,37 @@ function handleHostMessage(room, meta, ws, msg) {
 function handlePlayerMessage(room, meta, msg) {
   if (!meta.playerId) return
   switch (msg.type) {
-    case "buzz":
-      return apply(room, G.buzz(room, meta.playerId))
+    case "buzz": {
+      const effects = G.buzz(room, meta.playerId)
+      /*
+        No effects means the press changed nothing anyone can see — a second
+        sound-check press, a player who is already spent, one who is locked
+        out, one already in the race. Re-broadcasting the whole room for that
+        is pure waste, and worse: it makes every ignored press cost N sends,
+        so a phone with a stuck button (or a client that reacts to state by
+        pressing) amplifies itself into a storm.
+      */
+      if (!effects.length) return
+      return apply(room, effects)
+    }
+
+    /*
+      A phone reporting its own round-trip.
+
+      Diagnostic only, and never allowed near the ordering of a race — a client
+      that could say "I am fast" eventually would. It exists so the host can see
+      *before* the game which phone is on bad wifi, rather than working it out
+      from someone losing every buzz.
+    */
+    case "rtt": {
+      const player = room.players.get(meta.playerId)
+      if (!player) return
+      const ms = Number(msg.ms)
+      player.rtt = Number.isFinite(ms) ? Math.max(0, Math.min(Math.round(ms), 9999)) : null
+      // No broadcast: this arrives every few seconds from every phone, and
+      // nothing on screen is urgent enough to redraw the room for.
+      return
+    }
     case "final:wager":
       return apply(room, G.setFinalWager(room, meta.playerId, msg.amount))
     case "final:answer":
