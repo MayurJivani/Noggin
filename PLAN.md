@@ -22,6 +22,9 @@ What exists, and what is deliberately left for later.
   a sample engine, a fifteen-cue roster, a bed that ducks under a clue, relay
   messages to fire them. One constant (`SAMPLES_ENABLED`) and a folder of MP3s
   away from working. Game cues stay synthesised and are unaffected.
+- **The lectern** (`/lectern`) — the tablet a host reads from: the clue, the
+  answer, a grid to pick the next one, and the verdict under a thumb. The
+  "slimmer host tab" the original plan wanted, finally.
 - **Accounts** — host sign-in with scrypt and cookie sessions. Players never
   need one. Boards and saved games are owned; signups close after the first.
 - **Remote controller** (`/control`) — the in-depth surface for a second
@@ -62,10 +65,6 @@ What exists, and what is deliberately left for later.
 
 ## Next
 
-- **A slimmer host tab.** The controller shipped, but `/host` is still the full
-  desk. The original idea was a host holding a tablet with the clue, the answer
-  and two buttons while the controller runs everything else — that mode does not
-  exist yet, and the host desk is a poor thing to hold in one hand.
 - **Who did what.** Two privileged clients can both press Arm. The relay's
   mutators are idempotent enough that this is harmless, but neither screen shows
   which operator acted, and two people will eventually fight over the buzzer.

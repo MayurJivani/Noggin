@@ -41,14 +41,19 @@ export async function playerUrl(code) {
 }
 
 /**
- * The controller link. Carries the room and the key the host just minted, so
- * whoever scans it lands straight on the console with no code to type.
+ * Links for a second privileged screen. Both carry the room and the key the
+ * host just minted, so whoever scans one lands straight on it with no code to
+ * type — and both are the same key, because the two are a layout difference
+ * rather than a permission one.
+ *
+ * `lectern` is the tablet the host reads from; `control` is the in-depth desk.
  */
+export async function lecternUrl(code, key) {
+  return `${await originForLan()}/lectern?code=${code}&key=${encodeURIComponent(key)}`
+}
+
 export async function controllerUrl(code, key) {
-  const { protocol, hostname, port } = window.location
-  let host = hostname
-  if (LOOPBACK.has(hostname)) host = (await lanHost()) ?? hostname
-  return `${protocol}//${host}${port ? `:${port}` : ""}/control?code=${code}&key=${encodeURIComponent(key)}`
+  return `${await originForLan()}/control?code=${code}&key=${encodeURIComponent(key)}`
 }
 
 /** The all-players scoreboard, for a second monitor or the control desk. */

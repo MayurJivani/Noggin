@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
-import { controllerUrl } from "../../lib/net"
+import { controllerUrl, lecternUrl } from "../../lib/net"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
 import { nameOf, rows as sideRows } from "../../lib/sides"
 import { QrBlock } from "../ui/QrBlock"
@@ -675,21 +675,23 @@ function Soundboard({ state, send }) {
  * board is rarely the person who wrote the quiz.
  */
 function ControllerInvite({ send, controllerKey, code }) {
-  const [url, setUrl] = useState("")
+  const [urls, setUrls] = useState({ lectern: "", control: "" })
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!controllerKey) {
-      setUrl("")
+      setUrls({ lectern: "", control: "" })
       return
     }
-    controllerUrl(code, controllerKey).then(setUrl)
+    Promise.all([lecternUrl(code, controllerKey), controllerUrl(code, controllerKey)]).then(([lectern, control]) =>
+      setUrls({ lectern, control }),
+    )
   }, [controllerKey, code])
 
   return (
     <div className="mt-3">
       <div className="flex items-baseline justify-between">
-        <span className="label">Remote controller</span>
+        <span className="label">Remote host</span>
         {controllerKey && (
           <button className="text-[0.7rem] text-faint hover:text-bad" onClick={() => send("controller:revoke")}>
             revoke
@@ -700,31 +702,36 @@ function ControllerInvite({ send, controllerKey, code }) {
       {!controllerKey ? (
         <>
           <button className="btn mt-1.5 w-full py-1.5 text-[11px]" onClick={() => send("controller:invite")}>
-            Create a controller link
+            Create a host link
           </button>
           <div className="mt-1 text-[10px] leading-snug text-faint">
-            For someone else to drive the board while you read. No account needed.
+            A tablet to read from — the clue, the answer, and the verdict. No account needed.
           </div>
         </>
       ) : (
         <div className="mt-1.5 space-y-1.5">
-          <div className="rounded-lg border border-edge bg-black/30 px-2 py-1.5 text-[10px] break-all text-muted">{url || "…"}</div>
+          <div className="rounded-lg border border-edge bg-black/30 px-2 py-1.5 text-[10px] break-all text-muted">{urls.lectern || "…"}</div>
           <div className="flex gap-1.5">
             <button
               className="btn btn-gold flex-1 py-1.5 text-[11px]"
-              disabled={!url}
+              disabled={!urls.lectern}
               onClick={() => {
-                navigator.clipboard?.writeText(url)
+                navigator.clipboard?.writeText(urls.lectern)
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1800)
               }}
             >
               {copied ? "Copied ✓" : "Copy link"}
             </button>
-            <a className="btn px-2.5 py-1.5 text-[11px]" href={url || "#"} target="_blank" rel="noreferrer">
+            <a className="btn px-2.5 py-1.5 text-[11px]" href={urls.lectern || "#"} target="_blank" rel="noreferrer">
               Open ↗
             </a>
           </div>
+          {/* The in-depth desk is the same key — someone else driving the board
+              while you read is still a thing people want, just not the default. */}
+          <a className="block text-[10px] text-faint transition-colors hover:text-muted" href={urls.control || "#"} target="_blank" rel="noreferrer">
+            or the full controller ↗
+          </a>
         </div>
       )}
     </div>

@@ -56,6 +56,23 @@ Sessions are an HttpOnly cookie holding a random token; only its SHA-256 is
 stored, so a leaked database does not hand over live sessions. Passwords go
 through scrypt from node's own crypto — no native module to build.
 
+## The lectern
+
+`/lectern` is the tablet the host holds. The desk at `/host` is a workshop — a
+builder, a roster, a room menu — and none of it is any use to someone standing
+up with a microphone, while all of it is in the way of the two things that are:
+**the words to read out** and **was that right**.
+
+So it shows the clue at reading size, the answer in a box nobody else can see,
+a grid to pick the next one, and the verdict pinned under a thumb. Attached
+media is *noted* rather than played — the big screen is already playing it, and
+a second copy a second out of step from the host's tablet is the last thing the
+room needs.
+
+**Create a host link** on the run desk mints a key and hands you the URL. No
+account needed at the other end, and it dies with the room. The same key also
+opens the full controller below, for when someone else is driving.
+
 ## The remote controller
 
 One person cannot comfortably read a clue aloud, watch five faces, and drive a
