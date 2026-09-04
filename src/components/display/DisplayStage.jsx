@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRoom } from "../../lib/useRoom"
-import { playForEffect, unlock, isUnlocked } from "../../lib/sfx"
+import { playForEffect, unlock, isUnlocked, music } from "../../lib/sfx"
+import { nameOf, rows as sideRows } from "../../lib/sides"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
@@ -48,7 +49,9 @@ export function DisplayStage({ code: initialCode }) {
         setTimeout(() => setSplash(false), 2000)
       }
       if (fx.kind === "buzz-in" || fx.kind === "correct" || fx.kind === "wrong") {
-        const name = next.players.find((p) => p.id === fx.playerId)?.name
+        // On team night the id may be a team's — a nitro is ruled on the side,
+        // not on whoever picked the tile — so resolve either kind.
+        const name = nameOf(next, fx.playerId ?? fx.unitId)
         if (!name) continue
         clearTimeout(flashTimer.current)
         const verdict = fx.kind === "buzz-in" ? null : fx.kind
@@ -92,12 +95,55 @@ export function DisplayStage({ code: initialCode }) {
     }
   }, [])
 
+  return (
+    <Stage
+      code={code}
+      state={state}
+      connected={connected}
+      error={error}
+      audioOn={audioOn}
+      flash={flash}
+      splash={splash}
+      origin={origin}
+      cellRef={cellRef}
+    />
+  )
+}
+
+/**
+ * Split out so the music effect below can hang off `state` without the early
+ * returns above making it a conditional hook.
+ */
+function Stage({ code, state, connected, error, audioOn, flash, splash, origin, cellRef }) {
+  /*
+    The bed follows the room rather than this screen.
+
+    Music is state on the relay, not a local toggle, so a projector that gets
+    unplugged and reconnected mid-round comes back with the same thing playing —
+    and the host can start and stop it from a desk on the other side of the room.
+  */
+  const wantsMusic = !!state?.music && !state?.paused
+  useEffect(() => {
+    if (wantsMusic) music.start()
+    else music.stop()
+  }, [wantsMusic])
+
+  // Under a clue the bed drops out of the way rather than stopping, so the room
+  // can hear itself think without the loop restarting on every tile.
+  const busy = state?.phase === "clue" || state?.phase === "wager" || state?.phase === "final"
+  useEffect(() => {
+    music.duck(busy)
+  }, [busy])
+
+  useEffect(() => () => music.stop(), [])
+
   if (!code) return <CodePrompt />
   if (error) return <Fullscreen>{error.message}</Fullscreen>
   if (!state) return <Fullscreen>{connected ? "Joining…" : "Looking for the room…"}</Fullscreen>
 
   const { phase, board, clue, players, buzzer, timer, lifeline } = state
-  const wagerName = state.wager?.playerId ? players.find((p) => p.id === state.wager.playerId)?.name : null
+  const rows = sideRows(state)
+  const wagerName = nameOf(state, state.wager?.teamId ?? state.wager?.playerId)
 
   return (
     <div className="relative flex h-dvh w-full flex-col overflow-hidden">
@@ -121,10 +167,10 @@ export function DisplayStage({ code: initialCode }) {
       <div className="bulbs relative z-10 mx-[2.5vmin] shrink-0" />
 
       <main className="relative z-10 min-h-0 flex-1">
-        {phase === "lobby" && <Lobby code={state.code} players={players} title={board.title} />}
+        {phase === "lobby" && <Lobby code={state.code} players={players} teams={state.teams} title={board.title} />}
         {phase === "final" && <FinalStage state={state} now={() => Date.now()} />}
-        {phase === "intermission" && <Interlude title="Round cleared" players={players} sub={board.round?.name} />}
-        {phase === "ended" && <Interlude title="Final scores" players={players} final />}
+        {phase === "intermission" && <Interlude title="Round cleared" rows={rows} sub={board.round?.name} />}
+        {phase === "ended" && <Interlude title="Final scores" rows={rows} final />}
 
         {(phase === "board" || phase === "clue" || phase === "wager" || phase === "reveal") && (
           <div className="relative h-full w-full">
@@ -144,13 +190,14 @@ export function DisplayStage({ code: initialCode }) {
         )}
 
         <NitroSplash show={splash} />
-        <LifelineOverlay lifeline={lifeline} playerName={players.find((p) => p.id === lifeline?.playerId)?.name} now={() => Date.now()} />
+        <LifelineOverlay lifeline={lifeline} playerName={nameOf(state, lifeline?.playerId)} now={() => Date.now()} />
         <BuzzOverlay name={flash?.name} verdict={flash?.verdict} />
         {!clue && <TimerRing timer={timer} now={() => Date.now()} />}
         <BuzzerBanner armed={buzzer.armed} />
+        {state.paused && <PausedCard />}
       </main>
 
-      {phase !== "lobby" && <ScoreBar players={players} buzzer={buzzer} lifeline={lifeline} />}
+      {phase !== "lobby" && <ScoreBar rows={rows} buzzer={buzzer} lifeline={lifeline} />}
 
       {!audioOn && (
         <div className="pointer-events-none absolute bottom-[1vmin] left-1/2 z-40 -translate-x-1/2 rounded-full border border-edge bg-void/80 px-4 py-1.5 text-[11px] text-muted">
@@ -161,7 +208,32 @@ export function DisplayStage({ code: initialCode }) {
   )
 }
 
-function Lobby({ code, players, title }) {
+/**
+ * The room, held.
+ *
+ * Covers the board rather than sitting beside it, on purpose: the point of a
+ * pause is that nobody should be reading the clue or eyeing the grid while the
+ * host is away from the desk.
+ */
+function PausedCard() {
+  return (
+    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[2vmin] bg-void/85 backdrop-blur-sm animate-rise">
+      <div className="flex items-center gap-[2.5vmin]">
+        <span className="rounded-[0.6vmin] bg-gold" style={{ width: "2.6vmin", height: "9vmin" }} />
+        <span className="rounded-[0.6vmin] bg-gold" style={{ width: "2.6vmin", height: "9vmin" }} />
+      </div>
+      <div className="font-display uppercase tracking-[0.35em] text-gold brass" style={{ fontSize: "max(24px, calc(var(--stage) * 5))" }}>
+        Paused
+      </div>
+      <VeinLine className="w-[34vmin]" height={16} />
+      <div className="text-muted" style={{ fontSize: "max(11px, calc(var(--stage) * 1.6))" }}>
+        Back in a moment. Buzzers are off.
+      </div>
+    </div>
+  )
+}
+
+function Lobby({ code, players, teams, title }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[4vmin]">
       <Brand size={Math.min(120, Math.max(48, window.innerWidth / 12))} />
@@ -172,23 +244,57 @@ function Lobby({ code, players, title }) {
 
       <JoinCard code={code} size={Math.round(Math.min(260, Math.max(150, window.innerWidth / 7)))} />
 
-      <div className="flex max-w-[80vw] flex-wrap justify-center gap-[1.2vmin]">
-        {players.map((p, i) => (
-          <div
-            key={p.id}
-            className="rounded-full border border-gold-deep/40 bg-royal/40 px-[2.4vmin] py-[0.9vmin] font-display text-ink animate-tile-in"
-            style={{ fontSize: "max(12px, calc(var(--stage) * 1.7))", animationDelay: `${i * 60}ms` }}
-          >
-            {p.name}
-          </div>
-        ))}
-        {players.length === 0 && <div className="text-[13px] text-faint">nobody yet — scan to join</div>}
-      </div>
+      {/* On team night the lobby is where people find out who they are with, so
+          the sides are the thing on screen rather than one long list of names. */}
+      {teams ? (
+        <div className="flex max-w-[86vw] flex-wrap justify-center gap-[2vmin]">
+          {teams.map((t, i) => (
+            <div
+              key={t.id}
+              className="min-w-[22vmin] rounded-[1.2vmin] border-[0.35vmin] bg-royal/30 px-[2.4vmin] py-[1.4vmin] text-center animate-tile-in"
+              style={{ borderColor: t.color, animationDelay: `${i * 90}ms` }}
+            >
+              <div className="font-display uppercase tracking-[0.12em]" style={{ fontSize: "max(13px, calc(var(--stage) * 2))", color: t.color }}>
+                {t.name}
+              </div>
+              <div className="mt-[0.8vmin] flex flex-wrap justify-center gap-[0.8vmin]">
+                {t.memberNames.map((n) => (
+                  <span
+                    key={n}
+                    className="rounded-full border border-gold-deep/40 px-[1.4vmin] py-[0.3vmin] font-display text-ink"
+                    style={{ fontSize: "max(10px, calc(var(--stage) * 1.4))" }}
+                  >
+                    {n}
+                  </span>
+                ))}
+                {t.memberNames.length === 0 && (
+                  <span className="text-faint" style={{ fontSize: "max(10px, calc(var(--stage) * 1.3))" }}>
+                    nobody yet
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex max-w-[80vw] flex-wrap justify-center gap-[1.2vmin]">
+          {players.map((p, i) => (
+            <div
+              key={p.id}
+              className="rounded-full border border-gold-deep/40 bg-royal/40 px-[2.4vmin] py-[0.9vmin] font-display text-ink animate-tile-in"
+              style={{ fontSize: "max(12px, calc(var(--stage) * 1.7))", animationDelay: `${i * 60}ms` }}
+            >
+              {p.name}
+            </div>
+          ))}
+          {players.length === 0 && <div className="text-[13px] text-faint">nobody yet — scan to join</div>}
+        </div>
+      )}
     </div>
   )
 }
 
-function Interlude({ title, players, sub, final = false }) {
+function Interlude({ title, rows, sub, final = false }) {
   const medal = ["#f2c96b", "#c0c0c8", "#c08a5a"]
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin]">
@@ -198,16 +304,19 @@ function Interlude({ title, players, sub, final = false }) {
       </div>
       <VeinLine className="w-[40vmin]" height={18} />
       <div className="flex flex-col items-center gap-[1.4vmin]">
-        {players.slice(0, 8).map((p, i) => (
-          <div key={p.id} className="flex items-baseline gap-[2.5vmin] animate-rise" style={{ animationDelay: `${i * 110}ms` }}>
+        {rows.slice(0, 8).map((row, i) => (
+          <div key={row.id} className="flex items-baseline gap-[2.5vmin] animate-rise" style={{ animationDelay: `${i * 110}ms` }}>
             <span className="font-value tabular-nums text-muted" style={{ fontSize: "max(14px, calc(var(--stage) * 2))" }}>
               {i + 1}
             </span>
-            <span className="font-display" style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))", color: final && i < 3 ? medal[i] : "var(--color-ink)" }}>
-              {p.name}
+            <span
+              className="font-display"
+              style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))", color: final && i < 3 ? medal[i] : (row.color ?? "var(--color-ink)") }}
+            >
+              {row.name}
             </span>
             <span className="font-value tabular-nums text-gold" style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))" }}>
-              {p.score}
+              {row.score}
             </span>
           </div>
         ))}

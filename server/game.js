@@ -48,7 +48,22 @@ export const DEFAULTS = {
   lifelines: { phone: 1 },
   /** A wrong answer subtracts the clue value as well as failing to add it. */
   penaltyForWrong: true,
+  /**
+   * Several phones sharing one score and one buzz. See the Teams section.
+   * Off by default: a party of five plays as five, and turning this on when
+   * nobody asked for it would silently merge everyone's scores.
+   */
+  teams: false,
 }
+
+/**
+ * Team colours, in the order they are handed out.
+ *
+ * Named rather than free-form because they have to read from the back of a room
+ * on a projector — these are all light enough to sit on the marble and far
+ * enough apart to tell at a glance.
+ */
+export const TEAM_PALETTE = ["#f2c96b", "#7ad1a8", "#8fb8ff", "#e08ac0", "#f09a5a", "#a86ce0", "#6fd6e0", "#d6d36a"]
 
 /** How many score changes to remember per player. */
 const HISTORY_LIMIT = 30
@@ -173,9 +188,11 @@ export function normaliseBoard(raw) {
 const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "")
 const num = (v, fallback = 0) => (Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : fallback)
 
+const MEDIA_KINDS = new Set(["image", "audio", "video"])
+
 function media(m) {
   if (!m || typeof m !== "object") return null
-  const kind = m.kind === "audio" ? "audio" : m.kind === "image" ? "image" : null
+  const kind = MEDIA_KINDS.has(m.kind) ? m.kind : null
   const url = typeof m.url === "string" ? m.url.slice(0, 500) : ""
   if (!kind || !url) return null
   return { kind, url, alt: str(m.alt, 120) }
@@ -198,6 +215,12 @@ export function createRoom(code, settings = {}) {
     roundIndex: 0,
     /** id -> player */
     players: new Map(),
+    /** id -> team. Only consulted while `settings.teams` is on. */
+    teams: new Map(),
+    /** { at, timer } while the room is frozen. See `pauseGame`. */
+    paused: null,
+    /** Whether the big screen is running the music bed. */
+    music: false,
     /** {catIndex, clueIndex} of the clue on screen, or null. */
     active: null,
     /** Daily double bookkeeping for the clue on screen. */
@@ -239,8 +262,21 @@ export function makePlayer(id, name) {
     score: 0,
     connected: true,
     joinedAt: Date.now(),
+    /** Which team they play for, or null. Ignored unless `settings.teams`. */
+    teamId: null,
     lifelines: { ...DEFAULTS.lifelines },
     /** Every score change, newest last. See `record`. */
+    history: [],
+  }
+}
+
+export function makeTeam(id, name, colorIndex = 0) {
+  return {
+    id,
+    name,
+    color: TEAM_PALETTE[colorIndex % TEAM_PALETTE.length],
+    score: 0,
+    lifelines: { ...DEFAULTS.lifelines },
     history: [],
   }
 }
@@ -277,12 +313,171 @@ export function stake(room) {
   return clue.value
 }
 
-/** Biggest wager a player may make: their score, or the round's top tile if broke. */
-export function maxWager(room, playerId) {
+/** Biggest wager a side may make: its score, or the round's top tile if broke. */
+export function maxWager(room, id) {
   const round = currentRound(room)
   const top = Math.max(...round.values, 0)
-  const score = room.players.get(playerId)?.score ?? 0
+  const score = scorer(room, id)?.score ?? 0
   return Math.max(score, top)
+}
+
+// ── Teams ────────────────────────────────────────────────────────────────────
+
+/**
+ * Several phones, one score, one buzz.
+ *
+ * The trick that keeps this from forking every rule in the file is that a team
+ * is shaped exactly like a player where it matters: it has a `score`, a
+ * `lifelines` purse and a `history`. So nothing below asks "are we in team
+ * mode?" before adding points — it asks `scorer()` whose ledger this is, and
+ * gets back either the player or the team standing behind them.
+ *
+ * The buzzer is the other half. A team must not be able to buy five attempts by
+ * fielding five phones, so anywhere the buzzer says "this player", it means
+ * "this player's side": one entry in the race, one shot at the clue, one
+ * lockout.
+ */
+
+/** Whose ledger a player's points land on. Accepts a player id or a team id. */
+export function scorer(room, id) {
+  if (!id) return null
+  const player = room.players.get(id)
+  if (player) {
+    if (!room.settings.teams) return player
+    // An unassigned player in team mode is a team of one rather than a hole in
+    // the scoring — better a lone entry on the board than points going nowhere.
+    return (player.teamId && room.teams.get(player.teamId)) || player
+  }
+  return room.settings.teams ? (room.teams.get(id) ?? null) : null
+}
+
+export const teamOf = (room, playerId) => {
+  if (!room.settings.teams) return null
+  const p = room.players.get(playerId)
+  return (p?.teamId && room.teams.get(p.teamId)) || null
+}
+
+export const membersOf = (room, teamId) => [...room.players.values()].filter((p) => p.teamId === teamId)
+
+/** Everyone who shares a buzz with this player — their team, or just them. */
+export function sideIds(room, playerId) {
+  const team = teamOf(room, playerId)
+  return team ? membersOf(room, team.id).map((p) => p.id) : [playerId]
+}
+
+/** Do these two players share a side? True for a player and themselves. */
+export function sameSide(room, a, b) {
+  if (a === b) return true
+  const ta = teamOf(room, a)
+  return !!ta && ta === teamOf(room, b)
+}
+
+/** The sides currently in play: teams when they are on, otherwise players. */
+export const sides = (room) => (room.settings.teams ? [...room.teams.values()] : [...room.players.values()])
+
+export function createTeam(room, name) {
+  const id = uid("t")
+  const team = makeTeam(id, str(name, 20) || `Team ${room.teams.size + 1}`, room.teams.size)
+  team.lifelines = { ...room.settings.lifelines }
+  room.teams.set(id, team)
+  return team
+}
+
+export function renameTeam(room, teamId, name) {
+  const team = room.teams.get(teamId)
+  if (!team) return []
+  team.name = str(name, 20) || team.name
+  return [{ kind: "teams" }]
+}
+
+/**
+ * Remove a team. Its members are not removed — they come off the sheet and
+ * play for themselves until they are put somewhere else, because a phone that
+ * suddenly cannot buzz is a worse outcome than an odd-looking scoreboard.
+ */
+export function deleteTeam(room, teamId) {
+  if (!room.teams.has(teamId)) return []
+  room.teams.delete(teamId)
+  for (const p of room.players.values()) if (p.teamId === teamId) p.teamId = null
+  return [{ kind: "teams" }]
+}
+
+export function assignTeam(room, playerId, teamId) {
+  const player = room.players.get(playerId)
+  if (!player) return []
+  player.teamId = teamId && room.teams.has(teamId) ? teamId : null
+  return [{ kind: "teams" }]
+}
+
+/** The team with the fewest people on it — where a newcomer goes. */
+export function smallestTeam(room) {
+  let best = null
+  let bestN = Infinity
+  for (const t of room.teams.values()) {
+    const n = membersOf(room, t.id).length
+    if (n < bestN) {
+      bestN = n
+      best = t
+    }
+  }
+  return best
+}
+
+/** Seat anyone who has no team, without disturbing anyone who has one. */
+export function seatStragglers(room) {
+  if (!room.settings.teams || room.teams.size === 0) return
+  for (const p of room.players.values()) {
+    if (p.teamId && room.teams.has(p.teamId)) continue
+    p.teamId = smallestTeam(room)?.id ?? null
+  }
+}
+
+/**
+ * Deal everyone out into `count` teams, in the order they joined.
+ *
+ * Deliberately not random: the host is looking at the roster while they press
+ * this, and a shuffle that moves people they have already placed reads as the
+ * button having gone wrong.
+ */
+export function autoTeams(room, count) {
+  const want = Math.max(2, Math.min(num(count, 2), 8))
+  while (room.teams.size > want) deleteTeam(room, [...room.teams.keys()].pop())
+  while (room.teams.size < want) createTeam(room)
+  const ids = [...room.teams.keys()]
+  const roster = [...room.players.values()].sort((a, b) => a.joinedAt - b.joinedAt)
+  roster.forEach((p, i) => {
+    p.teamId = ids[i % ids.length]
+  })
+  return [{ kind: "teams" }]
+}
+
+/**
+ * Turn team play on or off.
+ *
+ * Switching on mid-game carries what people have already won onto the side they
+ * now play for — but only into a team that has not scored yet, so flipping the
+ * setting twice does not re-add everything a team has since earned.
+ */
+export function setTeamMode(room, on) {
+  const want = !!on
+  if (want === !!room.settings.teams) return []
+  room.settings.teams = want
+  if (!want) return [{ kind: "teams", on: false }]
+
+  if (room.teams.size === 0) {
+    createTeam(room, "Team 1")
+    createTeam(room, "Team 2")
+  }
+  seatStragglers(room)
+  for (const team of room.teams.values()) {
+    if (team.score !== 0 || team.history.length) continue
+    const carried = membersOf(room, team.id).reduce((n, p) => n + p.score, 0)
+    if (carried) {
+      team.score = carried
+      record(team, carried, "carried")
+    }
+  }
+  return [{ kind: "teams", on: true }]
 }
 
 // ── Mutators ─────────────────────────────────────────────────────────────────
@@ -307,6 +502,9 @@ export function selectClue(room, catIndex, clueIndex) {
   room.wager = null
   room.timer = null
   room.lifeline = null
+  // Putting a clue up *is* resuming. The banked clock belonged to the last one
+  // and would be wrong to hand to this one.
+  room.paused = null
   resetBuzzerState(room)
 
   if (clue.nitro) {
@@ -332,22 +530,31 @@ export function selectClue(room, catIndex, clueIndex) {
   return effects
 }
 
-/** Nitro: name who found it and what they are risking. */
-export function setWager(room, playerId, amount) {
+/**
+ * Nitro: name who found it and what they are risking.
+ *
+ * `id` is a player normally and a team in team mode, because in team mode the
+ * clue belongs to the side rather than to whichever member happened to pick the
+ * tile — the team confers and one of them says it.
+ */
+export function setWager(room, id, amount) {
   if (room.phase !== PHASE.WAGER) return []
-  if (!room.players.has(playerId)) return []
-  const capped = Math.max(0, Math.min(num(amount, 0), maxWager(room, playerId)))
-  room.wager = { playerId, amount: capped }
+  const unit = scorer(room, id)
+  if (!unit) return []
+  const isTeam = room.settings.teams && room.teams.has(id)
+  const capped = Math.max(0, Math.min(num(amount, 0), maxWager(room, id)))
+  room.wager = { playerId: isTeam ? null : id, teamId: isTeam ? id : (teamOf(room, id)?.id ?? null), amount: capped }
   room.phase = PHASE.CLUE
-  // Nobody else may buzz on a nitro — it is that player's clue alone.
-  room.buzzer.winner = playerId
+  // Nobody else may buzz on a nitro — it is that side's clue alone. A team has
+  // no single holder, so the floor is simply theirs and the host rules on it.
+  room.buzzer.winner = isTeam ? null : id
   room.buzzer.armed = false
-  return [{ kind: "wager-set", playerId, amount: capped }]
+  return [{ kind: "wager-set", playerId: isTeam ? null : id, teamId: isTeam ? id : null, amount: capped }]
 }
 
 export function armBuzzer(room, now = Date.now()) {
-  if (room.phase !== PHASE.CLUE) return []
-  if (room.wager) return [] // a nitro belongs to one player: no race to run
+  if (room.phase !== PHASE.CLUE || room.paused) return []
+  if (room.wager) return [] // a nitro belongs to one side: no race to run
   room.buzzer.armed = true
   room.buzzer.opened = true
   room.buzzer.openedAt = now
@@ -383,8 +590,8 @@ export function resetBuzzer(room) {
  * move, because doing it in two left a state where neither half worked.
  */
 export function reopenBuzzer(room, now = Date.now()) {
-  if (room.phase !== PHASE.CLUE) return []
-  if (room.wager) return [] // a nitro belongs to one player
+  if (room.phase !== PHASE.CLUE || room.paused) return []
+  if (room.wager) return [] // a nitro belongs to one side
   resetBuzzerState(room)
   room.buzzer.armed = true
   room.buzzer.opened = true
@@ -414,9 +621,15 @@ function resetBuzzerState(room) {
 export function buzz(room, playerId, now = Date.now()) {
   const player = room.players.get(playerId)
   if (!player || room.phase !== PHASE.CLUE) return []
-  if (room.buzzer.spent.includes(playerId)) return []
+  // A frozen room takes no presses. The clue is still on screen and the button
+  // is still under a thumb, so this has to be refused here rather than trusted
+  // to every client remembering to grey itself out.
+  if (room.paused) return []
+  // Side, not seat. Five phones on one team is one entry in the race, one shot
+  // at the clue and one lockout — otherwise the biggest team simply wins.
+  if (sideIds(room, playerId).some((id) => room.buzzer.spent.includes(id))) return []
   if ((room.buzzer.lockedUntil[playerId] ?? 0) > now) return []
-  if (room.buzzer.order.some((e) => e.playerId === playerId)) return []
+  if (room.buzzer.order.some((e) => sameSide(room, e.playerId, playerId))) return []
 
   // Never opened on this clue — this is a genuine jump, and it costs.
   if (!room.buzzer.opened) {
@@ -452,10 +665,13 @@ export function buzz(room, playerId, now = Date.now()) {
  * Host rules on the answer. `playerId` defaults to whoever holds the buzz, so
  * the common case is a single keypress.
  */
-export function judge(room, correct, playerId = room.buzzer.winner) {
+export function judge(room, correct, target = judgeTarget(room)) {
   if (room.phase !== PHASE.CLUE) return []
-  const player = room.players.get(playerId)
-  if (!player) return []
+  // The ledger being credited, which in team mode is not the thing being
+  // judged: a player buzzes, their team is paid.
+  const unit = scorer(room, target)
+  if (!unit) return []
+  const playerId = room.players.has(target) ? target : null
 
   const amount = stake(room)
 
@@ -464,10 +680,11 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
   // while talking — and "fix it by hand afterwards" means editing a score, a
   // spent-player list and a clue's status separately, in front of an audience.
   room.lastJudgement = {
+    target,
     playerId,
     correct,
     amount,
-    score: player.score,
+    score: unit.score,
     phase: room.phase,
     revealed: room.revealed,
     clueStatus: activeClue(room)?.status,
@@ -479,24 +696,26 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
   room.timer = null
 
   if (correct) {
-    player.score += amount
-    record(player, amount, room.wager ? "nitro" : "correct", clueLabel(room))
+    unit.score += amount
+    record(unit, amount, room.wager ? "nitro" : "correct", clueLabel(room))
     room.buzzer.armed = false
     room.buzzer.winner = playerId
     room.phase = PHASE.REVEAL
     room.revealed = true
     markPlayed(room)
-    return [{ kind: "correct", playerId, amount, score: player.score }]
+    return [{ kind: "correct", playerId, unitId: unit.id, amount, score: unit.score }]
   }
 
   if (room.settings.penaltyForWrong) {
-    player.score -= amount
-    record(player, -amount, "wrong", clueLabel(room))
+    unit.score -= amount
+    record(unit, -amount, "wrong", clueLabel(room))
   }
-  room.buzzer.spent.push(playerId)
+  // The whole side is out, not just the phone that answered — otherwise a team
+  // works through its members until one of them guesses right.
+  for (const id of spentSide(room, target)) if (!room.buzzer.spent.includes(id)) room.buzzer.spent.push(id)
   room.buzzer.winner = null
 
-  const effects = [{ kind: "wrong", playerId, amount, score: player.score }]
+  const effects = [{ kind: "wrong", playerId, unitId: unit.id, amount, score: unit.score }]
 
   // A nitro is a solo bet — a miss ends the clue rather than reopening it.
   if (room.wager) {
@@ -522,6 +741,21 @@ export function judge(room, correct, playerId = room.buzzer.winner) {
   return effects
 }
 
+/**
+ * Who a bare ✓/✕ applies to.
+ *
+ * Whoever holds the buzz, normally. On a team nitro there is no holder — the
+ * clue belongs to the side and any of them may say it — so the wagering team
+ * stands in, which is what makes a one-keypress ruling still work there.
+ */
+export const judgeTarget = (room) => room.buzzer.winner ?? room.wager?.teamId ?? room.wager?.playerId ?? null
+
+/** Every seat that is out of the clue once this target has answered wrong. */
+function spentSide(room, target) {
+  if (room.players.has(target)) return sideIds(room, target)
+  return room.settings.teams ? membersOf(room, target).map((p) => p.id) : []
+}
+
 /** A short "where did this come from", for the history. */
 function clueLabel(room) {
   const clue = activeClue(room)
@@ -544,14 +778,14 @@ export function undoJudgement(room) {
   const last = room.lastJudgement
   if (!last) return []
 
-  const player = room.players.get(last.playerId)
-  if (!player) {
+  const unit = scorer(room, last.target ?? last.playerId)
+  if (!unit) {
     room.lastJudgement = null
     return []
   }
 
-  player.score = last.score
-  if (player.history?.length) player.history.pop()
+  unit.score = last.score
+  if (unit.history?.length) unit.history.pop()
   room.phase = last.phase
   room.revealed = last.revealed
   room.active = last.active
@@ -561,7 +795,7 @@ export function undoJudgement(room) {
   if (clue && last.clueStatus) clue.status = last.clueStatus
   room.lastJudgement = null
 
-  return [{ kind: "undo", playerId: last.playerId, correct: last.correct, score: player.score }]
+  return [{ kind: "undo", playerId: last.playerId, unitId: unit.id, correct: last.correct, score: unit.score }]
 }
 
 /** Show the answer without anyone getting it — "nobody? it was …". */
@@ -613,23 +847,23 @@ export function nextRound(room) {
   return [{ kind: "round-start", roundIndex: room.roundIndex }]
 }
 
-export function adjustScore(room, playerId, delta) {
-  const player = room.players.get(playerId)
-  if (!player) return []
+export function adjustScore(room, id, delta) {
+  const unit = scorer(room, id)
+  if (!unit) return []
   const by = num(delta, 0)
-  player.score += by
-  record(player, by, "adjust")
-  return [{ kind: "score", playerId, score: player.score }]
+  unit.score += by
+  record(unit, by, "adjust")
+  return [{ kind: "score", playerId: id, unitId: unit.id, score: unit.score }]
 }
 
-export function setScore(room, playerId, score) {
-  const player = room.players.get(playerId)
-  if (!player) return []
+export function setScore(room, id, score) {
+  const unit = scorer(room, id)
+  if (!unit) return []
   const target = num(score, 0)
-  const by = target - player.score
-  player.score = target
-  record(player, by, "set")
-  return [{ kind: "score", playerId, score: player.score }]
+  const by = target - unit.score
+  unit.score = target
+  record(unit, by, "set")
+  return [{ kind: "score", playerId: id, unitId: unit.id, score: unit.score }]
 }
 
 export function startTimer(room, seconds, kind = "read", now = Date.now()) {
@@ -651,10 +885,12 @@ export function grantLifeline(room, playerId, type = "phone", now = Date.now()) 
   const player = room.players.get(playerId)
   const spec = LIFELINES[type]
   if (!player || !spec) return []
-  if ((player.lifelines[type] ?? 0) <= 0) return []
+  // A team shares one purse, so five phones do not mean five phone calls.
+  const purse = scorer(room, playerId) ?? player
+  if ((purse.lifelines[type] ?? 0) <= 0) return []
 
-  player.lifelines[type] -= 1
-  room.lifeline = { type, playerId, endsAt: now + spec.seconds * 1000 }
+  purse.lifelines[type] -= 1
+  room.lifeline = { type, playerId, teamId: teamOf(room, playerId)?.id ?? null, endsAt: now + spec.seconds * 1000 }
   room.timer = { kind: "lifeline", duration: spec.seconds, endsAt: room.lifeline.endsAt }
   room.buzzer.armed = false
   return [{ kind: "lifeline-start", type, playerId, seconds: spec.seconds }]
@@ -670,10 +906,42 @@ export function endLifeline(room) {
 
 /** Give a spent lifeline back — hosts make mistakes. */
 export function restoreLifeline(room, playerId, type) {
-  const player = room.players.get(playerId)
-  if (!player || !LIFELINES[type]) return []
-  player.lifelines[type] = (player.lifelines[type] ?? 0) + 1
+  const purse = scorer(room, playerId)
+  if (!purse || !LIFELINES[type]) return []
+  purse.lifelines[type] = (purse.lifelines[type] ?? 0) + 1
   return [{ kind: "lifeline-restore", playerId, type }]
+}
+
+// ── Pause ────────────────────────────────────────────────────────────────────
+
+/**
+ * Freeze the room.
+ *
+ * Quizzes stop. Someone gets a drink, an argument breaks out over the last
+ * answer, the pizza arrives. Without this the host's only options were to let a
+ * clock run out on a clue nobody is looking at, or to close it and lose the
+ * tile — so a running countdown is banked rather than cancelled, and comes back
+ * with exactly the time it had left.
+ */
+export function pauseGame(room, now = Date.now()) {
+  if (room.paused) return []
+  room.paused = {
+    at: now,
+    // The deadline lives on the relay and is keyed off `room.timer`, so
+    // clearing the timer is what actually stops the clock.
+    timer: room.timer ? { ...room.timer, left: Math.max(0, room.timer.endsAt - now) } : null,
+  }
+  room.timer = null
+  room.buzzer.armed = false
+  return [{ kind: "paused" }]
+}
+
+export function resumeGame(room, now = Date.now()) {
+  if (!room.paused) return []
+  const held = room.paused.timer
+  room.paused = null
+  if (held) room.timer = { kind: held.kind, duration: held.duration, endsAt: now + held.left }
+  return [{ kind: "resumed" }]
 }
 
 export function resetGame(room) {
@@ -683,7 +951,14 @@ export function resetGame(room) {
   for (const p of room.players.values()) {
     p.score = 0
     p.lifelines = { ...room.settings.lifelines }
+    p.history = []
   }
+  for (const t of room.teams.values()) {
+    t.score = 0
+    t.lifelines = { ...room.settings.lifelines }
+    t.history = []
+  }
+  room.paused = null
   room.phase = PHASE.LOBBY
   room.roundIndex = 0
   room.active = null
@@ -711,8 +986,13 @@ export function resetGame(room) {
  *            because a leader revealed early spoils the arithmetic for the room.
  */
 
-/** Nobody plays the final on a non-positive score — there is nothing to stake. */
-export const finalEligible = (room) => [...room.players.values()].filter((p) => p.score > 0)
+/**
+ * Nobody plays the final on a non-positive score — there is nothing to stake.
+ *
+ * A side, not a seat: in team mode the team bets once, writes once and is
+ * turned over once, whichever member does the typing.
+ */
+export const finalEligible = (room) => sides(room).filter((u) => u.score > 0)
 
 export function openFinal(room) {
   if (room.phase === PHASE.CLUE || room.phase === PHASE.WAGER) return []
@@ -733,34 +1013,38 @@ export function openFinal(room) {
   return [{ kind: "final-open" }]
 }
 
-/** A bet, placed blind. Capped at what the player actually has to lose. */
+/** A bet, placed blind. Capped at what the side actually has to lose. */
 export function setFinalWager(room, playerId, amount) {
   if (room.phase !== PHASE.FINAL || room.final?.stage !== "wager") return []
-  const player = room.players.get(playerId)
-  if (!player || player.score <= 0) return []
-  const capped = Math.max(0, Math.min(num(amount, 0), player.score))
-  room.final.wagers[playerId] = capped
-  return [{ kind: "final-wager", playerId }]
+  const unit = scorer(room, playerId)
+  if (!unit || unit.score <= 0) return []
+  const capped = Math.max(0, Math.min(num(amount, 0), unit.score))
+  room.final.wagers[unit.id] = capped
+  return [{ kind: "final-wager", playerId, unitId: unit.id }]
 }
 
 export function startFinal(room, now = Date.now()) {
   if (room.phase !== PHASE.FINAL || room.final?.stage !== "wager") return []
   // Anyone who never bet is treated as having staked nothing, so one player
   // looking at their phone cannot hold the whole room up.
-  for (const p of finalEligible(room)) room.final.wagers[p.id] ??= 0
+  for (const u of finalEligible(room)) room.final.wagers[u.id] ??= 0
   room.final.stage = "clue"
   const seconds = room.board.final.seconds || 30
   room.timer = { kind: "final", duration: seconds, endsAt: now + seconds * 1000 }
   return [{ kind: "final-start", seconds }]
 }
 
+/**
+ * The written answer. One per side — in team mode whoever types last speaks for
+ * the team, which is the same thing that happens with a pen and one answer slip.
+ */
 export function setFinalAnswer(room, playerId, text) {
   if (room.phase !== PHASE.FINAL || room.final?.stage !== "clue") return []
-  const player = room.players.get(playerId)
-  if (!player || player.score <= 0) return []
-  if (room.final.answers[playerId]?.locked) return []
-  room.final.answers[playerId] = { text: str(text, 200), at: Date.now(), locked: false }
-  return [{ kind: "final-answer", playerId }]
+  const unit = scorer(room, playerId)
+  if (!unit || unit.score <= 0) return []
+  if (room.final.answers[unit.id]?.locked) return []
+  room.final.answers[unit.id] = { text: str(text, 200), at: Date.now(), locked: false, by: playerId }
+  return [{ kind: "final-answer", playerId, unitId: unit.id }]
 }
 
 /** Time is up, or the host called it. Nothing more is accepted after this. */
@@ -779,7 +1063,7 @@ export function revealFinal(room) {
   // the rest have had their moment.
   room.final.order = finalEligible(room)
     .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
-    .map((p) => p.id)
+    .map((u) => u.id)
   room.final.revealIndex = 0
   return [{ kind: "final-reveal", playerId: room.final.order[0] ?? null }]
 }
@@ -787,16 +1071,16 @@ export function revealFinal(room) {
 /** Rule on whoever is currently up, pay or dock the bet, and move along. */
 export function judgeFinal(room, correct) {
   if (room.phase !== PHASE.FINAL || room.final?.stage !== "reveal") return []
-  const playerId = room.final.order[room.final.revealIndex]
-  const player = playerId && room.players.get(playerId)
-  if (!player) return []
+  const unitId = room.final.order[room.final.revealIndex]
+  const unit = unitId && scorer(room, unitId)
+  if (!unit) return []
 
-  const wager = room.final.wagers[playerId] ?? 0
-  player.score += correct ? wager : -wager
-  record(player, correct ? wager : -wager, correct ? "final-correct" : "final-wrong", "Final")
-  room.final.judged[playerId] = correct
+  const wager = room.final.wagers[unitId] ?? 0
+  unit.score += correct ? wager : -wager
+  record(unit, correct ? wager : -wager, correct ? "final-correct" : "final-wrong", "Final")
+  room.final.judged[unitId] = correct
 
-  const effects = [{ kind: correct ? "final-correct" : "final-wrong", playerId, wager, score: player.score }]
+  const effects = [{ kind: correct ? "final-correct" : "final-wrong", playerId: unitId, unitId, wager, score: unit.score }]
 
   if (room.final.revealIndex >= room.final.order.length - 1) {
     room.phase = PHASE.ENDED
@@ -832,7 +1116,19 @@ export function snapshotRoom(room) {
       id: p.id,
       name: p.name,
       score: p.score,
+      teamId: p.teamId,
       lifelines: { ...p.lifelines },
+      history: p.history ?? [],
+    })),
+    // Saved whether or not team mode is on, so turning it back off for a night
+    // and on again the next does not lose the sides people were put into.
+    teams: [...room.teams.values()].map((t) => ({
+      id: t.id,
+      name: t.name,
+      color: t.color,
+      score: t.score,
+      lifelines: { ...t.lifelines },
+      history: t.history ?? [],
     })),
     savedAt: Date.now(),
   }
@@ -851,11 +1147,23 @@ export function restoreRoom(code, snapshot) {
   // clue the room has no memory of.
   if (room.phase === PHASE.CLUE || room.phase === PHASE.WAGER || room.phase === PHASE.REVEAL) room.phase = PHASE.BOARD
 
+  for (const t of snapshot.teams ?? []) {
+    if (!t?.id) continue
+    const team = makeTeam(String(t.id), str(t.name, 20) || "Team", room.teams.size)
+    if (typeof t.color === "string") team.color = t.color.slice(0, 24)
+    team.score = num(t.score, 0)
+    team.lifelines = { ...room.settings.lifelines, ...(t.lifelines ?? {}) }
+    team.history = Array.isArray(t.history) ? t.history.slice(-HISTORY_LIMIT) : []
+    room.teams.set(team.id, team)
+  }
+
   for (const p of snapshot.players ?? []) {
     if (!p?.id) continue
     const player = makePlayer(String(p.id), str(p.name, 16) || "Player")
     player.score = num(p.score, 0)
+    player.teamId = typeof p.teamId === "string" && room.teams.has(p.teamId) ? p.teamId : null
     player.lifelines = { ...room.settings.lifelines, ...(p.lifelines ?? {}) }
+    player.history = Array.isArray(p.history) ? p.history.slice(-HISTORY_LIMIT) : []
     // Nobody is connected yet — their phones have to rejoin.
     player.connected = false
     room.players.set(player.id, player)
@@ -913,9 +1221,19 @@ export function projectState(room, role, viewerId = null) {
     category: round?.categories[room.active.catIndex]?.title ?? "",
   }
 
+  /*
+    The viewer's own side. A player's phone needs this to find itself in the
+    final — where entries are keyed by whoever is being paid, which in team mode
+    is not the id the phone knows itself by.
+  */
+  const unitId = viewerId ? (scorer(room, viewerId)?.id ?? viewerId) : null
+
   return {
     code: room.code,
     serverNow: Date.now(),
+    paused: !!room.paused,
+    music: !!room.music,
+    unit: unitId,
     // The whole board, every round, unredacted — host and controller only. The
     // builder needs this to adopt a resumed game's board, which it cannot
     // rebuild from the projection above (that carries the current round alone).
@@ -943,17 +1261,47 @@ export function projectState(room, role, viewerId = null) {
       order: room.buzzer.order.map((e) => ({ ...e, behind: room.buzzer.winnerMs == null ? 0 : e.ms - room.buzzer.winnerMs })),
       lockedUntil: room.buzzer.lockedUntil,
     },
+    /*
+      Sides, when they are on. Shaped like a player row on purpose: every screen
+      that shows a scoreboard can render `state.teams ?? state.players` and be
+      right either way, instead of growing a second layout for team night.
+    */
+    teams: room.settings.teams
+      ? [...room.teams.values()]
+          .map((t) => {
+            const members = membersOf(room, t.id)
+            return {
+              id: t.id,
+              name: t.name,
+              color: t.color,
+              score: t.score,
+              // A team is "here" while any one of its phones is.
+              connected: members.some((p) => p.connected),
+              lifelines: t.lifelines,
+              members: members.map((p) => p.id),
+              memberNames: members.map((p) => p.name),
+              history: (t.history ?? []).slice(-12),
+            }
+          })
+          .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+      : null,
     players: [...room.players.values()]
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        score: p.score,
-        connected: p.connected,
-        lifelines: p.lifelines,
-        // The working behind the total. Everyone can see it — it is a
-        // scoreboard, not a secret — but it is trimmed for the wire.
-        history: (p.history ?? []).slice(-12),
-      }))
+      .map((p) => {
+        // The score a player is playing for, which in team mode is the team's.
+        // Their own frozen tally is of no use to anyone on the night.
+        const unit = scorer(room, p.id) ?? p
+        return {
+          id: p.id,
+          name: p.name,
+          teamId: room.settings.teams ? (p.teamId ?? null) : null,
+          score: unit.score,
+          connected: p.connected,
+          lifelines: unit.lifelines,
+          // The working behind the total. Everyone can see it — it is a
+          // scoreboard, not a secret — but it is trimmed for the wire.
+          history: (unit.history ?? []).slice(-12),
+        }
+      })
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
   }
 }
@@ -994,21 +1342,24 @@ function projectFinal(room, privileged, viewerId) {
     order: room.final.order,
     /** Who is being turned over right now. */
     current: room.final.order[room.final.revealIndex] ?? null,
-    players: [...room.players.values()]
-      .filter((p) => p.score > 0 || room.final.wagers[p.id] != null)
-      .map((p) => {
-        const mine = p.id === viewerId
-        const open = privileged || isUp(p.id)
+    // Sides, not seats — see `finalEligible`. A teammate counts as "mine", so
+    // everyone on a team can see the bet and the answer being written for them.
+    players: sides(room)
+      .filter((u) => u.score > 0 || room.final.wagers[u.id] != null)
+      .map((u) => {
+        const mine = u.id === (viewerId ? (scorer(room, viewerId)?.id ?? viewerId) : null)
+        const open = privileged || isUp(u.id)
         return {
-          id: p.id,
-          name: p.name,
-          score: p.score,
+          id: u.id,
+          name: u.name,
+          score: u.score,
+          color: u.color ?? null,
           // "They have bet" is public; the number is not.
-          wagered: room.final.wagers[p.id] != null,
-          answered: !!room.final.answers[p.id]?.text,
-          wager: open || mine ? (room.final.wagers[p.id] ?? null) : null,
-          answer: open || mine ? (room.final.answers[p.id]?.text ?? "") : null,
-          judged: room.final.judged[p.id] ?? null,
+          wagered: room.final.wagers[u.id] != null,
+          answered: !!room.final.answers[u.id]?.text,
+          wager: open || mine ? (room.final.wagers[u.id] ?? null) : null,
+          answer: open || mine ? (room.final.answers[u.id]?.text ?? "") : null,
+          judged: room.final.judged[u.id] ?? null,
         }
       }),
   }

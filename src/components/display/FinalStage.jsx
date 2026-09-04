@@ -68,9 +68,21 @@ function Writing({ final, timer, now }) {
       >
         {final.prompt}
       </p>
+      {/* Audio and video were silently dropped here — the builder happily
+          accepts either on a final clue, and the big screen showed nothing. */}
       {final.media?.kind === "image" && (
         <img src={resolveMediaUrl(final.media.url)} alt="" className="max-h-[38vh] rounded-[1vmin] border border-gold-deep/30 object-contain" />
       )}
+      {final.media?.kind === "video" && (
+        <video
+          src={resolveMediaUrl(final.media.url)}
+          autoPlay
+          controls
+          playsInline
+          className="max-h-[38vh] rounded-[1vmin] border border-gold-deep/30 bg-black object-contain"
+        />
+      )}
+      {final.media?.kind === "audio" && <audio src={resolveMediaUrl(final.media.url)} autoPlay controls className="w-[50vmin]" />}
 
       {seconds != null && (
         <div

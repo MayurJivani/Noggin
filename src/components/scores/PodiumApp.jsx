@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
+import { holdsBuzz, isCalling, isSpent, rows as sideRows, wagerOf } from "../../lib/sides"
+import { useRolling } from "../../lib/useRolling"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
@@ -35,7 +37,10 @@ export function PodiumApp() {
   if (error) return <Frame><span className="text-muted">{error.message}</span></Frame>
   if (!state) return <Frame><span className="text-faint">{connected ? "Joining…" : "Looking for the room…"}</span></Frame>
 
-  const players = only ? state.players.filter((p) => p.name.toLowerCase() === only) : state.players
+  // Teams get podiums of their own on team night: the lectern belongs to the
+  // side, and its members are listed under the name.
+  const all = sideRows(state)
+  const players = only ? all.filter((r) => r.name.toLowerCase() === only) : all
 
   if (only && !players.length) {
     return (
@@ -63,8 +68,8 @@ export function PodiumApp() {
           className="grid h-full gap-[1.5vmin]"
           style={{ gridTemplateColumns: `repeat(${columnsFor(players.length)}, minmax(0, 1fr))`, gridAutoRows: "minmax(0, 1fr)" }}
         >
-          {players.map((p) => (
-            <Podium key={p.id} player={p} state={state} now={now} solo={!!only} code={code} />
+          {players.map((row) => (
+            <Podium key={row.id} row={row} state={state} now={now} solo={!!only} code={code} />
           ))}
         </div>
       </main>
@@ -90,12 +95,12 @@ export function PodiumApp() {
  */
 const columnsFor = (n) => (n <= 1 ? 1 : n <= 2 ? 2 : n <= 6 ? 3 : n <= 12 ? 4 : 5)
 
-function Podium({ player, state, now, solo, code }) {
-  const holds = state.buzzer.winner === player.id
-  const spent = state.buzzer.spent.includes(player.id)
-  const onCall = state.lifeline?.playerId === player.id
-  const wager = state.wager?.playerId === player.id ? state.wager.amount : null
-  const final = state.final?.players?.find((f) => f.id === player.id)
+function Podium({ row, state, now, solo, code }) {
+  const holds = holdsBuzz(row, state.buzzer)
+  const spent = isSpent(row, state.buzzer)
+  const onCall = isCalling(row, state.lifeline)
+  const wager = wagerOf(row, state.wager)
+  const final = state.final?.players?.find((f) => f.id === row.id)
   const dimmed = !!state.lifeline && !onCall
 
   /*
@@ -116,15 +121,20 @@ function Podium({ player, state, now, solo, code }) {
       <div className="shrink-0 px-[2vmin] pt-[2vmin] text-center">
         <div
           className="truncate font-display uppercase leading-none text-ink"
-          style={{ fontSize: `max(16px, calc(var(--stage) * ${solo ? 5.5 : 3.2}))`, letterSpacing: "0.04em" }}
+          style={{ fontSize: `max(16px, calc(var(--stage) * ${solo ? 5.5 : 3.2}))`, letterSpacing: "0.04em", color: row.color ?? undefined }}
         >
-          {player.name}
+          {row.name}
         </div>
+        {row.memberNames?.length > 0 && (
+          <div className="mt-[0.6vmin] truncate text-muted" style={{ fontSize: `max(9px, calc(var(--stage) * ${solo ? 1.8 : 1.2}))` }}>
+            {row.memberNames.join(" · ")}
+          </div>
+        )}
         <VeinLine className="mx-auto mt-[1.2vmin] w-[80%]" height={solo ? 16 : 12} />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[1.2vmin] px-[1.5vmin]">
-        <Score value={player.score} solo={solo} />
+        <Score value={row.score} solo={solo} />
         <StatusLine
           holds={holds}
           spent={spent}
@@ -134,6 +144,7 @@ function Podium({ player, state, now, solo, code }) {
           final={final}
           finalStage={state.final?.stage}
           phase={state.phase}
+          paused={state.paused}
           armed={state.buzzer.armed}
           solo={solo}
           now={now}
@@ -141,12 +152,12 @@ function Podium({ player, state, now, solo, code }) {
       </div>
 
       <div className="flex shrink-0 items-center justify-center gap-[1vmin] pb-[1.5vmin]">
-        {(player.lifelines?.phone ?? 0) > 0 && (
+        {(row.lifelines?.phone ?? 0) > 0 && (
           <span className="text-gold-dim" style={{ fontSize: `max(9px, calc(var(--stage) * ${solo ? 1.5 : 1.1}))` }}>
-            ☎ {player.lifelines.phone}
+            ☎ {row.lifelines.phone}
           </span>
         )}
-        {!player.connected && (
+        {!row.connected && (
           <span className="text-faint" style={{ fontSize: `max(9px, calc(var(--stage) * ${solo ? 1.5 : 1.1}))` }}>
             away
           </span>
@@ -158,13 +169,23 @@ function Podium({ player, state, now, solo, code }) {
   const shell = `relative flex min-h-0 flex-col overflow-hidden rounded-[1.5vmin] border-[0.4vmin] transition-all duration-300 ${skin} ${
     dimmed ? "opacity-40" : ""
   }`
+  // A team's own colour is its resting state; the buzz and the phone call still
+  // take the panel over, because those are what the room needs to see.
+  const tint = row.color && !holds && !onCall && !spent ? { borderColor: row.color } : undefined
 
   // On the wall each panel is a link to its own screen, so a booth tablet gets
   // an address it will still be showing after a reload.
   return solo ? (
-    <div className={shell}>{body}</div>
+    <div className={shell} style={tint}>
+      {body}
+    </div>
   ) : (
-    <a className={`${shell} hover:border-gold`} href={`/podium?code=${code}&name=${encodeURIComponent(player.name)}`} title={`Open ${player.name}'s own screen`}>
+    <a
+      className={`${shell} hover:border-gold`}
+      style={tint}
+      href={`/podium?code=${code}&name=${encodeURIComponent(row.name)}`}
+      title={`Open ${row.name}'s own screen`}
+    >
       {body}
     </a>
   )
@@ -172,27 +193,7 @@ function Podium({ player, state, now, solo, code }) {
 
 /** The number, rolling. It is most of the panel, so it gets most of the panel. */
 function Score({ value, solo }) {
-  const [shown, setShown] = useState(value)
-  const from = useRef(value)
-  const raf = useRef(0)
-
-  useEffect(() => {
-    if (value === shown) return
-    const start = performance.now()
-    const a = from.current
-    const b = value
-    const dur = Math.min(1100, 300 + Math.abs(b - a) * 0.5)
-    const step = (t) => {
-      const k = Math.min(1, (t - start) / dur)
-      setShown(Math.round(a + (b - a) * (1 - Math.pow(1 - k, 3))))
-      if (k < 1) raf.current = requestAnimationFrame(step)
-      else from.current = b
-    }
-    raf.current = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf.current)
-  }, [value])
-
-  const moving = shown !== value
+  const [shown, moving] = useRolling(value)
   return (
     <div
       className={`font-value leading-[0.85] tabular-nums ${shown < 0 ? "text-bad" : "text-gold"} ${moving ? "" : "brass"}`}
@@ -203,10 +204,11 @@ function Score({ value, solo }) {
   )
 }
 
-function StatusLine({ holds, spent, onCall, callEndsAt, wager, final, finalStage, phase, armed, solo, now }) {
+function StatusLine({ holds, spent, onCall, callEndsAt, wager, final, finalStage, phase, paused, armed, solo, now }) {
   const left = useCountdown(callEndsAt, now)
   const size = { fontSize: `max(10px, calc(var(--stage) * ${solo ? 2 : 1.3}))` }
 
+  if (paused) return <Line tone="text-gold" size={size}>Paused</Line>
   if (onCall) {
     const seconds = Math.ceil((left ?? 0) / 1000)
     return (

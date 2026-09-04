@@ -4,6 +4,16 @@ What exists, and what is deliberately left for later.
 
 ## Shipped
 
+- **Teams** — several phones sharing one score, one lifeline purse and one
+  buzz. The buzzer thinks in sides rather than seats, so a team gets one entry
+  in the race however many phones it fields and a miss puts all of them out.
+  Sides carry through the nitro wager, the final and all four screens.
+- **Pause** — the room freezes, the buzzer shuts, and a running clock is banked
+  rather than cancelled: resuming returns exactly the time that was left.
+- **Video clues** — alongside image and audio, served with range support.
+- **The soundboard** — fourteen cues fired by hand from the desk or the
+  controller, a music bed that ducks under a clue, and a transition cue for each
+  move the game makes. All synthesised; no assets ship.
 - **Accounts** — host sign-in with scrypt and cookie sessions. Players never
   need one. Boards and saved games are owned; signups close after the first.
 - **Remote controller** (`/control`) — the in-depth surface for a second
@@ -58,17 +68,17 @@ What exists, and what is deliberately left for later.
 
 ## Later, unranked
 
-- **Teams.** Several phones sharing one score and one buzzer. Every comparable
-  tool has this and pub quizzes are team-based, but it reaches into the player
-  model, the buzzer, scoring and all three screens — worth doing deliberately
-  rather than bolted onto a working buzzer.
+- **Team chat.** Factile lets a team confer in the app before answering. In a
+  living room they just talk, so this only matters for a remote quiz.
+- **Typed answers.** Optionally let players type an answer and have the host
+  judge the text rather than the room. Useful for a written round; harmful for
+  a fast one, and it needs its own phase rather than a flag on the buzzer.
+- **Multiple choice.** A per-clue list of options shown on the phones. Cheap to
+  add and a different game — worth deciding it is wanted before building it.
 - **Question bank.** Boards can be duplicated; individual clues cannot be reused
   across games without copying the whole thing.
 - **Board library.** The relay stores boards; the builder lists them. Missing:
   duplicate, rename, delete, and folders once there are more than a dozen.
-- **Answer checking.** Optionally let players type an answer and have the host
-  judge the text rather than the room. Useful for a written round; harmful for
-  a fast one.
 - **Spectator view.** A read-only `/display` variant for people watching from
   another room.
 - **Persisted game history.** Who won, what was missed, which clues nobody got.
@@ -87,6 +97,12 @@ holding, so it avoids things that are absent or hostile on real devices:
 - React registers `touchstart` passively, so `preventDefault` from a touch
   handler does nothing but log an error in Safari. `touch-action: none` on the
   button does the real work.
+- `requestAnimationFrame` does not run in a page the browser has stopped
+  compositing — a projector window behind another, a display on a second
+  desktop. The rolling scores used to freeze on a stale total there, silently.
+  `src/lib/useRolling.js` commits the target on a timer as well as on the last
+  frame, and skips the animation outright when the page is already hidden:
+  being right beats being pretty on the one screen the room is reading.
 
 ## Known limits
 

@@ -664,3 +664,236 @@ test("undoing a ruling takes its history entry with it", () => {
   assert.equal(room.players.get("p0").history.length, 0, "or the working stops matching the total")
   assert.equal(room.players.get("p0").score, 0)
 })
+
+// ── Teams ────────────────────────────────────────────────────────────────────
+
+/** A room in team mode. Returns the room and its two teams, in order. */
+function teamed(n = 4, settings = {}) {
+  const room = setup(n, settings)
+  G.setTeamMode(room, true)
+  const [a, b] = [...room.teams.values()]
+  return { room, a, b }
+}
+
+test("turning teams on creates sides and seats everyone", () => {
+  const { room, a, b } = teamed(4)
+  assert.equal(room.settings.teams, true)
+  assert.equal(room.teams.size, 2)
+  assert.equal([...room.players.values()].filter((p) => !p.teamId).length, 0, "nobody is left without a side")
+  assert.equal(G.membersOf(room, a.id).length + G.membersOf(room, b.id).length, 4)
+})
+
+test("turning teams on carries what people had already won", () => {
+  const room = setup(2)
+  room.players.get("p0").score = 300
+  room.players.get("p1").score = 100
+  G.setTeamMode(room, true)
+  const total = [...room.teams.values()].reduce((n, t) => n + t.score, 0)
+  assert.equal(total, 400, "the points are still in the room, just on sides now")
+})
+
+test("flipping teams off and on again does not re-add the carried scores", () => {
+  const room = setup(2)
+  room.players.get("p0").score = 300
+  G.setTeamMode(room, true)
+  const before = [...room.teams.values()].reduce((n, t) => n + t.score, 0)
+  G.setTeamMode(room, false)
+  G.setTeamMode(room, true)
+  assert.equal([...room.teams.values()].reduce((n, t) => n + t.score, 0), before)
+})
+
+test("points a player wins land on their team", () => {
+  const { room } = teamed(4)
+  const team = G.teamOf(room, "p0")
+  G.selectClue(room, 0, 1) // 400
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judge(room, true)
+
+  assert.equal(team.score, 400, "the side is paid")
+  assert.equal(room.players.get("p0").score, 0, "and the individual tally is left alone")
+  assert.equal(G.projectState(room, "host").players.find((p) => p.id === "p0").score, 400, "but a player is shown what they play for")
+})
+
+test("a team gets one entry in the race, not one per phone", () => {
+  const { room } = teamed(4)
+  const [x, y] = G.membersOf(room, G.teamOf(room, "p0").id).map((p) => p.id)
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+
+  assert.deepEqual(kinds(G.buzz(room, x, 10)), ["buzz-in"])
+  assert.deepEqual(G.buzz(room, y, 20), [], "a teammate cannot buzz in behind their own side")
+  assert.equal(room.buzzer.order.length, 1)
+})
+
+test("a wrong answer puts the whole team out of the clue", () => {
+  const { room } = teamed(4)
+  const team = G.teamOf(room, "p0")
+  const mates = G.membersOf(room, team.id).map((p) => p.id)
+  G.selectClue(room, 0, 1)
+  G.armBuzzer(room, 0)
+  G.buzz(room, mates[0], 10)
+  G.judge(room, false)
+
+  assert.equal(team.score, -400, "the side is docked")
+  for (const id of mates) assert.ok(room.buzzer.spent.includes(id), `${id} is out with their team`)
+  assert.deepEqual(G.buzz(room, mates[1], 30), [], "and cannot have another go at it")
+})
+
+test("a team shares one lifeline purse", () => {
+  const { room } = teamed(4, { lifelines: { phone: 1 } })
+  const team = G.teamOf(room, "p0")
+  const mates = G.membersOf(room, team.id).map((p) => p.id)
+
+  assert.deepEqual(kinds(G.grantLifeline(room, mates[0], "phone", 0)), ["lifeline-start"])
+  G.endLifeline(room)
+  assert.equal(team.lifelines.phone, 0)
+  assert.deepEqual(G.grantLifeline(room, mates[1], "phone", 0), [], "five phones is not five phone calls")
+})
+
+test("a nitro is wagered and ruled on by the team", () => {
+  const { room, a } = teamed(4)
+  a.score = 2000
+  const round = G.currentRound(room)
+  round.categories[0].clues[1].nitro = true
+
+  G.selectClue(room, 0, 1)
+  assert.equal(room.phase, G.PHASE.WAGER)
+
+  G.setWager(room, a.id, 1000)
+  assert.equal(room.phase, G.PHASE.CLUE)
+  assert.equal(room.wager.teamId, a.id)
+  assert.equal(room.buzzer.winner, null, "a team nitro has no single holder")
+
+  // A bare ruling still has to find its target.
+  G.judge(room, true)
+  assert.equal(a.score, 3000, "2000 staking 1000 pays out to 3000")
+})
+
+test("undo on a team puts the team's score and history back", () => {
+  const { room } = teamed(4)
+  const team = G.teamOf(room, "p0")
+  G.selectClue(room, 0, 1)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 5)
+  G.judge(room, true)
+  assert.equal(team.score, 400)
+  assert.equal(team.history.length, 1)
+
+  G.undoJudgement(room)
+  assert.equal(team.score, 0)
+  assert.equal(team.history.length, 0)
+})
+
+test("the final is played by sides, not seats", () => {
+  const { room, a, b } = teamed(4)
+  a.score = 1000
+  b.score = 600
+  room.board.final = { ...G.makeFinal(), enabled: true, prompt: "?", answer: "!" }
+  G.openFinal(room)
+
+  const [x, y] = G.membersOf(room, a.id).map((p) => p.id)
+  G.setFinalWager(room, x, 400)
+  assert.equal(room.final.wagers[a.id], 400, "the bet is the team's")
+  G.setFinalWager(room, y, 700)
+  assert.equal(room.final.wagers[a.id], 700, "and a teammate can change it")
+
+  G.startFinal(room, 0)
+  G.setFinalAnswer(room, y, "a guess")
+  assert.equal(room.final.answers[a.id].text, "a guess", "one answer slip per team")
+
+  G.revealFinal(room)
+  assert.deepEqual(room.final.order, [b.id, a.id], "poorest side first")
+  G.judgeFinal(room, false) // b, who bet nothing
+  G.judgeFinal(room, true)
+  assert.equal(a.score, 1700)
+})
+
+test("a team's own screen sees its bet, and nobody else's", () => {
+  const { room, a, b } = teamed(4)
+  a.score = 1000
+  b.score = 600
+  room.board.final = { ...G.makeFinal(), enabled: true, prompt: "?", answer: "!" }
+  G.openFinal(room)
+  const mine = G.membersOf(room, a.id).map((p) => p.id)
+  G.setFinalWager(room, mine[0], 400)
+
+  // The teammate who did not type it still needs to see it.
+  const mate = G.projectState(room, "player", mine[1])
+  assert.equal(mate.unit, a.id)
+  assert.equal(mate.final.players.find((p) => p.id === a.id).wager, 400)
+
+  const rival = G.projectState(room, "player", G.membersOf(room, b.id)[0].id)
+  assert.equal(rival.final.players.find((p) => p.id === a.id).wager, null, "a blind bet stays blind across the room")
+  assert.equal(rival.final.players.find((p) => p.id === a.id).wagered, true, "though that one exists is public")
+})
+
+test("teams survive being saved and reopened", () => {
+  const { room, a } = teamed(4)
+  a.score = 750
+  a.name = "The Quizlings"
+  const back = G.restoreRoom("TEST", G.snapshotRoom(room))
+
+  assert.equal(back.settings.teams, true)
+  assert.equal(back.teams.size, 2)
+  const same = back.teams.get(a.id)
+  assert.equal(same.name, "The Quizlings")
+  assert.equal(same.score, 750)
+  assert.deepEqual(
+    G.membersOf(back, a.id).map((p) => p.id).sort(),
+    G.membersOf(room, a.id).map((p) => p.id).sort(),
+    "and everyone is on the side they were on",
+  )
+})
+
+test("deleting a team leaves its players in the game", () => {
+  const { room, a } = teamed(4)
+  const mates = G.membersOf(room, a.id).map((p) => p.id)
+  G.deleteTeam(room, a.id)
+  assert.equal(room.teams.size, 1)
+  for (const id of mates) assert.equal(room.players.get(id).teamId, null, "off the sheet, not out of the room")
+})
+
+test("evening up deals everyone out in join order", () => {
+  const { room } = teamed(4)
+  G.autoTeams(room, 2)
+  const [a, b] = [...room.teams.keys()]
+  assert.equal(G.membersOf(room, a).length, 2)
+  assert.equal(G.membersOf(room, b).length, 2)
+})
+
+// ── Pause ────────────────────────────────────────────────────────────────────
+
+test("a paused room takes no presses", () => {
+  const room = setup(2, { answerSeconds: 0 })
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.pauseGame(room, 100)
+
+  assert.equal(room.buzzer.armed, false, "the buzzer shuts with the room")
+  assert.deepEqual(G.buzz(room, "p0", 200), [], "and a thumb on the button achieves nothing")
+  assert.deepEqual(G.armBuzzer(room, 300), [], "nor can it be reopened while held")
+})
+
+test("pausing banks the clock and resuming gives back what was left", () => {
+  const room = setup(2, { answerSeconds: 10 })
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 1000) // answer clock runs to 11000
+
+  G.pauseGame(room, 4000)
+  assert.equal(room.timer, null, "nothing is counting down while the room is held")
+
+  G.resumeGame(room, 90_000)
+  assert.equal(room.timer.endsAt, 90_000 + 7000, "the seven seconds that were left are still there")
+  assert.equal(room.timer.kind, "answer")
+})
+
+test("putting a clue up is itself a resume", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 0)
+  G.pauseGame(room, 100)
+  G.closeClue(room)
+  G.selectClue(room, 0, 1)
+  assert.equal(room.paused, null, "the host moved on; the room is not still waiting")
+})

@@ -89,7 +89,14 @@ const MIME = {
   ".oga": "audio/ogg",
   ".wav": "audio/wav",
   ".flac": "audio/flac",
-  ".webm": "audio/webm",
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".mov": "video/quicktime",
+  ".ogv": "video/ogg",
+  // Both a video and an audio container, and overwhelmingly the former in the
+  // wild. `<audio>` plays a video/webm source fine; `<video>` given audio/webm
+  // is the pairing browsers are awkward about, so this way round loses less.
+  ".webm": "video/webm",
 }
 
 const CORS_BASE = {
@@ -915,6 +922,10 @@ async function handleJoin(ws, meta, msg, req) {
       player.lifelines = { ...room.settings.lifelines }
       room.players.set(id, player)
       meta.playerId = id
+      // Somewhere to sit. A phone arriving on team night with no side can't
+      // buzz for anyone, and the host is busy — the smallest team is both the
+      // fair answer and the one they'd have picked.
+      if (room.settings.teams) G.seatStragglers(room)
     }
     send(ws, { type: "joined", playerId: meta.playerId, code: room.code, role })
     console.log(`[ws] player ${meta.playerId} joined ${room.code} (${room.players.size} seated)`)
@@ -1021,15 +1032,61 @@ function handleHostMessage(room, meta, ws, msg) {
       return
     }
     case "settings:set": {
-      room.settings = { ...room.settings, ...pick(msg.settings, Object.keys(G.DEFAULTS)) }
-      return apply(room, [{ kind: "settings" }])
+      const next = pick(msg.settings, Object.keys(G.DEFAULTS))
+      // Team mode is a rule with consequences — sides to create, stragglers to
+      // seat, scores to carry — so it goes through its own mutator rather than
+      // being written straight into settings like a number of seconds.
+      const wantsTeams = "teams" in next ? !!next.teams : null
+      delete next.teams
+      room.settings = { ...room.settings, ...next }
+      const fx = wantsTeams == null ? [] : G.setTeamMode(room, wantsTeams)
+      return apply(room, [{ kind: "settings" }, ...fx])
+    }
+
+    // ── Teams ──
+    case "team:create":
+      G.createTeam(room, msg.name)
+      return apply(room, [{ kind: "teams" }])
+    case "team:rename":
+      return apply(room, G.renameTeam(room, msg.teamId, msg.name))
+    case "team:delete":
+      return apply(room, G.deleteTeam(room, msg.teamId))
+    case "team:assign":
+      return apply(room, G.assignTeam(room, msg.playerId, msg.teamId))
+    case "team:autofill":
+      return apply(room, G.autoTeams(room, msg.count))
+
+    // ── The room, held ──
+    case "game:pause":
+      return apply(room, G.pauseGame(room))
+    case "game:resume":
+      return apply(room, G.resumeGame(room))
+
+    /*
+      The soundboard.
+
+      Nothing about the game changes, so this is a broadcast rather than a
+      mutation — the cue is transient by nature and replaying it to a screen
+      that reconnects five seconds later would be a ghost applauding an empty
+      room. The big screen is the only client that acts on it; that is where
+      the speakers are.
+    */
+    case "sfx:play":
+      return broadcast(room, [{ kind: "sfx", cue: String(msg.cue ?? "").slice(0, 24) }])
+
+    // Music, by contrast, is a state: a display that reloads mid-round should
+    // come back with the bed still playing rather than in silence.
+    case "music:set": {
+      room.music = !!msg.on
+      return apply(room, [{ kind: "music", on: room.music }])
     }
     case "game:start":
       return apply(room, G.startGame(room))
     case "clue:select":
       return apply(room, G.selectClue(room, Number(msg.catIndex), Number(msg.clueIndex)))
     case "wager:set":
-      return apply(room, G.setWager(room, msg.playerId, msg.amount))
+      // A side, which on team night is a team id and otherwise a player's.
+      return apply(room, G.setWager(room, msg.teamId ?? msg.playerId, msg.amount))
     case "buzzer:arm":
       return apply(room, G.armBuzzer(room))
     case "buzzer:lock":

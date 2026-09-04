@@ -171,7 +171,41 @@ function Media({ media, compact = false, revealed = false }) {
       />
     )
   }
+  if (media.kind === "video") return <VideoClue src={src} compact={compact} revealed={revealed} />
   return <AudioClue src={src} label={media.alt} compact={compact} />
+}
+
+/**
+ * A clip, on the big screen.
+ *
+ * Autoplayed with sound, which browsers refuse until the page has been
+ * interacted with — the display already catches one click anywhere to arm the
+ * audio cues, and that same gesture is what lets this play. Controls stay on so
+ * the host can scrub or replay a clip the room asks to see again.
+ */
+function VideoClue({ src, compact, revealed }) {
+  const el = useRef(null)
+
+  useEffect(() => {
+    const node = el.current
+    if (!node) return
+    node.play().catch(() => {
+      // Blocked: the controls are right there, and muting to force it through
+      // would be worse than a clip the host has to press play on.
+    })
+    return () => node.pause()
+  }, [src])
+
+  return (
+    <video
+      ref={el}
+      src={src}
+      controls
+      playsInline
+      className="min-h-0 w-auto shrink rounded-[1vmin] border border-gold-deep/30 bg-black object-contain shadow-xl shadow-black/50 transition-all duration-500 animate-rise"
+      style={{ maxHeight: compact ? "24vh" : revealed ? "30vh" : "46vh", animationDelay: "300ms" }}
+    />
+  )
 }
 
 /**

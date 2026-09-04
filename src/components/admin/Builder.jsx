@@ -319,7 +319,11 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                               !
                             </span>
                           )}
-                          {cl.media && <span className="absolute bottom-1 right-1.5 text-[9px] text-muted">{cl.media.kind === "audio" ? "♪" : "▣"}</span>}
+                          {cl.media && (
+                            <span className="absolute bottom-1 right-1.5 text-[9px] text-muted">
+                              {{ audio: "♪", video: "▶" }[cl.media.kind] ?? "▣"}
+                            </span>
+                          )}
                         </button>
                       )
                     })}
@@ -404,6 +408,19 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
         <div className="panel p-4">
           <div className="label mb-2">Game rules</div>
           <div className="space-y-2.5">
+            {/*
+              First, because it changes what everything under it means — a
+              lifeline count is per player or per team depending on this one box.
+            */}
+            <label className="flex cursor-pointer items-start gap-2 text-[12px] text-muted">
+              <input type="checkbox" className="mt-0.5" checked={!!settings.teams} onChange={(e) => onSettings({ teams: e.target.checked })} />
+              <span>
+                Play in teams
+                <span className="block text-[10px] text-faint">
+                  Several phones share one score and one buzz. Two teams to start; build them on the Run tab.
+                </span>
+              </span>
+            </label>
             <Rule
               label="Answer clock"
               hint="seconds once someone buzzes in · 0 = untimed"
@@ -445,7 +462,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
             />
             <Rule
               label="Phone a Friend"
-              hint="lifelines each player starts with"
+              hint={settings.teams ? "lifelines each team starts with" : "lifelines each player starts with"}
               value={settings.lifelines?.phone ?? 1}
               onChange={(v) => onSettings({ lifelines: { ...settings.lifelines, phone: v } })}
               min={0}

@@ -11,7 +11,9 @@ import { useCountdown } from "../../lib/useRoom"
  */
 export function FinalPanel({ state, me, send }) {
   const f = state.final
-  const mine = f?.players?.find((p) => p.id === me?.id)
+  // `state.unit` is the side being scored — the player on a normal night, their
+  // team on a team one — and the final is keyed by whoever gets paid.
+  const mine = f?.players?.find((p) => p.id === (state.unit ?? me?.id))
   const [wager, setWager] = useState("")
   const [answer, setAnswer] = useState("")
   const [sent, setSent] = useState(false)

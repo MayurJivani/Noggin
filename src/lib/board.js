@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   readSeconds: 0,
   lifelines: { phone: 1 },
   penaltyForWrong: true,
+  teams: false,
 }
 
 export const makeClue = (value = 200) => ({

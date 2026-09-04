@@ -89,6 +89,10 @@ export async function uploadMedia(file, onProgress) {
 /** Guess how a file wants to be presented on the board. */
 export function kindOf(file) {
   if (file.type.startsWith("audio/")) return "audio"
+  if (file.type.startsWith("video/")) return "video"
   if (file.type.startsWith("image/")) return "image"
+  // Some browsers hand over an empty `type` for a drag from certain file
+  // managers, so the extension is the fallback rather than the first resort.
+  if (/\.(mp4|m4v|mov|webm|ogv|mkv)$/i.test(file.name)) return "video"
   return /\.(mp3|m4a|aac|ogg|oga|wav|flac)$/i.test(file.name) ? "audio" : "image"
 }

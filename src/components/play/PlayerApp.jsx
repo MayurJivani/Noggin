@@ -173,14 +173,17 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
   const penalty = useCountdown(lockedUntil > Date.now() ? lockedUntil : null, now)
   const onPenalty = (penalty ?? 0) > 0
 
-  const live = phase === "clue" && !!me
+  const live = phase === "clue" && !!me && !state.paused
   const canBuzz = live && buzzer.armed && !iHoldIt && !spent && !onPenalty && !lifeline
+  const team = state.teams?.find((t) => t.members.includes(me?.id))
 
   // Keep the last state around for a beat so "wrong" doesn't vanish instantly.
-  const status = iHoldIt
+  const status = state.paused
+    ? { text: "Paused", tone: "dim" }
+    : iHoldIt
     ? { text: "You're in — answer!", tone: "live" }
     : spent
-      ? { text: "Out this clue", tone: "dim" }
+      ? { text: team ? "Your team is out this clue" : "Out this clue", tone: "dim" }
       : onPenalty
         ? { text: "Too early", tone: "bad" }
         : lifeline
@@ -233,6 +236,14 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
         <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} />
         <div className="ml-auto text-right">
           <div className="text-[13px] font-semibold leading-tight text-ink">{me?.name}</div>
+          {/* On team night the number belongs to the side, so say whose it is —
+              otherwise a player watches "their" score move when they did
+              nothing and assumes the game is broken. */}
+          {team && (
+            <div className="text-[10px] uppercase tracking-[0.15em]" style={{ color: team.color }}>
+              {team.name}
+            </div>
+          )}
           <div className={`font-value text-2xl leading-none ${(me?.score ?? 0) < 0 ? "text-bad" : "text-gold"}`}>{me?.score ?? 0}</div>
         </div>
       </header>
@@ -261,6 +272,11 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
           {clue.prompt && <div className="font-display text-[15px] leading-snug text-ink">{clue.prompt}</div>}
           {clue.media?.kind === "image" && <img src={resolveMediaUrl(clue.media.url)} alt="" className="mt-2 max-h-40 w-full rounded-lg object-contain" />}
           {clue.media?.kind === "audio" && <audio src={resolveMediaUrl(clue.media.url)} controls className="mt-2 w-full" preload="none" />}
+          {/* Not autoplayed. Everyone is looking at the TV; a dozen phones each
+              playing the same clip a second out of step is the worst outcome. */}
+          {clue.media?.kind === "video" && (
+            <video src={resolveMediaUrl(clue.media.url)} controls playsInline preload="none" className="mt-2 max-h-40 w-full rounded-lg bg-black" />
+          )}
           {state.revealed && clue.answer && (
             <div className="mt-2 border-t border-edge pt-2 font-display text-[15px] text-gold">{clue.answer}</div>
           )}

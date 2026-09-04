@@ -2,6 +2,8 @@ import { useEffect, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { controllerUrl } from "../../lib/net"
+import { BOARD_CUES } from "../../lib/sfx"
+import { nameOf, rows as sideRows } from "../../lib/sides"
 import { QrBlock } from "../ui/QrBlock"
 import { PlayerRoster } from "./PlayerRoster"
 
@@ -32,12 +34,13 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
         send("judge:undo")
       }
       else if (e.key === "r" || e.key === "R") send("clue:reveal")
+      else if (e.key === "p" || e.key === "P") send(state.paused ? "game:resume" : "game:pause")
       else if (e.key === "Enter") send("clue:close")
       else if (e.key === "Escape") send("buzzer:reset")
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [send, buzzer.armed])
+  }, [send, buzzer.armed, state.paused])
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(300px,30%)_minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(380px,32%)_minmax(0,1fr)_minmax(340px,20%)]">
@@ -46,10 +49,20 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
       <div className="flex min-h-0 flex-col gap-3">
         <StagePanel state={state} send={send} now={now} />
         <BuzzerPanel state={state} send={send} now={now} />
+        <Soundboard state={state} send={send} />
       </div>
 
       <div className="flex min-h-0 flex-col gap-3">
-        <PlayerRoster players={players} send={send} buzzer={buzzer} lifeline={lifeline} requests={requests} stake={state.stake} code={code} />
+        <PlayerRoster
+          players={players}
+          teams={state.teams}
+          send={send}
+          buzzer={buzzer}
+          lifeline={lifeline}
+          requests={requests}
+          stake={state.stake}
+          code={code}
+        />
         <div className="panel p-3">
           <div className="label mb-2">Room</div>
           <div className="flex items-center justify-between text-[12px] text-muted">
@@ -162,13 +175,15 @@ function MiniBoard({ state, send }) {
 /** The clue, the answer, and whatever the room is currently waiting on. */
 function StagePanel({ state, send, now }) {
   const { phase, clue, players, wager } = state
+  // Whoever can take the clue: a person, or a team on team night.
+  const contenders = sideRows(state)
   const [wagerAmount, setWagerAmount] = useState("")
   const [wagerPlayer, setWagerPlayer] = useState("")
 
   useEffect(() => {
     if (phase === "wager") {
       setWagerAmount("")
-      setWagerPlayer(players[0]?.id ?? "")
+      setWagerPlayer(contenders[0]?.id ?? "")
     }
   }, [phase, clue?.id])
 
@@ -233,15 +248,15 @@ function StagePanel({ state, send, now }) {
   }
 
   if (phase === "wager") {
-    const max = Math.max(players.find((p) => p.id === wagerPlayer)?.score ?? 0, ...(state.board.round?.values ?? [0]))
+    const max = Math.max(contenders.find((c) => c.id === wagerPlayer)?.score ?? 0, ...(state.board.round?.values ?? [0]))
     return (
       <div className="panel flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
         <div className="font-display text-2xl text-live animate-glow">NOGGIN&rsquo; NITRO</div>
-        <div className="text-[12px] text-muted">Who found it, and what are they risking?</div>
+        <div className="text-[12px] text-muted">{state.teams ? "Which team found it, and what are they risking?" : "Who found it, and what are they risking?"}</div>
         <select className="field max-w-xs" value={wagerPlayer} onChange={(e) => setWagerPlayer(e.target.value)}>
-          {players.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} — {p.score}
+          {contenders.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} — {c.score}
             </option>
           ))}
         </select>
@@ -268,7 +283,16 @@ function StagePanel({ state, send, now }) {
     )
   }
 
-  const holder = players.find((p) => p.id === state.buzzer.winner)
+  /*
+    Who a ✓ or ✕ lands on.
+
+    Usually whoever holds the buzz. A team nitro has no holder — the clue is the
+    side's and any of them may say it — so the wagering team stands in, which is
+    what keeps the one-keypress ruling working on team night.
+  */
+  const onTheHook = state.buzzer.winner ?? (wager ? (wager.teamId ?? wager.playerId) : null)
+  const holderName = nameOf(state, onTheHook)
+  const wagerName = wager ? nameOf(state, wager.teamId ?? wager.playerId) : null
 
   return (
     <div className="panel flex min-h-0 flex-1 flex-col p-4">
@@ -276,7 +300,7 @@ function StagePanel({ state, send, now }) {
         <span className="label">{clue.category}</span>
         <span className="font-value text-2xl text-gold">{state.stake}</span>
         {clue.nitro && <span className="text-[10px] text-live">✦ Noggin&rsquo; Nitro</span>}
-        {wager?.playerId && <span className="text-[10px] text-muted">· {players.find((p) => p.id === wager.playerId)?.name} wagered {wager.amount}</span>}
+        {wagerName && <span className="text-[10px] text-muted">· {wagerName} wagered {wager.amount}</span>}
         <div className="ml-auto flex gap-1.5">
           {state.canUndo && (
             <button className="btn hover:border-live hover:text-live" onClick={() => send("judge:undo")} title="Take back the last ruling">
@@ -317,9 +341,9 @@ function StagePanel({ state, send, now }) {
         </div>
       </div>
 
-      {holder && (
+      {holderName && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-live bg-live/10 px-4 py-3 animate-pop">
-          <span className="font-display text-xl text-live 2xl:text-2xl">{holder.name}</span>
+          <span className="font-display text-xl text-live 2xl:text-2xl">{holderName}</span>
           <span className="text-xs text-muted">has the floor</span>
           <AnswerClock timer={state.timer} now={now} />
           <div className="ml-auto flex gap-2">
@@ -338,11 +362,11 @@ function StagePanel({ state, send, now }) {
 
 function MediaPreview({ media }) {
   const src = resolveMediaUrl(media.url)
-  return media.kind === "image" ? (
-    <img src={src} alt={media.alt ?? ""} className="mt-3 max-h-40 rounded-lg border border-edge object-contain" />
-  ) : (
-    <audio src={src} controls className="mt-3 w-full" preload="metadata" />
-  )
+  if (media.kind === "image") return <img src={src} alt={media.alt ?? ""} className="mt-3 max-h-40 rounded-lg border border-edge object-contain" />
+  // Muted: the desk is in the same room as the speakers playing it on the big
+  // screen, and two copies half a second apart is worse than none.
+  if (media.kind === "video") return <video src={src} controls muted playsInline className="mt-3 max-h-40 rounded-lg border border-edge bg-black" />
+  return <audio src={src} controls className="mt-3 w-full" preload="metadata" />
 }
 
 function AnswerClock({ timer, now }) {
@@ -354,7 +378,7 @@ function AnswerClock({ timer, now }) {
 /** Arm, lock, reset — plus the race, so a photo finish can be adjudicated. */
 function BuzzerPanel({ state, send, now }) {
   const { buzzer, players, phase, lifeline } = state
-  const live = phase === "clue"
+  const live = phase === "clue" && !state.paused
   const byId = Object.fromEntries(players.map((p) => [p.id, p]))
   const lifelineLeft = useCountdown(lifeline?.endsAt, now)
 
@@ -364,14 +388,27 @@ function BuzzerPanel({ state, send, now }) {
         <span className="label">Buzzer</span>
         <span
           className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-            buzzer.armed ? "bg-good/20 text-good animate-glow" : "bg-black/30 text-faint"
+            state.paused ? "bg-gold/20 text-gold" : buzzer.armed ? "bg-good/20 text-good animate-glow" : "bg-black/30 text-faint"
           }`}
         >
-          {buzzer.armed ? "open" : "locked"}
+          {state.paused ? "held" : buzzer.armed ? "open" : "locked"}
         </span>
 
         <button className={`btn ${buzzer.armed ? "" : "btn-gold"}`} disabled={!live} onClick={() => send("buzzer:arm")}>
           Arm <Kbd>space</Kbd>
+        </button>
+
+        {/*
+          Stopping the night rather than the clue. The clock is banked and comes
+          back with the time it had left, so a break does not silently cost
+          whoever had buzzed the seconds they were owed.
+        */}
+        <button
+          className={`btn ${state.paused ? "btn-gold animate-pop" : ""}`}
+          onClick={() => send(state.paused ? "game:resume" : "game:pause")}
+          title={state.paused ? "Let the room go again" : "Freeze the room — buzzers off, clocks held"}
+        >
+          {state.paused ? "▶ Resume" : "❚❚ Pause"} <Kbd>p</Kbd>
         </button>
         <button className="btn" disabled={!buzzer.armed} onClick={() => send("buzzer:lock")}>
           Lock
@@ -414,7 +451,7 @@ function BuzzerPanel({ state, send, now }) {
               title="Give this player the floor instead"
               onClick={() => send("judge", { correct: true, playerId: e.playerId })}
             >
-              {i + 1}. {byId[e.playerId]?.name ?? "—"}{" "}
+              {i + 1}. {nameOf(state, e.playerId) ?? "—"}{" "}
               {/* Margin behind the winner, not time since the buzzer opened.
                   The latter is mostly a measure of how long the host waited
                   before arming, which is why it used to read "15000ms". */}
@@ -428,10 +465,69 @@ function BuzzerPanel({ state, send, now }) {
           {state.everyoneSpent ? (
             <span className="text-live">Everyone has had a go — reopen it or move on.</span>
           ) : (
-            <>out this clue: {buzzer.spent.map((id) => byId[id]?.name ?? "?").join(", ")}</>
+            // Sides, so a team out of the clue is named once rather than once
+            // per phone it happens to be fielding.
+            <>
+              out this clue:{" "}
+              {[...new Set(buzzer.spent.map((id) => (state.teams ? state.teams.find((t) => t.members.includes(id))?.name : byId[id]?.name) ?? "?"))].join(", ")}
+            </>
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The soundboard.
+ *
+ * Every game show has one, and until now Noggin's only sounds were the ones the
+ * game fired for itself — so a host who wanted applause after a good answer, or
+ * a drumroll before the final, had nothing. These play on the big screen rather
+ * than here: that is where the speakers the room can hear are, and a cue
+ * coming out of the host's laptop is a cue only the host enjoys.
+ *
+ * The bed is a toggle rather than a cue because it is a state — a display that
+ * reloads mid-round should come back with the music still on.
+ */
+function Soundboard({ state, send }) {
+  const [flash, setFlash] = useState(null)
+
+  const fire = (id) => {
+    send("sfx:play", { cue: id })
+    setFlash(id)
+    setTimeout(() => setFlash((f) => (f === id ? null : f)), 500)
+  }
+
+  return (
+    <div className="panel p-3">
+      <div className="flex items-center gap-2">
+        <span className="label">Soundboard</span>
+        <span className="text-[10px] text-faint">plays on the big screen</span>
+        <button
+          className={`btn ml-auto px-2 py-0.5 text-[10px] ${state.music ? "btn-gold" : ""}`}
+          onClick={() => send("music:set", { on: !state.music })}
+          title="A loop for the lobby. Ducks under a clue on its own."
+        >
+          {state.music ? "♪ Music on" : "♪ Music off"}
+        </button>
+      </div>
+
+      <div className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-5 2xl:grid-cols-7">
+        {BOARD_CUES.map((cue) => (
+          <button
+            key={cue.id}
+            className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 transition-colors ${
+              flash === cue.id ? "border-gold bg-royal/60" : "border-edge hover:border-gold-dim"
+            }`}
+            onClick={() => fire(cue.id)}
+            title={cue.label}
+          >
+            <span className="text-[15px] leading-none">{cue.icon}</span>
+            <span className="w-full truncate text-center text-[9px] leading-tight text-muted">{cue.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

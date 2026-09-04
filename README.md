@@ -4,8 +4,9 @@ A quiz-board game show for a room with a TV and a pile of phones.
 
 Write the board in the afternoon, put the big screen on the projector, let
 everyone scan a QR, and run the night from one desk. Categories, point ladders,
-image and audio clues, Noggin’ Nitro tiles, a real buzzer race with millisecond
-ordering, and a Phone a Friend lifeline.
+image, audio and video clues, Noggin’ Nitro tiles, a real buzzer race with
+millisecond ordering, a Phone a Friend lifeline, and a soundboard for the bits
+between the questions. Play solo or in **teams**.
 
 ```sh
 npm install
@@ -159,6 +160,7 @@ Keys, because the other hand is holding a microphone:
 | <kbd>space</kbd> | arm / lock the buzzer |
 | <kbd>y</kbd> <kbd>n</kbd> | correct / wrong |
 | <kbd>r</kbd> | reveal the answer |
+| <kbd>p</kbd> | pause / resume the room |
 | <kbd>enter</kbd> | next clue |
 | <kbd>esc</kbd> | reset the buzzer race |
 | <kbd>⌘/ctrl</kbd>+<kbd>z</kbd> | undo the last ruling |
@@ -238,12 +240,58 @@ the players' phones both receive the board with every unplayed clue's text,
 answer and daily-double flag stripped out; the live clue's answer arrives only
 when the host reveals it. Opening devtools on the TV gets you nothing.
 
+## Teams
+
+Turn on **Play in teams** in the builder's game rules. Several phones then share
+one score, one lifeline purse and — the part that matters — **one buzz**.
+
+The rule that keeps it honest is that the buzzer thinks in *sides*, not seats. A
+team gets one entry in the race however many phones it fields, and a wrong
+answer puts the whole team out of the clue rather than letting them work through
+their members until someone guesses right. Otherwise the biggest team simply
+wins.
+
+- Two teams appear when you switch it on, and phones are seated on the smallest
+  as they arrive — nobody is ever left unable to buzz for anyone.
+- **⇄ Even up** deals everyone out in the order they joined. Deliberately not a
+  shuffle: you are looking at the roster while you press it, and a reshuffle
+  that moves people you already placed reads as the button having gone wrong.
+- Rename a team by clicking its name. Move someone with the dropdown on their
+  chip — no drag, because half of this is driven on a tablet.
+- Deleting a team leaves its players in the game, off the sheet until you give
+  them a side.
+- Switching team mode on mid-game carries what people have already won onto the
+  side they now play for. Switching it off and on again does not re-add it.
+- The final is played by sides too: one blind bet, one answer slip, one reveal
+  per team, and any member can write it — but only their own team sees it before
+  the host turns them over.
+
+Every screen follows: the big screen, the podiums and the scoreboard show teams
+with their members listed underneath, and a player's own phone shows the team
+name above the score so they know whose number is moving.
+
+## Pause
+
+<kbd>p</kbd>, or **❚❚ Pause** on the desk and **❚❚ Hold** on the controller.
+Quizzes stop — someone gets a drink, an argument breaks out, the pizza arrives.
+
+The buzzer shuts, the big screen covers the board with a PAUSED card, and any
+running countdown is **banked rather than cancelled**: resuming gives back
+exactly the time that was left, so a break doesn't quietly cost whoever had
+buzzed the seconds they were owed. Putting a new clue up counts as resuming.
+
 ## Media
 
-Drop an image or an audio file onto a clue in the builder. It uploads to the
-relay so every device streams from one place, and the board only ever stores a
-path — a phone resolves it against a host it can actually reach. Audio clues get
-a visualiser on the big screen so the room can tell something is happening.
+Drop an image, an audio file or a video clip onto a clue in the builder. It
+uploads to the relay so every device streams from one place, and the board only
+ever stores a path — a phone resolves it against a host it can actually reach.
+
+Audio clues get a visualiser on the big screen so the room can tell something is
+happening. Video autoplays on the big screen with its controls left on, so the
+host can replay a clip the room asks to see again. It does *not* autoplay on
+players' phones: everyone is looking at the TV, and a dozen handsets each a
+second out of step is the worst possible outcome. Files are served with range
+support, so scrubbing works and Safari will play them at all.
 
 Uploads cap at 25MB (`NOGGIN_MAX_UPLOAD`).
 
@@ -280,9 +328,32 @@ about to look at their buzzer again. Players see their round-trip time, so
 
 ## Sound
 
-Cues are synthesised in the browser — no assets, no loading state on the one
-page that must never be loading. Browsers won't start audio without a gesture,
-so the big screen arms itself on the first click anywhere.
+Everything is synthesised in the browser out of oscillators and noise — no
+assets, no licensing questions, no loading state on the one page that must never
+be loading. Browsers won't start audio without a gesture, so the big screen arms
+itself on the first click anywhere.
+
+Three things come out of it:
+
+- **Game cues** fire themselves: the tile, the buzz, the verdict, the clock, and
+  a proper Noggin' Nitro sting — a rising sweep, a hit on the landing and an
+  arpeggio over the splash. Transitions are marked too (board opening, round
+  starting, into the final, that's the game), deliberately quieter than the
+  verdicts, since a sting on every screen change becomes noise the room stops
+  hearing.
+- **The soundboard** is fired by hand from the desk or the controller: applause,
+  ovation, cheer, drumroll, fanfare, airhorn, ka-ching, ding, sad trombone, boo,
+  crickets, suspense, whoosh, wrong-buzzer. Applause is rendered as a few
+  hundred scattered impulses in a narrow band around 2kHz, which is what a room
+  clapping actually is and far cheaper than scheduling the nodes for one.
+- **The music bed** (♪) is a four-bar vamp for the lobby and the dead air. It
+  ducks under a clue on its own rather than stopping, so the loop doesn't
+  restart on every tile.
+
+Cues play on the **big screen** — that is where the speakers the room can hear
+are, and a cue coming out of the host's laptop is a cue only the host enjoys. A
+cue is a broadcast and changes nothing about the game; the music is *state*, so
+a display that reloads mid-round comes back with it still playing.
 
 ## Tests
 

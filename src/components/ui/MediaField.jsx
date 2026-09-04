@@ -2,7 +2,7 @@ import { useRef, useState } from "react"
 import { kindOf, resolveMediaUrl, stripToRelayPath, uploadMedia } from "../../lib/mediaUrl"
 
 /**
- * Attach a picture or a sound to a clue.
+ * Attach a picture, a sound or a clip to a clue.
  *
  * Files upload to the relay rather than being embedded, because the display and
  * every phone need to fetch the same asset from somewhere all of them can
@@ -34,12 +34,14 @@ export function MediaField({ value, onChange, label = "Media" }) {
       <div className="space-y-1.5">
         <div className="label">{label}</div>
         <div className="flex items-center gap-2 rounded-lg border border-edge bg-black/25 p-2">
-          {value.kind === "image" ? (
-            <img src={resolveMediaUrl(value.url)} alt={value.alt ?? ""} className="h-14 w-14 rounded object-cover" />
-          ) : (
-            <audio src={resolveMediaUrl(value.url)} controls className="h-8 min-w-0 flex-1" preload="none" />
+          {value.kind === "image" && <img src={resolveMediaUrl(value.url)} alt={value.alt ?? ""} className="h-14 w-14 rounded object-cover" />}
+          {value.kind === "video" && (
+            // Muted and unplayed by default: the builder is often open with the
+            // big screen already live in the next room.
+            <video src={resolveMediaUrl(value.url)} className="h-14 w-24 rounded bg-black object-contain" controls muted preload="metadata" />
           )}
-          {value.kind === "image" && <div className="min-w-0 flex-1 truncate text-[11px] text-muted">{value.alt || value.url}</div>}
+          {value.kind === "audio" && <audio src={resolveMediaUrl(value.url)} controls className="h-8 min-w-0 flex-1" preload="none" />}
+          {value.kind !== "audio" && <div className="min-w-0 flex-1 truncate text-[11px] text-muted">{value.alt || value.url}</div>}
           <button className="btn px-2 py-1 text-[11px]" onClick={() => onChange(null)} title="Remove">
             ✕
           </button>
@@ -67,11 +69,11 @@ export function MediaField({ value, onChange, label = "Media" }) {
           drag ? "border-amethyst bg-royal/25 text-ink" : "border-edge text-faint hover:border-violet hover:text-muted"
         }`}
       >
-        {busy ? "Uploading…" : drag ? "Drop it" : "Drop or click — image or audio"}
+        {busy ? "Uploading…" : drag ? "Drop it" : "Drop or click — image, audio or video"}
         <input
           ref={input}
           type="file"
-          accept="image/*,audio/*"
+          accept="image/*,audio/*,video/*"
           hidden
           onChange={(e) => {
             take(e.target.files?.[0])

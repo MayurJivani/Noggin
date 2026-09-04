@@ -865,3 +865,145 @@ test("presses long after the race is decided are not filed as contenders", async
     "and nothing absurd is reported as a margin",
   )
 })
+
+test("a team night, over the wire", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  host.send("board:set", { board: BOARD })
+  host.send("settings:set", { settings: { teams: true, answerSeconds: 0 } })
+  await settle()
+
+  const screen = client("display", { code })
+  const alice = client("player", { code, name: "Alice" })
+  const bob = client("player", { code, name: "Bob" })
+  const cass = client("player", { code, name: "Cass" })
+  await Promise.all([screen.ready, alice.ready, bob.ready, cass.ready])
+  await settle()
+
+  await t.test("phones are seated on a side as they arrive", () => {
+    const teams = host.state.teams
+    assert.equal(teams.length, 2, "two sides to start")
+    const seated = teams.flatMap((tm) => tm.members)
+    assert.equal(seated.length, 3, "everybody is on one")
+    assert.equal(host.state.players.filter((p) => !p.teamId).length, 0)
+  })
+
+  await t.test("the big screen is shown sides rather than seats", () => {
+    assert.ok(Array.isArray(screen.state.teams))
+    assert.ok(screen.state.teams.every((tm) => Array.isArray(tm.memberNames)))
+  })
+
+  // Put everyone somewhere known: Alice and Bob together, Cass alone.
+  const [t1, t2] = host.state.teams.map((tm) => tm.id)
+  const idOf = (name) => host.state.players.find((p) => p.name === name).id
+  host.send("team:assign", { playerId: idOf("Alice"), teamId: t1 })
+  host.send("team:assign", { playerId: idOf("Bob"), teamId: t1 })
+  host.send("team:assign", { playerId: idOf("Cass"), teamId: t2 })
+  host.send("team:rename", { teamId: t1, name: "The Quizlings" })
+  await settle()
+
+  await t.test("the host can move people and name the sides", () => {
+    const one = host.state.teams.find((tm) => tm.id === t1)
+    assert.equal(one.name, "The Quizlings")
+    assert.deepEqual([...one.memberNames].sort(), ["Alice", "Bob"])
+  })
+
+  await t.test("a point won by one phone is the team's", async () => {
+    host.send("game:start")
+    await settle()
+    host.send("clue:select", { catIndex: 1, clueIndex: 0 }) // GOLD 200
+    host.send("buzzer:arm")
+    await settle()
+    alice.send("buzz")
+    await settle()
+    host.send("judge", { correct: true })
+    await settle()
+
+    const one = host.state.teams.find((tm) => tm.id === t1)
+    assert.equal(one.score, 200)
+    // Bob did nothing, and is on 200 — which is the whole point of a team.
+    assert.equal(host.state.players.find((p) => p.name === "Bob").score, 200)
+    assert.equal(host.state.players.find((p) => p.name === "Cass").score, 0)
+  })
+
+  await t.test("a teammate cannot buy the team a second guess", async () => {
+    host.send("clue:close")
+    await settle()
+    host.send("clue:select", { catIndex: 1, clueIndex: 1 }) // GOLD 400
+    host.send("buzzer:arm")
+    await settle()
+    alice.send("buzz")
+    await settle()
+    host.send("judge", { correct: false })
+    await settle()
+
+    bob.drain()
+    bob.send("buzz")
+    await settle()
+    assert.ok(!bob.drain().includes("buzz-in"), "Bob is out with Alice")
+    assert.equal(host.state.buzzer.winner, null)
+  })
+
+  for (const c of [host, screen, alice, bob, cass]) c.ws.close()
+})
+
+test("the room can be held and let go again", async () => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  host.send("board:set", { board: BOARD })
+  await settle()
+  const alice = client("player", { code, name: "Alice" })
+  await alice.ready
+
+  host.send("game:start")
+  await settle()
+  host.send("clue:select", { catIndex: 0, clueIndex: 0 })
+  host.send("buzzer:arm")
+  await settle()
+
+  host.send("game:pause")
+  await settle()
+  assert.equal(host.state.paused, true)
+  assert.equal(alice.state.paused, true, "the phones are told too")
+  assert.equal(alice.state.buzzer.armed, false)
+
+  alice.drain()
+  alice.send("buzz")
+  await settle()
+  assert.ok(!alice.drain().includes("buzz-in"), "a held room takes no presses")
+
+  host.send("game:resume")
+  await settle()
+  assert.equal(host.state.paused, false)
+
+  host.ws.close()
+  alice.ws.close()
+})
+
+test("the soundboard reaches the big screen without changing the game", async () => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  const screen = client("display", { code })
+  await screen.ready
+  await settle()
+
+  const before = JSON.stringify(screen.state.players)
+  screen.drain()
+  host.send("sfx:play", { cue: "applause" })
+  await settle()
+
+  const fired = screen.effects.find((e) => e.kind === "sfx")
+  assert.equal(fired?.cue, "applause")
+  assert.equal(JSON.stringify(screen.state.players), before, "a cue is a noise, not a move")
+
+  screen.drain()
+  host.send("music:set", { on: true })
+  await settle()
+  assert.equal(screen.state.music, true, "the bed is state, so a reload comes back to it")
+
+  host.ws.close()
+  screen.ws.close()
+})

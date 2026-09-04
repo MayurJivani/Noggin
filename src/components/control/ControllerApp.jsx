@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { useAuth } from "../../lib/useAuth"
+import { BOARD_CUES } from "../../lib/sfx"
+import { holdsBuzz, isSpent, nameOf, rows as sideRows } from "../../lib/sides"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
@@ -97,8 +99,11 @@ function Console({ state, send, connected, auth, viaKey }) {
   const { phase, board, clue, players, buzzer, timer, lifeline } = state
   const round = board.round
   const now = useCallback(() => Date.now(), [])
-  const holder = players.find((p) => p.id === buzzer.winner)
-  const live = phase === "clue"
+  // Sides, so a team nitro — which has no single holder — still gets a ✓/✕.
+  const rows = sideRows(state)
+  const onTheHook = buzzer.winner ?? (state.wager ? (state.wager.teamId ?? state.wager.playerId) : null)
+  const holderName = nameOf(state, onTheHook)
+  const live = phase === "clue" && !state.paused
 
   return (
     <div className="relative min-h-dvh pb-40">
@@ -120,17 +125,39 @@ function Console({ state, send, connected, auth, viaKey }) {
       <div className="bulbs relative z-10 mx-4" />
 
       <main className="relative z-10 mx-auto w-full max-w-3xl space-y-3 p-4 lg:max-w-6xl lg:columns-2 lg:gap-3 lg:space-y-0 [&>*]:mb-3 lg:[&>*]:break-inside-avoid">
-        {phase === "final" ? <FinalConsole state={state} send={send} /> : <ClueStatus state={state} holder={holder} now={now} />}
+        {phase === "final" ? <FinalConsole state={state} send={send} /> : <ClueStatus state={state} holderName={holderName} now={now} />}
 
         <Grid round={round} state={state} send={send} />
 
-        <Panel title="Scores">
+        <Panel title={state.teams ? "Teams" : "Scores"}>
           <div className="space-y-1.5">
-            {players.length === 0 && <div className="py-3 text-center text-xs text-faint">No players yet.</div>}
-            {players.map((p) => (
-              <PlayerRow key={p.id} p={p} state={state} send={send} />
+            {rows.length === 0 && <div className="py-3 text-center text-xs text-faint">Nobody yet.</div>}
+            {rows.map((row) => (
+              <SideRow key={row.id} row={row} state={state} send={send} />
             ))}
           </div>
+        </Panel>
+
+        <Panel title="Soundboard">
+          <div className="grid grid-cols-5 gap-1.5">
+            {BOARD_CUES.map((cue) => (
+              <button
+                key={cue.id}
+                className="flex flex-col items-center gap-0.5 rounded-lg border border-edge py-1.5 active:border-gold"
+                onClick={() => send("sfx:play", { cue: cue.id })}
+                title={cue.label}
+              >
+                <span className="text-base leading-none">{cue.icon}</span>
+                <span className="w-full truncate px-0.5 text-center text-[0.55rem] leading-tight text-muted">{cue.label}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            className={`btn mt-2 w-full py-2 text-xs ${state.music ? "btn-gold" : ""}`}
+            onClick={() => send("music:set", { on: !state.music })}
+          >
+            {state.music ? "♪ Music on" : "♪ Music off"}
+          </button>
         </Panel>
 
         <Panel title="Clock">
@@ -185,10 +212,10 @@ function Console({ state, send, connected, auth, viaKey }) {
       {/* The two urgent controls, pinned under the thumb. */}
       <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-edge bg-void/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         <div className="mx-auto max-w-3xl space-y-2">
-          {holder ? (
+          {holderName ? (
             <div className="grid grid-cols-2 gap-2">
               <button className="btn btn-good py-3.5 text-sm" onClick={() => send("judge", { correct: true })}>
-                ✓ {holder.name}
+                ✓ {holderName}
               </button>
               <button className="btn btn-bad py-3.5 text-sm" onClick={() => send("judge", { correct: false })}>
                 ✕ Wrong
@@ -203,7 +230,14 @@ function Console({ state, send, connected, auth, viaKey }) {
               {buzzer.armed ? "Lock buzzer" : "Arm buzzer"}
             </button>
           )}
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-5 gap-2">
+            <button
+              className={`btn py-2 text-xs ${state.paused ? "btn-gold" : ""}`}
+              onClick={() => send(state.paused ? "game:resume" : "game:pause")}
+              title={state.paused ? "Let the room go again" : "Freeze the room — buzzers off, clocks held"}
+            >
+              {state.paused ? "▶ Go" : "❚❚ Hold"}
+            </button>
             <button
               className="btn py-2 text-xs hover:border-live hover:text-live"
               disabled={!state.canUndo}
@@ -297,7 +331,7 @@ function FinalConsole({ state, send }) {
 }
 
 /** What the room is waiting on, and the answer only this screen and the host have. */
-function ClueStatus({ state, holder, now }) {
+function ClueStatus({ state, holderName, now }) {
   const { clue, buzzer, phase } = state
   const answerClock = useCountdown(state.timer?.kind === "answer" ? state.timer.endsAt : null, now)
 
@@ -305,7 +339,13 @@ function ClueStatus({ state, holder, now }) {
     return (
       <Panel title="Stage">
         <div className="py-3 text-center text-xs text-muted">
-          {phase === "lobby" ? "Waiting to start." : phase === "ended" ? "That's the game." : "Pick a tile below."}
+          {state.paused
+            ? "Held — nothing is running."
+            : phase === "lobby"
+              ? "Waiting to start."
+              : phase === "ended"
+                ? "That's the game."
+                : "Pick a tile below."}
         </div>
       </Panel>
     )
@@ -322,10 +362,14 @@ function ClueStatus({ state, holder, now }) {
       </div>
 
       <div className="mt-2 flex items-center gap-2 text-xs">
-        <span className={`rounded px-2 py-0.5 font-semibold uppercase tracking-wider ${buzzer.armed ? "bg-good/20 text-good" : "bg-black/30 text-faint"}`}>
-          {buzzer.armed ? "open" : "locked"}
+        <span
+          className={`rounded px-2 py-0.5 font-semibold uppercase tracking-wider ${
+            state.paused ? "bg-gold/20 text-gold" : buzzer.armed ? "bg-good/20 text-good" : "bg-black/30 text-faint"
+          }`}
+        >
+          {state.paused ? "held" : buzzer.armed ? "open" : "locked"}
         </span>
-        {holder && <span className="font-display text-live">{holder.name} is in</span>}
+        {holderName && <span className="font-display text-live">{holderName} is in</span>}
         {answerClock != null && <span className="font-value text-gold tabular-nums">{(answerClock / 1000).toFixed(1)}s</span>}
       </div>
 
@@ -333,7 +377,7 @@ function ClueStatus({ state, holder, now }) {
         <div className="mt-2 flex flex-wrap gap-1.5">
           {buzzer.order.map((e, i) => (
             <span key={e.playerId} className={`rounded border px-2 py-0.5 text-[0.7rem] ${i === 0 ? "border-live text-live" : "border-edge text-faint"}`}>
-              {state.players.find((p) => p.id === e.playerId)?.name} {i === 0 ? "first" : `+${e.behind}ms`}
+              {nameOf(state, e.playerId)} {i === 0 ? "first" : `+${e.behind}ms`}
             </span>
           ))}
         </div>
@@ -385,29 +429,47 @@ function Grid({ round, state, send }) {
   )
 }
 
-function PlayerRow({ p, state, send }) {
+/**
+ * A row that scores — a player, or a team.
+ *
+ * Score changes are addressed by the row's own id, which the relay resolves to
+ * whichever ledger it belongs to, so this needs no branch of its own. The
+ * lifeline does: a phone call is made by a person, so on a team it is granted
+ * to the first member.
+ */
+function SideRow({ row, state, send }) {
   const stake = state.stake || 100
-  const holds = state.buzzer.winner === p.id
+  const holds = holdsBuzz(row, state.buzzer)
+  const spent = isSpent(row, state.buzzer)
+  const caller = row.members ? row.members[0] : row.id
+
   return (
-    <div className={`rounded-lg border px-2.5 py-2 ${holds ? "border-live bg-live/10" : "border-edge"}`}>
+    <div
+      style={row.color && !holds ? { borderColor: `${row.color}55` } : undefined}
+      className={`rounded-lg border px-2.5 py-2 ${holds ? "border-live bg-live/10" : "border-edge"} ${spent ? "opacity-55" : ""}`}
+    >
       <div className="flex items-center gap-2">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.connected ? "bg-good" : "bg-faint"}`} />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p.name}</span>
-        <span className={`font-value text-base tabular-nums ${p.score < 0 ? "text-bad" : "text-gold"}`}>{p.score}</span>
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${row.connected ? "bg-good" : "bg-faint"}`}
+          style={row.color && row.connected ? { background: row.color } : undefined}
+        />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{row.name}</span>
+        <span className={`font-value text-base tabular-nums ${row.score < 0 ? "text-bad" : "text-gold"}`}>{row.score}</span>
       </div>
+      {row.memberNames?.length > 0 && <div className="truncate text-[0.6rem] text-faint">{row.memberNames.join(" · ")}</div>}
       <div className="mt-1.5 flex gap-1">
-        <button className="btn flex-1 px-1 py-1 text-[0.7rem]" onClick={() => send("score:adjust", { playerId: p.id, delta: stake })}>
+        <button className="btn flex-1 px-1 py-1 text-[0.7rem]" onClick={() => send("score:adjust", { playerId: row.id, delta: stake })}>
           +{stake}
         </button>
-        <button className="btn flex-1 px-1 py-1 text-[0.7rem]" onClick={() => send("score:adjust", { playerId: p.id, delta: -stake })}>
+        <button className="btn flex-1 px-1 py-1 text-[0.7rem]" onClick={() => send("score:adjust", { playerId: row.id, delta: -stake })}>
           −{stake}
         </button>
         <button
           className="btn px-2 py-1 text-[0.7rem]"
-          disabled={(p.lifelines?.phone ?? 0) <= 0 || !!state.lifeline}
-          onClick={() => send("lifeline:grant", { playerId: p.id, lifeline: "phone" })}
+          disabled={(row.lifelines?.phone ?? 0) <= 0 || !!state.lifeline || !caller}
+          onClick={() => send("lifeline:grant", { playerId: caller, lifeline: "phone" })}
         >
-          ☎ {p.lifelines?.phone ?? 0}
+          ☎ {row.lifelines?.phone ?? 0}
         </button>
       </div>
     </div>

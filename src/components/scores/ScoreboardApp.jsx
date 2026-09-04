@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
+import { holdsBuzz, isCalling, isSpent, nameOf, raceOf, rows as sideRows, wagerOf } from "../../lib/sides"
+import { useRolling } from "../../lib/useRolling"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
@@ -26,10 +28,11 @@ export function ScoreboardApp() {
   if (error) return <Full>{error.message}</Full>
   if (!state) return <Full>{connected ? "Joining…" : "Looking for the room…"}</Full>
 
-  const { players, buzzer, lifeline, clue, phase } = state
-  const holder = players.find((p) => p.id === buzzer.winner)
-  const caller = players.find((p) => p.id === lifeline?.playerId)
-  const finalPlayers = state.final?.players ?? []
+  const { buzzer, lifeline, clue, phase } = state
+  // Whatever is being scored tonight: five people, or three teams.
+  const rows = sideRows(state)
+  const holderName = nameOf(state, buzzer.winner)
+  const finalRows = state.final?.players ?? []
 
   return (
     <div className="relative flex h-dvh flex-col overflow-hidden">
@@ -51,32 +54,35 @@ export function ScoreboardApp() {
 
       {/* One line for whatever the room is waiting on right now. */}
       <div className="relative z-10 shrink-0 px-[2.5vmin] pt-[1.5vmin]">
-        <StatusStrip state={state} holder={holder} now={now} />
+        <StatusStrip state={state} holderName={holderName} now={now} />
       </div>
 
       <main className="relative z-10 min-h-0 flex-1 overflow-hidden p-[2vmin]">
         <div
           className="grid h-full gap-[1.2vmin]"
           style={{
-            gridTemplateColumns: `repeat(${columnsFor(players.length)}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${columnsFor(rows.length)}, minmax(0, 1fr))`,
             gridAutoRows: "minmax(0, 1fr)",
           }}
         >
-          {players.map((p, i) => (
-            <PlayerCard
-              key={p.id}
-              player={p}
-              rank={i + 1}
-              buzzer={buzzer}
-              onCall={caller?.id === p.id}
-              callEndsAt={caller?.id === p.id ? lifeline.endsAt : null}
-              dimmed={!!lifeline && caller?.id !== p.id}
-              final={finalPlayers.find((f) => f.id === p.id)}
-              wager={state.wager?.playerId === p.id ? state.wager.amount : null}
-              now={now}
-            />
-          ))}
-          {players.length === 0 && (
+          {rows.map((row, i) => {
+            const onCall = isCalling(row, lifeline)
+            return (
+              <SideCard
+                key={row.id}
+                row={row}
+                rank={i + 1}
+                buzzer={buzzer}
+                onCall={onCall}
+                callEndsAt={onCall ? lifeline.endsAt : null}
+                dimmed={!!lifeline && !onCall}
+                final={finalRows.find((f) => f.id === row.id)}
+                wager={wagerOf(row, state.wager)}
+                now={now}
+              />
+            )
+          })}
+          {rows.length === 0 && (
             <div className="col-span-full flex items-center justify-center text-muted" style={{ fontSize: "max(13px, calc(var(--stage) * 2))" }}>
               Nobody has joined yet.
             </div>
@@ -102,7 +108,7 @@ export function ScoreboardApp() {
 /** Keep cards big: few players means few columns, not a row of slivers. */
 const columnsFor = (n) => (n <= 2 ? Math.max(n, 1) : n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5)
 
-function StatusStrip({ state, holder, now }) {
+function StatusStrip({ state, holderName, now }) {
   const { buzzer, phase, final } = state
   const answer = useCountdown(state.timer?.kind === "answer" ? state.timer.endsAt : null, now)
 
@@ -119,8 +125,11 @@ function StatusStrip({ state, holder, now }) {
           ? "Final · writing"
           : "Final · turning them over"
     tone = "border-gold-deep/60 text-gold"
-  } else if (holder) {
-    text = `${holder.name} is in`
+  } else if (state.paused) {
+    text = "Paused"
+    tone = "border-gold-deep/60 text-gold"
+  } else if (holderName) {
+    text = `${holderName} is in`
     tone = "border-live bg-live/10 text-live"
   } else if (buzzer.armed) {
     text = "Buzzers open"
@@ -148,13 +157,14 @@ function StatusStrip({ state, holder, now }) {
   )
 }
 
-function PlayerCard({ player, rank, buzzer, onCall, callEndsAt, dimmed, final, wager, now }) {
-  const holds = buzzer.winner === player.id
-  const spent = buzzer.spent.includes(player.id)
-  const race = buzzer.order.find((e) => e.playerId === player.id)
+function SideCard({ row, rank, buzzer, onCall, callEndsAt, dimmed, final, wager, now }) {
+  const holds = holdsBuzz(row, buzzer)
+  const spent = isSpent(row, buzzer)
+  const race = raceOf(row, buzzer)
 
   return (
     <div
+      style={row.color && !holds && !onCall && !spent ? { borderColor: `${row.color}66` } : undefined}
       className={`relative flex min-h-0 flex-col justify-center overflow-hidden rounded-[1.2vmin] border px-[1.6vmin] py-[1.2vmin] transition-all duration-300 ${
         holds
           ? "border-live bg-live/15 shadow-[0_0_4vmin_rgba(255,207,61,0.2)]"
@@ -169,22 +179,31 @@ function PlayerCard({ player, rank, buzzer, onCall, callEndsAt, dimmed, final, w
         <span className="font-value tabular-nums text-faint" style={{ fontSize: "max(10px, calc(var(--stage) * 1.4))" }}>
           {rank}
         </span>
-        <span className="min-w-0 flex-1 truncate font-display uppercase text-ink" style={{ fontSize: "max(13px, calc(var(--stage) * 2.4))" }}>
-          {player.name}
+        <span
+          className="min-w-0 flex-1 truncate font-display uppercase text-ink"
+          style={{ fontSize: "max(13px, calc(var(--stage) * 2.4))", color: row.color ?? undefined }}
+        >
+          {row.name}
         </span>
-        {!player.connected && <span className="h-[1vmin] w-[1vmin] shrink-0 rounded-full bg-faint" title="away" />}
+        {!row.connected && <span className="h-[1vmin] w-[1vmin] shrink-0 rounded-full bg-faint" title="away" />}
       </div>
 
+      {row.memberNames?.length > 0 && (
+        <div className="truncate text-muted/70" style={{ fontSize: "max(8px, calc(var(--stage) * 1.1))" }}>
+          {row.memberNames.join(" · ")}
+        </div>
+      )}
+
       <div className="flex min-w-0 items-center gap-[1.5vmin]">
-        <Rolling value={player.score} />
-        {/* The call clock belongs on the person making it. As a full-screen
+        <Rolling value={row.score} />
+        {/* The call clock belongs on the side making it. As a full-screen
             overlay it hid every other score for thirty seconds, which is
             exactly when the room most wants to compare them. */}
         {onCall && <CallRing endsAt={callEndsAt} now={now} />}
       </div>
 
       <div className="flex flex-wrap items-center gap-[0.8vmin]" style={{ fontSize: "max(9px, calc(var(--stage) * 1.2))" }}>
-        {(player.lifelines?.phone ?? 0) > 0 && <span className="text-gold-dim">☎ {player.lifelines.phone}</span>}
+        {(row.lifelines?.phone ?? 0) > 0 && <span className="text-gold-dim">☎ {row.lifelines.phone}</span>}
         {holds && <span className="text-live">buzzed{race ? ` +${race.behind}ms` : ""}</span>}
         {spent && !holds && <span className="text-faint">out this clue</span>}
         {onCall && <span className="text-amethyst">on the phone</span>}
@@ -201,26 +220,7 @@ function PlayerCard({ player, rank, buzzer, onCall, callEndsAt, dimmed, final, w
 
 /** Scores roll rather than snap — a jump reads as a glitch from across a room. */
 function Rolling({ value }) {
-  const [shown, setShown] = useState(value)
-  const from = useRef(value)
-  const raf = useRef(0)
-
-  useEffect(() => {
-    if (value === shown) return
-    const start = performance.now()
-    const a = from.current
-    const b = value
-    const dur = Math.min(900, 260 + Math.abs(b - a) * 0.45)
-    const step = (t) => {
-      const k = Math.min(1, (t - start) / dur)
-      setShown(Math.round(a + (b - a) * (1 - Math.pow(1 - k, 3))))
-      if (k < 1) raf.current = requestAnimationFrame(step)
-      else from.current = b
-    }
-    raf.current = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf.current)
-  }, [value])
-
+  const [shown] = useRolling(value)
   return (
     <div
       className={`font-value leading-none tabular-nums ${shown < 0 ? "text-bad" : "text-gold brass-sm"}`}
