@@ -191,8 +191,15 @@ export function SurveyBoard({ state, rows = [] }) {
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[2vmin] px-[4vmin]">
-      <div className="label" style={{ letterSpacing: "0.4em" }}>
-        {f.category || "Survey"}
+      <div className="flex items-baseline gap-[2vmin]">
+        <span className="label" style={{ letterSpacing: "0.4em" }}>
+          {f.category || "Survey"}
+        </span>
+        {f.count > 1 && (
+          <span className="font-value tabular-nums text-gold-dim" style={{ fontSize: "max(11px, calc(var(--stage) * 1.6))" }}>
+            {f.index + 1}/{f.count}
+          </span>
+        )}
       </div>
       <p className="max-w-[40ch] text-center font-display leading-[1.15] text-ink" style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))" }}>
         {f.prompt}

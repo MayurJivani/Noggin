@@ -208,8 +208,14 @@ export function makeFinal() {
  * `tallyResponses`. That is the whole conceit of the format, and the reason the
  * survey link exists.
  */
+export const MAX_SURVEY_QUESTIONS = 5
+
+export function makeSurveyQuestion() {
+  return { id: uid("sq"), category: "", prompt: "", answers: [] }
+}
+
 export function makeSurvey() {
-  return { enabled: false, category: "", prompt: "", answers: [], collecting: true }
+  return { enabled: false, collecting: true, questions: [makeSurveyQuestion()] }
 }
 
 /**
@@ -253,11 +259,14 @@ export function normaliseBoard(raw) {
   board.survey = {
     enabled: !!raw.survey?.enabled,
     collecting: raw.survey?.collecting !== false,
-    category: str(raw.survey?.category, 60),
-    prompt: str(raw.survey?.prompt, 600),
-    answers: (Array.isArray(raw.survey?.answers) ? raw.survey.answers : []).slice(0, 10).map((a) => ({
-      text: str(a?.text, 80),
-      points: Math.max(0, num(a?.points, 0)),
+    questions: (Array.isArray(raw.survey?.questions) ? raw.survey.questions : []).slice(0, MAX_SURVEY_QUESTIONS).map((q) => ({
+      id: typeof q?.id === "string" ? q.id : uid("sq"),
+      category: str(q?.category, 60),
+      prompt: str(q?.prompt, 600),
+      answers: (Array.isArray(q?.answers) ? q.answers : []).slice(0, 10).map((a) => ({
+        text: str(a?.text, 80),
+        points: Math.max(0, num(a?.points, 0)),
+      })),
     })),
   }
 
@@ -1380,14 +1389,19 @@ export function judgeFinal(room, correct) {
  */
 const MAX_RESPONSES = 1000
 
-export function addResponse(room, text, now = Date.now()) {
-  if (!room.board.survey?.enabled || !room.board.survey.collecting) return null
+export function addResponse(room, questionId, text, now = Date.now()) {
+  const survey = room.board.survey
+  if (!survey?.enabled || !survey.collecting) return null
+  // An answer has to belong to a question that exists, or the tally would
+  // quietly collect replies to something nobody was asked.
+  if (!survey.questions.some((q) => q.id === questionId)) return null
+
   const clean = str(text, 60).trim()
   if (!clean) return null
   room.responses ??= []
   if (room.responses.length >= MAX_RESPONSES) return null
-  room.responses.push({ text: clean, at: now })
-  return { count: room.responses.length }
+  room.responses.push({ q: questionId, text: clean, at: now })
+  return { count: room.responses.filter((r) => r.q === questionId).length }
 }
 
 /**
@@ -1427,9 +1441,10 @@ function bestSpelling(key, spellings) {
   return scored[0].text
 }
 
-export function tallyResponses(room) {
+export function tallyResponses(room, questionId) {
   const groups = new Map()
   for (const r of room.responses ?? []) {
+    if (r.q !== questionId) continue
     const key = surveyKey(r.text)
     if (!key) continue
     const g = groups.get(key) ?? { key, count: 0, spellings: new Map() }
@@ -1461,7 +1476,7 @@ export function openSurvey(room) {
   room.wager = null
   room.revealed = false
   resetBuzzerState(room)
-  room.survey = { revealed: [], awards: {}, strikes: [], said: null }
+  room.survey = { index: 0, revealed: [], awards: {}, strikes: [], said: null }
   return [{ kind: "survey-open" }]
 }
 
@@ -1482,9 +1497,13 @@ export function saySurvey(room, playerId, text) {
   return [{ kind: "survey-said", playerId }]
 }
 
+/** The question on screen right now. */
+export const currentQuestion = (room) =>
+  room.phase === PHASE.SURVEY ? (room.board.survey?.questions?.[room.survey?.index ?? 0] ?? null) : null
+
 export function revealSurvey(room, index, target = room.buzzer.winner) {
   if (room.phase !== PHASE.SURVEY) return []
-  const slot = room.board.survey.answers?.[index]
+  const slot = currentQuestion(room)?.answers?.[index]
   if (!slot || room.survey.revealed.includes(index)) return []
 
   room.survey.revealed.push(index)
@@ -1502,7 +1521,7 @@ export function revealSurvey(room, index, target = room.buzzer.winner) {
   }
   room.buzzer.winner = null
 
-  const done = room.survey.revealed.length >= room.board.survey.answers.length
+  const done = room.survey.revealed.length >= (currentQuestion(room)?.answers.length ?? 0)
   const effects = [{ kind: "survey-hit", index, points: slot.points, unitId: unit?.id ?? null, score: unit?.score ?? null }]
   if (done) effects.push({ kind: "survey-cleared" })
   return effects
@@ -1523,6 +1542,23 @@ export function strikeSurvey(room, target = room.buzzer.winner, now = Date.now()
   room.buzzer.openedAt = now
   room.timer = null
   return [{ kind: "survey-strike", unitId: unit?.id ?? null }]
+}
+
+/**
+ * On to the next question, with a fresh board and a clean slate of strikes.
+ *
+ * Points already won stay won — each question is its own board, not its own
+ * game.
+ */
+export function nextQuestion(room) {
+  if (room.phase !== PHASE.SURVEY) return []
+  const last = (room.board.survey?.questions?.length ?? 0) - 1
+  if (room.survey.index >= last) return []
+
+  room.survey = { index: room.survey.index + 1, revealed: [], awards: {}, strikes: [], said: null }
+  resetBuzzerState(room)
+  room.timer = null
+  return [{ kind: "survey-next", index: room.survey.index }]
 }
 
 /** That's the round. Straight to the end, where a tie may still be waiting. */
@@ -1705,7 +1741,7 @@ export function restoreRoom(code, snapshot) {
   room.winner = typeof snapshot.winner === "string" ? snapshot.winner : null
   room.responses = (Array.isArray(snapshot.responses) ? snapshot.responses : [])
     .slice(0, MAX_RESPONSES)
-    .map((r) => ({ text: str(r?.text, 60), at: num(r?.at, 0) }))
+    .map((r) => ({ q: typeof r?.q === "string" ? r.q : "", text: str(r?.text, 60), at: num(r?.at, 0) }))
     .filter((r) => r.text)
   room.roundIndex = Math.max(0, Math.min(num(snapshot.roundIndex, 0), room.board.rounds.length - 1))
   room.phase = Object.values(PHASE).includes(snapshot.phase) ? snapshot.phase : PHASE.LOBBY
@@ -1868,41 +1904,8 @@ export function projectState(room, role, viewerId = null) {
     tied: room.phase === PHASE.ENDED && !room.winner && isTied(room) ? leaders(room).map((u) => u.id) : null,
     /** Set once a tie has been settled — the scores stay level, someone won. */
     winner: room.winner ?? null,
-    /*
-      The survey board.
-
-      A hidden slot sends its *shape* and nothing else — no text, no points. The
-      room is guessing at them, and a slot that shipped its answer alongside a
-      `hidden` flag would be a round decided by whoever opened devtools. The
-      host gets the lot, because they have to find the match.
-    */
-    survey: room.board.survey?.enabled
-      ? {
-          enabled: true,
-          offered: room.phase === PHASE.ENDED && !room.survey,
-          live: room.phase === PHASE.SURVEY,
-          category: room.board.survey.category,
-          prompt: room.phase === PHASE.SURVEY || privileged ? room.board.survey.prompt : "",
-          collecting: !!room.board.survey.collecting,
-          responses: (room.responses ?? []).length,
-          tally: privileged ? tallyResponses(room) : undefined,
-          slots: room.board.survey.answers.length,
-          strikes: room.survey?.strikes ?? [],
-          said: room.survey?.said ?? null,
-          cleared: !!room.survey && room.survey.revealed.length >= room.board.survey.answers.length,
-          answers: room.board.survey.answers.map((a, i) => {
-            const open = privileged || !!room.survey?.revealed.includes(i)
-            return {
-              index: i,
-              open: !!room.survey?.revealed.includes(i),
-              text: open ? a.text : null,
-              points: open ? a.points : null,
-              by: room.survey?.awards[i] ?? null,
-            }
-          }),
-        }
-      : null,
     final: projectFinal(room, privileged, viewerId),
+    survey: room.board.survey?.enabled ? projectSurvey(room, privileged) : null,
     wager: room.wager,
     revealed: room.revealed,
     timer: room.timer,
@@ -1971,6 +1974,61 @@ export function projectState(room, role, viewerId = null) {
         }
       })
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
+  }
+}
+
+/**
+ * The survey round, per role.
+ *
+ * A hidden slot sends its *shape* and nothing else — no text, no points. The
+ * room is guessing at them, and a slot that shipped its answer alongside a
+ * `hidden` flag would be a round decided by whoever opened devtools. Only the
+ * question being played is sent at all; the other four are still to come.
+ */
+function projectSurvey(room, privileged) {
+  const survey = room.board.survey
+  const questions = survey.questions ?? []
+  const live = room.phase === PHASE.SURVEY
+  const q = live ? (questions[room.survey.index] ?? null) : null
+
+  return {
+    enabled: true,
+    offered: room.phase === PHASE.ENDED && !room.survey,
+    live,
+    collecting: !!survey.collecting,
+    count: questions.length,
+    index: live ? room.survey.index : 0,
+    /** Enough for the desk to say "3 of 5" without shipping the questions. */
+    category: q?.category ?? "",
+    prompt: live ? (q?.prompt ?? "") : "",
+    strikes: room.survey?.strikes ?? [],
+    said: room.survey?.said ?? null,
+    slots: q?.answers.length ?? 0,
+    cleared: !!q && room.survey.revealed.length >= q.answers.length,
+    last: live && room.survey.index >= questions.length - 1,
+    answers: (q?.answers ?? []).map((a, i) => {
+      const open = privileged || !!room.survey?.revealed.includes(i)
+      return {
+        index: i,
+        open: !!room.survey?.revealed.includes(i),
+        text: open ? a.text : null,
+        points: open ? a.points : null,
+        by: room.survey?.awards[i] ?? null,
+      }
+    }),
+    // The builder needs every question, its answers, and what came back for
+    // each — none of which anybody else may see.
+    questions: privileged
+      ? questions.map((qq) => ({
+          id: qq.id,
+          category: qq.category,
+          prompt: qq.prompt,
+          answers: qq.answers,
+          responses: (room.responses ?? []).filter((r) => r.q === qq.id).length,
+          tally: tallyResponses(room, qq.id),
+        }))
+      : undefined,
+    responses: (room.responses ?? []).length,
   }
 }
 

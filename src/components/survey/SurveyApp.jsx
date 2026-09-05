@@ -21,7 +21,8 @@ export function SurveyApp() {
   const [survey, setSurvey] = useState(null)
   const [error, setError] = useState(null)
   const [text, setText] = useState("")
-  const [sent, setSent] = useState(0)
+  const [at, setAt] = useState(0)
+  const [done, setDone] = useState(false)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -44,12 +45,15 @@ export function SurveyApp() {
       const res = await fetch(`${getRelayOrigin()}/api/survey?code=${encodeURIComponent(code)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ question: q.id, text }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(j.error ?? "That didn't go through.")
-      setSent((n) => n + 1)
       setText("")
+      // Straight on to the next one. Five short questions answered in a row is
+      // a very different ask from a form with five boxes on it.
+      if (at < questions.length - 1) setAt(at + 1)
+      else setDone(true)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -61,6 +65,10 @@ export function SurveyApp() {
   if (error && !survey) return <Shell>{error}</Shell>
   if (!survey) return <Shell>One moment…</Shell>
 
+  const questions = survey.questions ?? []
+  const q = questions[at]
+  if (!questions.length) return <Shell>There is nothing to answer yet.</Shell>
+
   return (
     <div className="relative flex min-h-dvh items-center justify-center px-5 py-10">
       <Backdrop veins={6} glow={3} />
@@ -70,27 +78,30 @@ export function SurveyApp() {
         <VeinLine className="mx-auto mt-2 w-48" height={16} />
 
         <div className="panel mt-6 p-6">
-          {survey.category && (
-            <div className="label" style={{ letterSpacing: "0.3em" }}>
-              {survey.category}
-            </div>
-          )}
-
-          <p className="mt-2 font-display text-[clamp(17px,4.5vw,22px)] leading-snug text-ink">{survey.prompt}</p>
-
           {!survey.open ? (
-            <p className="mt-4 text-[13px] text-muted">This survey has closed. Thanks all the same.</p>
-          ) : sent > 0 ? (
-            <div className="mt-4">
-              <div className="font-display text-lg text-good">Thanks — that's in.</div>
-              <p className="mt-1 text-[12px] text-muted">
-                {sent === 1 ? "First thing that came to mind is exactly what we wanted." : `${sent} answers from you now.`}
-              </p>
-              <button className="btn mt-4 px-5 py-2 text-[12px]" onClick={() => setSent(0)}>
-                Add another
-              </button>
+            <p className="text-[13px] text-muted">This survey has closed. Thanks all the same.</p>
+          ) : done ? (
+            <div>
+              <div className="font-display text-lg text-good">That's all of them — thanks.</div>
+              <p className="mt-1 text-[12px] text-muted">Your answers are going onto a game show board.</p>
             </div>
           ) : (
+            <>
+              <div className="flex items-baseline justify-center gap-2">
+                {q.category && (
+                  <span className="label" style={{ letterSpacing: "0.3em" }}>
+                    {q.category}
+                  </span>
+                )}
+                {questions.length > 1 && (
+                  <span className="text-[10px] text-faint">
+                    {at + 1} of {questions.length}
+                  </span>
+                )}
+              </div>
+
+              <p className="mt-2 font-display text-[clamp(17px,4.5vw,22px)] leading-snug text-ink">{q.prompt}</p>
+
             <form onSubmit={submit} className="mt-4">
               <input
                 className="field text-center font-display text-lg"
@@ -102,10 +113,18 @@ export function SurveyApp() {
                 aria-label="Your answer"
               />
               <button className="btn btn-gold mt-3 w-full py-3" disabled={!text.trim() || busy}>
-                {busy ? "Sending…" : "Send it"}
+                {busy ? "Sending…" : at < questions.length - 1 ? "Next question" : "Send it"}
               </button>
               {error && <div className="mt-2 text-[12px] text-bad">{error}</div>}
             </form>
+
+            {/* Skipping is allowed. A blank forced answer is worse than none. */}
+            {at < questions.length - 1 && (
+              <button className="mt-2 text-[11px] text-faint transition-colors hover:text-muted" onClick={() => setAt(at + 1)}>
+                skip this one
+              </button>
+            )}
+            </>
           )}
         </div>
 

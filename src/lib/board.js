@@ -51,8 +51,10 @@ export const makeRound = (name, values = DEFAULT_VALUES, categories = 5) => ({
   categories: Array.from({ length: categories }, () => makeCategory("", values)),
 })
 
-export const FINAL_KINDS = ["classic", "survey"]
+export const MAX_SURVEY_QUESTIONS = 5
 export const makeSurveyAnswer = () => ({ text: "", points: 0 })
+export const makeSurveyQuestion = () => ({ id: uid("sq"), category: "", prompt: "", answers: [] })
+export const makeSurvey = () => ({ enabled: false, collecting: true, questions: [makeSurveyQuestion()] })
 
 export const makeTiebreak = () => ({ prompt: "", media: null, answer: "", answerMedia: null })
 
@@ -61,6 +63,7 @@ export const makeBoard = () => ({
   title: "Untitled Game",
   updatedAt: Date.now(),
   rounds: [makeRound("Round 1", DEFAULT_VALUES), makeRound("Round 2", DEFAULT_VALUES.map((v) => v * 2))],
+  survey: makeSurvey(),
   tiebreak: makeTiebreak(),
 })
 

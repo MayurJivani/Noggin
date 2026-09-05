@@ -8,7 +8,9 @@ import {
   makeBoard,
   makeCategory,
   makeRound,
+  MAX_SURVEY_QUESTIONS,
   makeSurveyAnswer,
+  makeSurveyQuestion,
   patchCategory,
   patchClue,
   patchRound,
@@ -35,7 +37,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
   const firstRun = useRef(true)
 
   const round = board.rounds[roundIndex] ?? board.rounds[0]
-  const onFinal = roundIndex === -1
+  const onFinal = roundIndex < 0
   const stats = useMemo(() => boardStats(board), [board])
   const issues = useMemo(() => boardIssues(board), [board])
 
@@ -193,16 +195,27 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 >
                   +
                 </button>
-                <button
-                  className={`btn ml-1 ${roundIndex === -1 ? "btn-gold" : ""} ${board.final?.enabled ? "" : "opacity-60"}`}
-                  title="The last clue — everyone wagers, writes, and is turned over one at a time"
-                  onClick={() => {
-                    setRoundIndex(-1)
-                    setSelected(null)
-                  }}
-                >
-                  ✦ Final
-                </button>
+                {/* Three endings, three tabs. They were one screen and it was
+                    a wall — a form for the final, a form for the survey and a
+                    form for the tie-break, only one of which you are thinking
+                    about at a time. */}
+                {[
+                  [-1, "✦ Final", board.final?.enabled, "The last clue — everyone wagers, writes, and is turned over one at a time"],
+                  [-2, "◎ Survey", board.survey?.enabled, "We asked a hundred people — played last, after everything else"],
+                  [-3, "⚖ Tie-break", !!board.tiebreak?.prompt?.trim(), "Sudden death, if the game ends level"],
+                ].map(([i, label, on, title]) => (
+                  <button
+                    key={i}
+                    className={`btn ${i === -1 ? "ml-1" : ""} ${roundIndex === i ? "btn-gold" : ""} ${on ? "" : "opacity-60"}`}
+                    title={title}
+                    onClick={() => {
+                      setRoundIndex(i)
+                      setSelected(null)
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -225,7 +238,11 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
         </div>
 
         {roundIndex === -1 ? (
-          <FinalEditor board={board} setBoard={setBoard} tally={state?.survey?.tally} code={state?.code} />
+          <FinalEditor board={board} setBoard={setBoard} />
+        ) : roundIndex === -2 ? (
+          <SurveyEditor board={board} setBoard={setBoard} survey={state?.survey} code={state?.code} />
+        ) : roundIndex === -3 ? (
+          <TiebreakEditor board={board} setBoard={setBoard} />
         ) : (
         <div className="panel overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-edge px-4 py-2.5">
@@ -567,7 +584,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
  * Off by default: plenty of quizzes just end when the board is cleared, and a
  * blank final appearing on the projector would be worse than none at all.
  */
-function FinalEditor({ board, setBoard, tally, code }) {
+function FinalEditor({ board, setBoard }) {
   const final = board.final ?? {}
   const patch = (p) => setBoard({ ...board, final: { ...final, ...p } })
 
@@ -631,8 +648,6 @@ function FinalEditor({ board, setBoard, tally, code }) {
         <MediaField value={final.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
       </div>
 
-      <SurveyEditor board={board} setBoard={setBoard} tally={tally} code={code} />
-      <TiebreakEditor board={board} setBoard={setBoard} />
     </div>
   )
 }
@@ -646,37 +661,35 @@ function FinalEditor({ board, setBoard, tally, code }) {
  * moment to be inventing a question, so it is worth two minutes now.
  */
 /**
- * The survey round: its question, its board, and where the board came from.
+ * The survey round: its questions, its boards, and where they came from.
  *
- * The format's conceit is that a hundred people were asked, so the editor's
- * centre of gravity is the **link** rather than the answer list. Write the
- * question, send the link to a group chat for a day, then build the board out
- * of what people actually said — which is both less work and a far better round
- * than eight answers invented at a desk.
+ * Up to five questions, each with its own board. The editor's centre of gravity
+ * is the **link** rather than the answer lists: write the questions, send the
+ * link to a group chat for a day, then build each board out of what people
+ * actually said — which is both less work and a far better round than forty
+ * answers invented at a desk.
+ *
+ * One question open at a time. Five expanded forms is the wall this tab was
+ * split up to avoid.
  */
-function SurveyEditor({ board, setBoard, tally, code }) {
+function SurveyEditor({ board, setBoard, survey: live, code }) {
   const survey = board.survey ?? {}
+  const questions = survey.questions ?? []
   const patch = (p) => setBoard({ ...board, survey: { ...survey, ...p } })
-  const answers = survey.answers ?? []
-  const set = (i, p) => patch({ answers: answers.map((a, j) => (j === i ? { ...a, ...p } : a)) })
-  const total = answers.reduce((n, a) => n + (Number(a.points) || 0), 0)
+  const setQ = (i, p) => patch({ questions: questions.map((q, j) => (j === i ? { ...q, ...p } : q)) })
 
+  const [open, setOpen] = useState(0)
   const [url, setUrl] = useState("")
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (code && survey.enabled) surveyUrl(code).then(setUrl)
   }, [code, survey.enabled])
 
-  /** Turn the top of the tally into the board, points scaled off the votes. */
-  const build = (rows) => {
-    const top = rows.slice(0, 8)
-    if (!top.length) return
-    if (answers.length && !confirm(`Replace the ${answers.length} answers on the board with the top ${top.length}?`)) return
-    patch({ answers: top.map((g) => ({ text: g.label, points: g.count * 50 })) })
-  }
+  /** What came back for each question, matched up by id. */
+  const answersIn = (id) => live?.questions?.find((q) => q.id === id)
 
   return (
-    <div className="mt-5 border-t border-edge pt-4">
+    <div className="panel p-4">
       <label className="flex cursor-pointer items-center gap-2">
         <input type="checkbox" checked={!!survey.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
         <span className="font-display text-base text-gold">Play a survey round</span>
@@ -687,28 +700,14 @@ function SurveyEditor({ board, setBoard, tally, code }) {
         reckoning, so a game somebody has already won stays live to the end.
       </p>
 
-      <div className={`mt-3 space-y-3 ${survey.enabled ? "" : "pointer-events-none opacity-40"}`}>
-        <div className="flex gap-3">
-          <label className="w-36 shrink-0">
-            <div className="label mb-1">Category</div>
-            <input className="field font-display uppercase" value={survey.category ?? ""} onChange={(e) => patch({ category: e.target.value })} />
-          </label>
-          <label className="min-w-0 flex-1">
-            <div className="label mb-1">Question</div>
-            <input
-              className="field"
-              placeholder="Name something you always forget to buy"
-              value={survey.prompt ?? ""}
-              onChange={(e) => patch({ prompt: e.target.value })}
-            />
-          </label>
-        </div>
-
+      <div className={`mt-4 space-y-3 ${survey.enabled ? "" : "pointer-events-none opacity-40"}`}>
         {/* The link. This is the point of the round. */}
         <div className="rounded-lg border border-gold-deep/40 bg-royal/20 px-3 py-2.5">
           <div className="flex items-baseline gap-2">
             <span className="label">Ask people</span>
-            <span className="text-[10px] text-faint">no account needed at their end</span>
+            <span className="text-[10px] text-faint">
+              {live?.responses ? `${live.responses} answers in` : "no account needed at their end"}
+            </span>
             <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[10px] text-muted">
               <input type="checkbox" checked={survey.collecting !== false} onChange={(e) => patch({ collecting: e.target.checked })} />
               open
@@ -740,73 +739,155 @@ function SurveyEditor({ board, setBoard, tally, code }) {
           )}
         </div>
 
-        {/* What came back. */}
-        {tally?.length > 0 && (
-          <div className="rounded-lg border border-edge px-3 py-2.5">
-            <div className="flex items-baseline gap-2">
-              <span className="label">Answers in</span>
-              <span className="text-[10px] text-faint">{tally.reduce((n, g) => n + g.count, 0)} replies · {tally.length} distinct</span>
-              <button className="btn ml-auto px-2 py-0.5 text-[10px]" onClick={() => build(tally)}>
-                Build the board
-              </button>
-            </div>
-            <div className="mt-1.5 max-h-40 space-y-0.5 overflow-y-auto">
-              {tally.slice(0, 20).map((g) => (
-                <div key={g.key} className="flex items-baseline gap-2 text-[11px]">
-                  <span className="w-8 shrink-0 text-right font-value text-gold">{g.count}</span>
-                  <span className="min-w-0 flex-1 truncate text-muted">{g.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {questions.map((q, i) => (
+          <SurveyQuestion
+            key={q.id}
+            n={i + 1}
+            q={q}
+            live={answersIn(q.id)}
+            open={open === i}
+            onToggle={() => setOpen(open === i ? -1 : i)}
+            onChange={(p) => setQ(i, p)}
+            onRemove={
+              questions.length > 1
+                ? () => {
+                    if (!confirm(`Delete question ${i + 1}?`)) return
+                    patch({ questions: questions.filter((_, j) => j !== i) })
+                    setOpen(0)
+                  }
+                : null
+            }
+          />
+        ))}
 
-        <div>
-          <div className="flex items-baseline gap-2">
-            <span className="label">The board</span>
-            <span className="text-[10px] text-faint">
-              {answers.length} · {total} points in play
-            </span>
+        <button
+          className="btn w-full py-1.5 text-[11px]"
+          disabled={questions.length >= MAX_SURVEY_QUESTIONS}
+          onClick={() => {
+            patch({ questions: [...questions, makeSurveyQuestion()] })
+            setOpen(questions.length)
+          }}
+        >
+          + Question {questions.length >= MAX_SURVEY_QUESTIONS ? `(${MAX_SURVEY_QUESTIONS} is the most)` : ""}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** One question, collapsed to a line until you are working on it. */
+function SurveyQuestion({ n, q, live, open, onToggle, onChange, onRemove }) {
+  const answers = q.answers ?? []
+  const set = (i, p) => onChange({ answers: answers.map((a, j) => (j === i ? { ...a, ...p } : a)) })
+  const tally = live?.tally ?? []
+
+  const build = () => {
+    const top = tally.slice(0, 8)
+    if (!top.length) return
+    if (answers.length && !confirm(`Replace the ${answers.length} answers with the top ${top.length}?`)) return
+    onChange({ answers: top.map((g) => ({ text: g.label, points: g.count * 50 })) })
+  }
+
+  return (
+    <div className={`rounded-lg border ${open ? "border-gold-deep/60" : "border-edge"}`}>
+      <button className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={onToggle}>
+        <span className="w-4 shrink-0 text-center font-value text-[13px] text-gold-dim">{n}</span>
+        <span className={`min-w-0 flex-1 truncate text-[12px] ${q.prompt.trim() ? "text-ink" : "text-faint"}`}>
+          {q.prompt.trim() || "Not written yet"}
+        </span>
+        <span className="shrink-0 text-[10px] text-faint">
+          {answers.length ? `${answers.length} on the board` : live?.responses ? `${live.responses} in` : "—"}
+        </span>
+        <span className="shrink-0 text-[10px] text-faint">{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open && (
+        <div className="space-y-3 border-t border-edge px-3 py-3">
+          <div className="flex gap-2">
+            <label className="w-32 shrink-0">
+              <div className="label mb-1">Category</div>
+              <input className="field py-1 font-display uppercase" value={q.category} onChange={(e) => onChange({ category: e.target.value })} />
+            </label>
+            <label className="min-w-0 flex-1">
+              <div className="label mb-1">Question</div>
+              <input
+                className="field py-1"
+                placeholder="Name something you always forget to buy"
+                value={q.prompt}
+                onChange={(e) => onChange({ prompt: e.target.value })}
+              />
+            </label>
           </div>
 
-          <div className="mt-1.5 space-y-1.5">
-            {answers.map((a, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <span className="w-5 shrink-0 text-center font-value text-[13px] text-gold-dim">{i + 1}</span>
-                <input
-                  className="field min-w-0 flex-1 py-1 text-[12px]"
-                  placeholder={i === 0 ? "The most popular answer" : "Answer"}
-                  value={a.text}
-                  onChange={(e) => set(i, { text: e.target.value })}
-                />
-                <input
-                  type="number"
-                  min={0}
-                  className="field w-20 py-1 text-right font-value text-[12px]"
-                  value={a.points}
-                  onChange={(e) => set(i, { points: Math.max(0, +e.target.value || 0) })}
-                />
-                <button
-                  className="shrink-0 px-1 text-[11px] text-faint transition-colors hover:text-bad"
-                  title="Remove"
-                  onClick={() => patch({ answers: answers.filter((_, j) => j !== i) })}
-                >
-                  ✕
+          {tally.length > 0 && (
+            <div className="rounded-md border border-edge px-2.5 py-2">
+              <div className="flex items-baseline gap-2">
+                <span className="label">Answers in</span>
+                <span className="text-[10px] text-faint">
+                  {live.responses} replies · {tally.length} distinct
+                </span>
+                <button className="btn ml-auto px-2 py-0.5 text-[10px]" onClick={build}>
+                  Build the board
                 </button>
               </div>
-            ))}
-            {answers.length === 0 && <div className="px-1 py-2 text-[11px] text-faint">Nothing on the board yet.</div>}
-          </div>
+              <div className="mt-1.5 max-h-32 space-y-0.5 overflow-y-auto">
+                {tally.slice(0, 20).map((g) => (
+                  <div key={g.key} className="flex items-baseline gap-2 text-[11px]">
+                    <span className="w-8 shrink-0 text-right font-value text-gold">{g.count}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted">{g.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-          <button
-            className="btn mt-2 w-full py-1.5 text-[11px]"
-            disabled={answers.length >= 10}
-            onClick={() => patch({ answers: [...answers, makeSurveyAnswer()] })}
-          >
-            + Answer
-          </button>
+          <div>
+            <div className="label mb-1.5">The board</div>
+            <div className="space-y-1.5">
+              {answers.map((a, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span className="w-4 shrink-0 text-center font-value text-[12px] text-gold-dim">{i + 1}</span>
+                  <input
+                    className="field min-w-0 flex-1 py-1 text-[12px]"
+                    placeholder="Answer"
+                    value={a.text}
+                    onChange={(e) => set(i, { text: e.target.value })}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    className="field w-16 py-1 text-right font-value text-[12px]"
+                    value={a.points}
+                    onChange={(e) => set(i, { points: Math.max(0, +e.target.value || 0) })}
+                  />
+                  <button
+                    className="shrink-0 px-1 text-[11px] text-faint transition-colors hover:text-bad"
+                    onClick={() => onChange({ answers: answers.filter((_, j) => j !== i) })}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {answers.length === 0 && <div className="px-1 text-[11px] text-faint">Nothing on the board yet.</div>}
+            </div>
+
+            <div className="mt-2 flex gap-1.5">
+              <button
+                className="btn flex-1 py-1.5 text-[11px]"
+                disabled={answers.length >= 10}
+                onClick={() => onChange({ answers: [...answers, makeSurveyAnswer()] })}
+              >
+                + Answer
+              </button>
+              {onRemove && (
+                <button className="btn px-2.5 py-1.5 text-[11px] hover:border-bad hover:text-bad" onClick={onRemove}>
+                  Delete question
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

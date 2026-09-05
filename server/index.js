@@ -473,10 +473,11 @@ async function handleRequest(req, res) {
     if (req.method === "GET") {
       return json(res, 200, {
         title: room.board.title,
-        category: survey.category,
-        prompt: survey.prompt,
         open: !!survey.collecting,
-        responses: (room.responses ?? []).length,
+        // Just enough to ask them. No answers, no scores, no room.
+        questions: (survey.questions ?? [])
+          .filter((q) => q.prompt.trim())
+          .map((q) => ({ id: q.id, category: q.category, prompt: q.prompt })),
       })
     }
 
@@ -488,7 +489,7 @@ async function handleRequest(req, res) {
         return json(res, 400, { error: "Bad request." })
       }
       if (!survey.collecting) return json(res, 403, { error: "This survey has closed." })
-      const added = G.addResponse(room, payload?.text)
+      const added = G.addResponse(room, String(payload?.question ?? ""), payload?.text)
       if (!added) return json(res, 400, { error: "That answer was empty, or the survey is full." })
       markDirty(room)
       // The host desk shows the count climbing while people answer.
@@ -1171,6 +1172,7 @@ const ACTION_LABELS = {
   "final:reveal": "started revealing",
   "final:judge": "ruled on the final",
   "survey:open": "started the survey round",
+  "survey:next": "moved to the next survey question",
   "survey:reveal": "opened a survey answer",
   "survey:strike": "gave a strike",
   "survey:close": "ended the survey round",
@@ -1350,6 +1352,8 @@ function handleHostMessage(room, meta, ws, msg) {
     // ── The survey round ──
     case "survey:open":
       return apply(room, G.openSurvey(room))
+    case "survey:next":
+      return apply(room, G.nextQuestion(room))
     case "survey:reveal":
       return apply(room, G.revealSurvey(room, Number(msg.index), msg.unitId))
     case "survey:strike":

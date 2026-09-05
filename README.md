@@ -250,9 +250,11 @@ Keys, because the other hand is holding a microphone:
 ## The survey round
 
 "We asked a hundred people." Optional, and played **last** — after the final,
-and after any tie-break has settled it. A board of hidden answers with points on
-them; whoever buzzes first says one, and it is either on the board or it is a
-strike and the buzzer goes straight back out.
+and after any tie-break has settled it. **Up to five questions**, each with its
+own board of hidden answers; whoever buzzes first says one, and it is either on
+that board or it is a strike and the buzzer goes straight back out. Clear a
+board, or give up on it, and the host moves to the next question. Points already
+won stay won — each question is its own board, not its own game.
 
 The reason it goes last: **it is a scramble, not a reckoning.** A blind wager
 cannot rescue somebody 2000 behind, and eight answers on a board can, so a game
@@ -278,8 +280,9 @@ cleverer starts merging things that are genuinely different, and you are about
 to read the list anyway. The label put on the board is the spelling most people
 used, preferring the one that needed no article stripped.
 
-**Build the board** turns the top of the tally into slots, with points scaled
-off the votes. Edit anything afterwards.
+**Build the board** turns the top of that question's tally into slots, with
+points scaled off the votes. Each question tallies separately. Edit anything
+afterwards.
 
 It is the one door here open to the internet by design, so it is capped: 1000
 responses a room, 60 characters each, and it only answers for a room that is

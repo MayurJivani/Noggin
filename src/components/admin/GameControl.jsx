@@ -271,7 +271,7 @@ function StagePanel({ state, send, now }) {
             <div className="mx-auto mt-3 max-w-sm rounded-xl border border-gold-deep/60 bg-royal/30 px-4 py-3">
               <div className="font-display text-gold">One more round</div>
               <div className="mt-1 text-[12px] text-muted">
-                {state.survey.category || "Survey"} · {state.survey.slots} answers on the board
+                {state.survey.count} question{state.survey.count === 1 ? "" : "s"} to play
               </div>
               <button className="btn btn-gold mt-3 px-5 py-2" onClick={() => send("survey:open")}>
                 Play the survey round
@@ -1078,12 +1078,22 @@ function SurveyControls({ state, send, f }) {
   return (
     <div className="panel flex min-h-0 flex-1 flex-col p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="label">Survey · {f.category || "final round"}</span>
+        <span className="label">Survey · {f.category || "round"}</span>
+        {f.count > 1 && (
+          <span className="text-[11px] text-muted">
+            question {f.index + 1} of {f.count}
+          </span>
+        )}
         <span className="text-[11px] text-faint">{left} left</span>
         <div className="ml-auto flex gap-1.5">
           <button className={`btn ${state.buzzer.armed ? "" : "btn-gold"}`} onClick={() => send("buzzer:arm")}>
             Arm <Kbd>space</Kbd>
           </button>
+          {!f.last && (
+            <button className={`btn ${f.cleared ? "btn-gold animate-pop" : ""}`} onClick={() => send("survey:next")}>
+              Next question
+            </button>
+          )}
           <button className="btn hover:border-bad hover:text-bad" onClick={() => confirm("End the survey round?") && send("survey:close")}>
             End round
           </button>
@@ -1137,7 +1147,11 @@ function SurveyControls({ state, send, f }) {
           strikes: {f.strikes.map((_, i) => <span key={i}>✕</span>)}
         </div>
       )}
-      {f.cleared && <div className="mt-2 text-center text-[12px] text-good">Board cleared — end the round.</div>}
+      {f.cleared && (
+        <div className="mt-2 text-center text-[12px] text-good">
+          Board cleared — {f.last ? "end the round." : "on to the next question."}
+        </div>
+      )}
     </div>
   )
 }
