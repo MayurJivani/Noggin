@@ -264,6 +264,31 @@ the way the show does, and nothing like the rest of the game:
 Anyone on a non-positive score sits it out — there is nothing to stake — and
 anyone who never bets is staked at nothing rather than holding the room up.
 
+## When it ends level
+
+A quiz has one question to answer, and a tie leaves it open. So if the game
+finishes with the top two — or three — on the same score, the desk offers a
+**tie-break**: sudden death, the tied sides and nobody else, first correct
+answer takes it.
+
+**Nothing is scored.** They tied, and they stay tied; what the play-off produces
+is a *winner*, which is a different fact and is recorded as one — a ♛ beside the
+name on the final scores. Awarding a point instead would leave the board saying
+something that did not happen, and somebody would notice.
+
+Everyone who is not in it can see they are not in it: their buzzer greys out and
+their phone says *Tie-break — watch*. A buzzer that still worked for the rest of
+the room would decide somebody else's play-off by accident.
+
+A miss puts that side out and leaves it to the others. If **everyone** misses,
+nobody has won anything — the last one standing answered nothing either — so the
+host runs another round, or awards it by hand when the room settles it some
+other way (a coin, a closest-to, a concession).
+
+Write the clue on the **✦ Final** tab, under the final itself. It is optional:
+with nothing written the host can still arm the buzzer and read something out,
+but a tie is a poor moment to be inventing a question.
+
 ## Importing from a spreadsheet
 
 Almost nobody writes forty clues by clicking forty tiles. **CSV** in the builder

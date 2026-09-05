@@ -51,11 +51,14 @@ export const makeRound = (name, values = DEFAULT_VALUES, categories = 5) => ({
   categories: Array.from({ length: categories }, () => makeCategory("", values)),
 })
 
+export const makeTiebreak = () => ({ prompt: "", media: null, answer: "", answerMedia: null })
+
 export const makeBoard = () => ({
   id: uid("b"),
   title: "Untitled Game",
   updatedAt: Date.now(),
   rounds: [makeRound("Round 1", DEFAULT_VALUES), makeRound("Round 2", DEFAULT_VALUES.map((v) => v * 2))],
+  tiebreak: makeTiebreak(),
 })
 
 /** Re-price a round's tiles after its value ladder changes. */

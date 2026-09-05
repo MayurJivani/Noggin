@@ -225,25 +225,53 @@ function StagePanel({ state, send, now }) {
 
   if (phase === "final") return <FinalControls state={state} send={send} />
 
+  if (phase === "tiebreak") return <TiebreakControls state={state} send={send} />
+
   if (phase === "intermission" || phase === "ended") {
-    const winner = players[0]
+    const top = contenders[0]
+    const champion = state.winner ? contenders.find((c) => c.id === state.winner) : null
+    const tied = state.tied ?? null
+
     return (
       <Empty>
         <div className="text-center">
           <div className="font-display text-xl text-gold">{phase === "ended" ? "That's the game." : "Round cleared."}</div>
-          {winner && (
+
+          {champion ? (
             <div className="mt-2 text-[13px] text-muted">
-              {phase === "ended" ? "Winner: " : "Leading: "}
-              <span className="text-ink">{winner.name}</span> on <span className="font-value text-gold">{winner.score}</span>
+              Winner on the tie-break: <span className="text-ink">{champion.name}</span>
+            </div>
+          ) : (
+            top && (
+              <div className="mt-2 text-[13px] text-muted">
+                {phase === "ended" ? "Winner: " : "Leading: "}
+                <span className="text-ink">{top.name}</span> on <span className="font-value text-gold">{top.score}</span>
+              </div>
+            )
+          )}
+
+          {/* Level at the top with nothing left to play. The quiz has one
+              question to answer and this is the only thing that answers it. */}
+          {tied && (
+            <div className="mx-auto mt-3 max-w-sm rounded-xl border border-live/60 bg-live/10 px-4 py-3">
+              <div className="font-display text-live">It's a tie.</div>
+              <div className="mt-1 text-[12px] text-muted">
+                {tied.map((id) => contenders.find((c) => c.id === id)?.name ?? "?").join(" and ")} are level on{" "}
+                <span className="font-value text-gold">{top?.score}</span>.
+              </div>
+              <button className="btn btn-gold mt-3 px-5 py-2 animate-pop" onClick={() => send("tiebreak:open")}>
+                Play a tie-break
+              </button>
             </div>
           )}
+
           <div className="mt-4 flex justify-center gap-2">
             {phase === "intermission" && (
               <button className="btn btn-gold px-6 py-2.5" onClick={() => send("round:next")}>
                 Start next round
               </button>
             )}
-            {state.final?.enabled && (
+            {state.final?.enabled && phase === "intermission" && (
               <button className="btn btn-gold px-6 py-2.5" onClick={() => send("final:open")}>
                 ✦ Play the final
               </button>
@@ -373,6 +401,98 @@ function StagePanel({ state, send, now }) {
             <button className="btn btn-bad px-5 py-2.5 text-sm" onClick={() => send("judge", { correct: false })}>
               Wrong <Kbd>n</Kbd>
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Sudden death.
+ *
+ * The tied sides and nobody else, one clue, first correct answer takes it.
+ * Nothing is scored — the scores were level and they stay level; what this
+ * produces is a winner, which is a different fact.
+ */
+function TiebreakControls({ state, send }) {
+  const tb = state.tiebreak
+  const rows = sideRows(state)
+  const name = (id) => rows.find((r) => r.id === id)?.name ?? "?"
+  const left = tb.contenders.filter((id) => !tb.spent.includes(id))
+  const holder = nameOf(state, state.buzzer.winner)
+  const exhausted = left.length === 0
+
+  return (
+    <div className="panel flex min-h-0 flex-1 flex-col p-4">
+      <div className="flex items-center gap-2">
+        <span className="label text-live">Tie-break{tb.round > 1 ? ` · round ${tb.round}` : ""}</span>
+        <span className="text-[11px] text-muted">{tb.contenders.map(name).join(" v ")}</span>
+        <div className="ml-auto flex gap-1.5">
+          <button className={`btn ${state.buzzer.armed ? "" : "btn-gold"}`} disabled={exhausted} onClick={() => send("buzzer:arm")}>
+            Arm <Kbd>space</Kbd>
+          </button>
+          <button className="btn" disabled={state.revealed} onClick={() => send("clue:reveal")}>
+            Reveal
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-3 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl">
+          {tb.hasClue ? (
+            <>
+              <div className="font-display text-xl leading-snug text-ink 2xl:text-3xl">{state.clue?.prompt}</div>
+              <div className="mt-4 rounded-lg border border-good/40 bg-good/10 px-4 py-3">
+                <div className="label mb-1" style={{ color: "var(--color-good)" }}>
+                  Answer
+                </div>
+                <div className="text-lg font-semibold text-ink 2xl:text-2xl">{state.clue?.answer}</div>
+              </div>
+            </>
+          ) : (
+            <p className="text-center text-[13px] text-muted">
+              No tie-break clue was written, so read one out — then arm the buzzer. Write one on the{" "}
+              <span className="text-ink">✦ Final</span> tab to have it here next time.
+            </p>
+          )}
+
+          {tb.spent.length > 0 && (
+            <div className="mt-3 text-center text-[11px] text-faint">out: {tb.spent.map(name).join(", ")}</div>
+          )}
+        </div>
+      </div>
+
+      {holder && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-live bg-live/10 px-4 py-3 animate-pop">
+          <span className="font-display text-xl text-live 2xl:text-2xl">{holder}</span>
+          <span className="text-xs text-muted">to win it</span>
+          <div className="ml-auto flex gap-2">
+            <button className="btn btn-good px-5 py-2.5 text-sm" onClick={() => send("tiebreak:judge", { correct: true })}>
+              Correct — wins
+            </button>
+            <button className="btn btn-bad px-5 py-2.5 text-sm" onClick={() => send("tiebreak:judge", { correct: false })}>
+              Wrong — out
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Nobody got it. Another clue, or call it by hand — a coin, a
+          closest-to, a concession. Better than the game awarding it by
+          elimination to someone who never answered anything. */}
+      {exhausted && (
+        <div className="mt-3 rounded-lg border border-edge px-4 py-3 text-center">
+          <div className="text-[12px] text-muted">Nobody took it.</div>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+            <button className="btn btn-gold px-5 py-2" onClick={() => send("tiebreak:again")}>
+              Go again
+            </button>
+            {tb.contenders.map((id) => (
+              <button key={id} className="btn px-3 py-2 text-[11px]" onClick={() => send("tiebreak:award", { unitId: id })}>
+                Award to {name(id)}
+              </button>
+            ))}
           </div>
         </div>
       )}

@@ -627,6 +627,60 @@ function FinalEditor({ board, setBoard }) {
 
         <MediaField value={final.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
       </div>
+
+      <TiebreakEditor board={board} setBoard={setBoard} />
+    </div>
+  )
+}
+
+/**
+ * The one kept back in case the final leaves two people level.
+ *
+ * Lives under the final because that is when it is needed and when you are
+ * already thinking about the end of the game. Optional — with nothing written
+ * the host can still run the buzzer and read something out — but a tie is a bad
+ * moment to be inventing a question, so it is worth two minutes now.
+ */
+function TiebreakEditor({ board, setBoard }) {
+  const tiebreak = board.tiebreak ?? {}
+  const patch = (p) => setBoard({ ...board, tiebreak: { ...tiebreak, ...p } })
+  const written = !!tiebreak.prompt?.trim()
+
+  return (
+    <div className="mt-5 border-t border-edge pt-4">
+      <div className="flex items-baseline gap-2">
+        <span className="label">Tie-break</span>
+        <span className={`text-[10px] ${written ? "text-good" : "text-faint"}`}>{written ? "ready" : "not written"}</span>
+      </div>
+      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+        Sudden death, if the final leaves the top two level: the tied sides only, first correct answer wins, nothing scored. Leave it
+        empty and you can still run the buzzer on something you read out — but a tie is a poor moment to be inventing a question.
+      </p>
+
+      <div className="mt-3 space-y-3">
+        <label className="block">
+          <div className="label mb-1">Clue</div>
+          <textarea
+            className="field min-h-[72px] resize-y font-display text-[14px] leading-snug"
+            placeholder="Something with one short, unarguable answer"
+            value={tiebreak.prompt ?? ""}
+            onChange={(e) => patch({ prompt: e.target.value })}
+          />
+        </label>
+
+        <MediaField value={tiebreak.media ?? null} onChange={(media) => patch({ media })} label="Clue media" />
+
+        <label className="block">
+          <div className="label mb-1">Answer</div>
+          <textarea
+            className="field min-h-[48px] resize-y"
+            value={tiebreak.answer ?? ""}
+            onChange={(e) => patch({ answer: e.target.value })}
+          />
+        </label>
+
+        <MediaField value={tiebreak.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
+      </div>
     </div>
   )
 }

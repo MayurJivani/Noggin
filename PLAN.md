@@ -45,6 +45,9 @@ What exists, and what is deliberately left for later.
   ones; deleting a game ends it live and removes the saved copy.
 - **Undo the last ruling** — one deep, restoring score, spent player, buzzer and
   tile together.
+- **Tie-break** — sudden death when the game ends level: the tied sides only,
+  first correct answer wins, nothing scored. Optional clue written beside the
+  final; the host can rerun it or award it by hand if nobody takes it.
 - **The final clue** — blind wagers, written answers against a clock, and a
   reveal that turns players over poorest first. Wagers and answers are projected
   per viewer, so no player sees another's before the host opens it.

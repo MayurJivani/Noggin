@@ -1104,3 +1104,171 @@ test("correction never applies to the sound-check or an early press", () => {
   G.selectClue(room, 0, 0)
   assert.deepEqual(kinds(G.buzz(room, "p0", 20)), ["buzz-early"], "jumping the gun is still jumping the gun")
 })
+
+// ── The tie-break ────────────────────────────────────────────────────────────
+
+/** A finished game with `scores` handed out, in player order. */
+function ended(scores, settings = {}) {
+  const room = setup(scores.length, settings)
+  room.board.tiebreak = { prompt: "Name it", media: null, answer: "That", answerMedia: null }
+  scores.forEach((s, i) => (room.players.get(`p${i}`).score = s))
+  room.phase = G.PHASE.ENDED
+  return room
+}
+
+test("a clear winner is not a tie", () => {
+  const room = ended([500, 300, 100])
+  assert.equal(G.isTied(room), false)
+  assert.deepEqual(G.openTiebreak(room), [], "and there is nothing to play off")
+  assert.equal(room.phase, G.PHASE.ENDED)
+  assert.equal(G.projectState(room, "host").tied, null)
+})
+
+test("level at the top is, whatever is happening below it", () => {
+  const room = ended([500, 500, 100])
+  assert.deepEqual(
+    G.leaders(room).map((u) => u.id).sort(),
+    ["p0", "p1"],
+    "third place is not in it",
+  )
+  assert.deepEqual(G.projectState(room, "display").tied.sort(), ["p0", "p1"])
+})
+
+test("a tie mid-game is just the state of play", () => {
+  const room = setup(2)
+  room.players.get("p0").score = 400
+  room.players.get("p1").score = 400
+  assert.deepEqual(G.openTiebreak(room), [], "nothing to decide until there is nothing left to play")
+})
+
+test("sudden death is for the tied sides and nobody else", () => {
+  const room = ended([500, 500, 100])
+  G.openTiebreak(room)
+  assert.equal(room.phase, G.PHASE.TIEBREAK)
+  G.armBuzzer(room, 0)
+
+  assert.deepEqual(G.buzz(room, "p2", 10), [], "third place would be deciding somebody else's play-off")
+  assert.deepEqual(kinds(G.buzz(room, "p1", 20)), ["buzz-in"])
+})
+
+test("the winner is recorded as a winner, not as a point", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judgeTiebreak(room, true)
+
+  assert.equal(room.winner, "p0")
+  assert.equal(room.phase, G.PHASE.ENDED)
+  assert.equal(room.players.get("p0").score, 500, "the scores were level and they stay level")
+  assert.equal(room.players.get("p1").score, 500)
+  assert.equal(G.projectState(room, "display").winner, "p0")
+  assert.equal(G.projectState(room, "display").tied, null, "settled, so no longer offered")
+})
+
+test("a wrong answer puts that side out and leaves it to the other", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judgeTiebreak(room, false)
+
+  assert.deepEqual(room.tiebreak.spent, ["p0"])
+  assert.equal(room.phase, G.PHASE.TIEBREAK, "still to be settled")
+  assert.equal(room.winner, null)
+
+  G.armBuzzer(room, 100)
+  assert.deepEqual(G.buzz(room, "p0", 110), [], "and cannot have another go")
+  assert.deepEqual(kinds(G.buzz(room, "p1", 120)), ["buzz-in"])
+})
+
+test("nobody getting it is not a win by elimination", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judgeTiebreak(room, false)
+  G.armBuzzer(room, 100)
+  G.buzz(room, "p1", 110)
+  const fx = G.judgeTiebreak(room, false)
+
+  assert.deepEqual(kinds(fx), ["tiebreak-missed"])
+  assert.equal(room.winner, null, "the last one standing answered nothing either")
+  assert.equal(room.phase, G.PHASE.TIEBREAK)
+
+  // The host runs another.
+  G.tiebreakAgain(room, 200)
+  assert.deepEqual(room.tiebreak.spent, [])
+  assert.equal(room.tiebreak.round, 2)
+  assert.deepEqual(kinds(G.buzz(room, "p0", 210)), ["buzz-in"], "everyone is back in")
+})
+
+test("the host can settle it by hand when the room settles it another way", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  G.awardTiebreak(room, "p1")
+  assert.equal(room.winner, "p1")
+  assert.equal(room.phase, G.PHASE.ENDED)
+  assert.deepEqual(G.awardTiebreak(room, "p0"), [], "and only once")
+})
+
+test("only a contender can be awarded it", () => {
+  const room = ended([500, 500, 100])
+  G.openTiebreak(room)
+  assert.deepEqual(G.awardTiebreak(room, "p2"), [], "third place did not tie for anything")
+  assert.equal(room.winner, null)
+})
+
+test("teams tie as teams", () => {
+  const { room, a, b } = teamed(4)
+  a.score = 800
+  b.score = 800
+  room.board.tiebreak = { prompt: "?", media: null, answer: "!", answerMedia: null }
+  room.phase = G.PHASE.ENDED
+
+  assert.deepEqual(G.leaders(room).map((u) => u.id).sort(), [a.id, b.id].sort())
+  G.openTiebreak(room)
+  G.armBuzzer(room, 0)
+
+  const one = G.membersOf(room, a.id).map((p) => p.id)
+  assert.deepEqual(kinds(G.buzz(room, one[0], 10)), ["buzz-in"])
+  G.judgeTiebreak(room, true)
+  assert.equal(room.winner, a.id, "the side wins it, not the phone that pressed")
+  assert.equal(a.score, 800)
+})
+
+test("the tie-break clue is served like any other, and redacted like one", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+
+  assert.equal(G.projectState(room, "display").clue.prompt, "Name it")
+  assert.equal(G.projectState(room, "display").clue.answer, null, "not before the reveal")
+  assert.equal(G.projectState(room, "host").clue.answer, "That", "the host always has it")
+
+  G.revealAnswer(room)
+  assert.equal(G.projectState(room, "display").clue.answer, "That")
+})
+
+test("a play-off in flight is never resumed into", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  const back = G.restoreRoom("TEST", G.snapshotRoom(room))
+  assert.equal(back.phase, G.PHASE.ENDED, "resuming a moment three days later is not resuming a game")
+  assert.equal(G.isTied(back), true, "but it is still tied, so it can be offered again")
+})
+
+test("a settled winner survives being saved", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  G.awardTiebreak(room, "p0")
+  assert.equal(G.restoreRoom("TEST", G.snapshotRoom(room)).winner, "p0")
+})
+
+test("resetting the game forgets who won", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  G.awardTiebreak(room, "p0")
+  G.resetGame(room)
+  assert.equal(room.winner, null)
+  assert.equal(room.tiebreak, null)
+})

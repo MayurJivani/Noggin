@@ -201,7 +201,16 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
   const penalty = useCountdown(lockedUntil > Date.now() ? lockedUntil : null, now)
   const onPenalty = (penalty ?? 0) > 0
 
-  const live = phase === "clue" && !!me && !state.paused
+  /*
+    Sudden death. Only the tied sides may press — a buzzer that still worked for
+    everyone else would decide somebody else's play-off by accident.
+  */
+  const tb = state.tiebreak
+  const myUnit = state.unit ?? me?.id
+  const inTiebreak = !!tb && tb.contenders.includes(myUnit)
+  const tbOut = !!tb && tb.spent.includes(myUnit)
+
+  const live = (phase === "clue" || (phase === "tiebreak" && inTiebreak && !tbOut)) && !!me && !state.paused
   const team = state.teams?.find((t) => t.members.includes(me?.id))
 
   /*
@@ -221,7 +230,17 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
   // visibly been pressed and a screen that says nothing happened.
   const settling = !!buzzer.settleUntil && buzzer.order?.some((e) => e.playerId === me?.id)
 
-  const status = testing
+  const status = tb
+    ? !inTiebreak
+      ? { text: "Tie-break — watch", tone: "dim" }
+      : tbOut
+        ? { text: "Out of the tie-break", tone: "dim" }
+        : iHoldIt
+          ? { text: "You're in — to win it", tone: "live" }
+          : buzzer.armed
+            ? { text: "Sudden death — buzz!", tone: "live" }
+            : { text: "Tie-break — wait for it", tone: "good" }
+    : testing
     ? heard
       ? { text: "Buzzer works ✓", tone: "good" }
       : { text: "Buzzer test — press it", tone: "live" }
@@ -363,6 +382,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
           canBuzz={canBuzz && connected}
           iHoldIt={iHoldIt || heard}
           label={testing ? (heard ? "✓" : "TEST") : iHoldIt ? "GO" : "BUZZ"}
+          watching={!!tb && !inTiebreak}
           disabled={!testing && (spent || onPenalty)}
           pressed={pressed}
           onPress={press}
@@ -412,7 +432,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
  * Events, and on those the buzzer simply did nothing. Falling back to `onClick`
  * would work but costs the ~300ms the fallback exists to avoid.
  */
-function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, offline = false, roomy = false, label = "BUZZ" }) {
+function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, offline = false, roomy = false, label = "BUZZ", watching = false }) {
   const lastFire = useRef(0)
 
   /**
@@ -445,6 +465,7 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, o
     onPress()
   }
 
+  if (watching) disabled = true
   const face = iHoldIt
     ? "from-live to-[#c99411] border-live text-[#17110a]"
     : canBuzz

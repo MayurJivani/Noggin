@@ -159,7 +159,8 @@ function Stage({ code, state, connected, error, audioOn, flash, splash, origin, 
         {phase === "lobby" && <Lobby code={state.code} players={players} teams={state.teams} title={board.title} check={state.check} />}
         {phase === "final" && <FinalStage state={state} now={() => Date.now()} />}
         {phase === "intermission" && <Interlude title="Round cleared" rows={rows} sub={board.round?.name} />}
-        {phase === "ended" && <Interlude title="Final scores" rows={rows} final />}
+        {phase === "ended" && <Interlude title="Final scores" rows={rows} final winner={state.winner} tied={state.tied} />}
+        {phase === "tiebreak" && <Tiebreak state={state} rows={rows} />}
 
         {(phase === "board" || phase === "clue" || phase === "wager" || phase === "reveal") && (
           <div className="relative h-full w-full">
@@ -301,7 +302,63 @@ function Lobby({ code, players, teams, title, check }) {
   )
 }
 
-function Interlude({ title, rows, sub, final = false }) {
+/**
+ * Sudden death, on the big screen.
+ *
+ * The room needs to know two things at a glance: that this is happening, and
+ * who it is between. Everyone else is out of it and should be able to see that
+ * they are — a player still poised over their buzzer during someone else's
+ * play-off is the confusion worth spending a whole screen to avoid.
+ */
+function Tiebreak({ state, rows }) {
+  const tb = state.tiebreak
+  const name = (id) => rows.find((r) => r.id === id)?.name ?? "?"
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[6vmin] text-center">
+      <div className="font-display uppercase tracking-[0.3em] text-live animate-glow" style={{ fontSize: "max(18px, calc(var(--stage) * 3))" }}>
+        Tie-break{tb.round > 1 ? ` · ${tb.round}` : ""}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-center gap-[2vmin]">
+        {tb.contenders.map((id) => {
+          const out = tb.spent.includes(id)
+          return (
+            <div
+              key={id}
+              className={`rounded-[1.2vmin] border-[0.35vmin] px-[3vmin] py-[1.2vmin] font-display uppercase transition-all ${
+                out ? "border-edge text-faint opacity-50 line-through" : "border-gold bg-royal/40 text-gold"
+              }`}
+              style={{ fontSize: "max(14px, calc(var(--stage) * 2.6))" }}
+            >
+              {name(id)}
+            </div>
+          )
+        })}
+      </div>
+
+      <VeinLine className="w-[40vmin]" height={16} />
+
+      {state.clue?.prompt ? (
+        <p className="max-w-[42ch] font-display leading-[1.16] text-ink" style={{ fontSize: "max(20px, calc(var(--stage) * 4))" }}>
+          {state.clue.prompt}
+        </p>
+      ) : (
+        <p className="text-muted" style={{ fontSize: "max(13px, calc(var(--stage) * 2))" }}>
+          First correct answer takes it.
+        </p>
+      )}
+
+      {state.revealed && state.clue?.answer && (
+        <p className="font-display text-gold brass animate-slam" style={{ fontSize: "max(20px, calc(var(--stage) * 3.6))" }}>
+          {state.clue.answer}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function Interlude({ title, rows, sub, final = false, winner = null, tied = null }) {
   const medal = ["#f2c96b", "#c0c0c8", "#c08a5a"]
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin]">
@@ -310,6 +367,13 @@ function Interlude({ title, rows, sub, final = false }) {
         {title}
       </div>
       <VeinLine className="w-[40vmin]" height={18} />
+
+      {tied && (
+        <div className="font-display uppercase tracking-[0.25em] text-live animate-glow" style={{ fontSize: "max(13px, calc(var(--stage) * 2))" }}>
+          Level at the top
+        </div>
+      )}
+
       <div className="flex flex-col items-center gap-[1.4vmin]">
         {rows.slice(0, 8).map((row, i) => (
           <div key={row.id} className="flex items-baseline gap-[2.5vmin] animate-rise" style={{ animationDelay: `${i * 110}ms` }}>
@@ -321,6 +385,8 @@ function Interlude({ title, rows, sub, final = false }) {
               style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))", color: final && i < 3 ? medal[i] : (row.color ?? "var(--color-ink)") }}
             >
               {row.name}
+              {/* The scores stayed level; this says who actually won. */}
+              {winner === row.id && <span className="ml-[1.5vmin] text-live">♛</span>}
             </span>
             <span className="font-value tabular-nums text-gold" style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))" }}>
               {row.score}

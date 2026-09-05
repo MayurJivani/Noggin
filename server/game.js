@@ -17,6 +17,7 @@ export const PHASE = {
   REVEAL: "reveal", // answer shown
   INTERMISSION: "intermission", // between rounds
   FINAL: "final", // the last clue: wager, write, reveal
+  TIEBREAK: "tiebreak", // level at the top: sudden death, buzzer, no points
   ENDED: "ended",
 }
 
@@ -193,6 +194,17 @@ export function makeFinal() {
   return { category: "", prompt: "", media: null, answer: "", answerMedia: null, seconds: 30, enabled: false }
 }
 
+/**
+ * The one kept back in case the final leaves two people level.
+ *
+ * Not a round and not scored — it exists to answer "who won", which is the one
+ * question a quiz has to answer and the one a tie leaves open. Optional: with
+ * nothing written the host can still run the buzzer and read something out.
+ */
+export function makeTiebreak() {
+  return { prompt: "", media: null, answer: "", answerMedia: null }
+}
+
 export function makeBoard() {
   return {
     id: uid("b"),
@@ -203,6 +215,7 @@ export function makeBoard() {
       makeRound("Round 2", [400, 800, 1200, 1600, 2000]),
     ],
     final: makeFinal(),
+    tiebreak: makeTiebreak(),
   }
 }
 
@@ -226,6 +239,13 @@ export function normaliseBoard(raw) {
     answerMedia: media(raw.final?.answerMedia),
     seconds: Math.max(5, Math.min(num(raw.final?.seconds, 30), 600)),
     enabled: !!raw.final?.enabled,
+  }
+
+  board.tiebreak = {
+    prompt: str(raw.tiebreak?.prompt, 600),
+    media: media(raw.tiebreak?.media),
+    answer: str(raw.tiebreak?.answer, 300),
+    answerMedia: media(raw.tiebreak?.answerMedia),
   }
 
   const rounds = Array.isArray(raw.rounds) ? raw.rounds.slice(0, 8) : []
@@ -307,6 +327,10 @@ export function createRoom(code, settings = {}) {
     operators: new Map(),
     /** The last thing an operator did, so the other screens can see it. */
     lastAction: null,
+    /** { contenders, spent } while a tie is being played off. */
+    tiebreak: null,
+    /** Who actually won, once a tie has been settled. See `openTiebreak`. */
+    winner: null,
     /** {catIndex, clueIndex} of the clue on screen, or null. */
     active: null,
     /** Daily double bookkeeping for the clue on screen. */
@@ -688,7 +712,8 @@ export function setWager(room, id, amount) {
 }
 
 export function armBuzzer(room, now = Date.now()) {
-  if (room.phase !== PHASE.CLUE || room.paused) return []
+  // Sudden death races on the same buzzer; only who may press it differs.
+  if ((room.phase !== PHASE.CLUE && room.phase !== PHASE.TIEBREAK) || room.paused) return []
   if (room.wager) return [] // a nitro belongs to one side: no race to run
   room.buzzer.armed = true
   room.buzzer.opened = true
@@ -759,7 +784,12 @@ export function buzz(room, playerId, now = Date.now()) {
   if (room.check) return checkBuzz(room, playerId, now)
 
   const player = room.players.get(playerId)
-  if (!player || room.phase !== PHASE.CLUE) return []
+  if (!player) return []
+  if (room.phase === PHASE.TIEBREAK) {
+    // Everyone else is watching. A buzzer that still worked for them would
+    // decide the game by accident.
+    if (!inTiebreak(room, playerId)) return []
+  } else if (room.phase !== PHASE.CLUE) return []
   // A frozen room takes no presses. The clue is still on screen and the button
   // is still under a thumb, so this has to be refused here rather than trusted
   // to every client remembering to grey itself out.
@@ -978,6 +1008,14 @@ export function undoJudgement(room) {
 
 /** Show the answer without anyone getting it — "nobody? it was …". */
 export function revealAnswer(room) {
+  // Sudden death has an answer to turn over too, but no tile to mark played and
+  // no phase to move on to — it is not over until somebody has taken it.
+  if (room.phase === PHASE.TIEBREAK) {
+    room.revealed = true
+    room.buzzer.armed = false
+    room.timer = null
+    return [{ kind: "reveal" }]
+  }
   if (room.phase !== PHASE.CLUE && room.phase !== PHASE.WAGER) return []
   room.phase = PHASE.REVEAL
   room.revealed = true
@@ -1138,6 +1176,8 @@ export function resetGame(room) {
   }
   room.paused = null
   room.check = null
+  room.tiebreak = null
+  room.winner = null
   room.phase = PHASE.LOBBY
   room.roundIndex = 0
   room.active = null
@@ -1271,6 +1311,121 @@ export function judgeFinal(room, correct) {
   return effects
 }
 
+// ── The tie-break ────────────────────────────────────────────────────────────
+
+/**
+ * Level at the top, with nothing left to play.
+ *
+ * A quiz has to answer one question and a tie leaves it open, so this is sudden
+ * death: the tied sides and nobody else, one clue, first correct answer takes
+ * it. Everyone else watches, which is the point — they are not in it, and a
+ * buzzer that still worked for them would decide the game by accident.
+ *
+ * **Nothing is scored.** The scores were tied and they stay tied; what the
+ * tie-break produces is a *winner*, which is a different fact and is recorded
+ * as one. Awarding a point instead would leave the board saying something that
+ * did not happen, and someone would notice.
+ */
+export function leaders(room) {
+  const all = sides(room)
+  if (!all.length) return []
+  const top = Math.max(...all.map((u) => u.score))
+  return all.filter((u) => u.score === top)
+}
+
+/** True when the game cannot be called on the scores alone. */
+export const isTied = (room) => leaders(room).length > 1
+
+export function openTiebreak(room) {
+  // Only from a finished game: a tie mid-round is just the current state of
+  // play, and playing it off would be deciding a race nobody has run yet.
+  if (room.phase !== PHASE.ENDED) return []
+  const contenders = leaders(room)
+  if (contenders.length < 2) return []
+
+  room.phase = PHASE.TIEBREAK
+  room.winner = null
+  room.revealed = false
+  room.timer = null
+  room.active = null
+  room.wager = null
+  resetBuzzerState(room)
+  room.tiebreak = { contenders: contenders.map((u) => u.id), spent: [], round: 1 }
+  return [{ kind: "tiebreak-open", contenders: room.tiebreak.contenders }]
+}
+
+/** Is this player's side in the play-off? Everyone else is a spectator. */
+export function inTiebreak(room, playerId) {
+  if (!room.tiebreak) return false
+  const unit = scorer(room, playerId)
+  return !!unit && room.tiebreak.contenders.includes(unit.id) && !room.tiebreak.spent.includes(unit.id)
+}
+
+/**
+ * Rule on the sudden-death answer.
+ *
+ * Right takes the game. Wrong puts that side out and leaves it to the others —
+ * and if it puts the last one out, nobody has won it and the host runs another.
+ */
+export function judgeTiebreak(room, correct, target = judgeTarget(room)) {
+  if (room.phase !== PHASE.TIEBREAK) return []
+  const unit = scorer(room, target)
+  if (!unit) return []
+
+  room.timer = null
+  room.buzzer.armed = false
+  room.buzzer.winner = null
+
+  if (correct) {
+    room.winner = unit.id
+    room.revealed = true
+    room.phase = PHASE.ENDED
+    record(unit, 0, "tiebreak-win", "Tie-break")
+    return [{ kind: "tiebreak-won", unitId: unit.id }, { kind: "game-end" }]
+  }
+
+  if (!room.tiebreak.spent.includes(unit.id)) room.tiebreak.spent.push(unit.id)
+  const left = room.tiebreak.contenders.filter((id) => !room.tiebreak.spent.includes(id))
+
+  // One left standing is not a winner — they have not answered anything. The
+  // host runs it again rather than the game awarding it by elimination.
+  if (left.length === 0) {
+    room.revealed = true
+    return [{ kind: "tiebreak-missed" }]
+  }
+  return [{ kind: "wrong", unitId: unit.id }]
+}
+
+/** Another go: same contenders, clean slate, because nobody got the last one. */
+export function tiebreakAgain(room, now = Date.now()) {
+  if (room.phase !== PHASE.TIEBREAK) return []
+  room.tiebreak.spent = []
+  room.tiebreak.round += 1
+  room.revealed = false
+  resetBuzzerState(room)
+  room.buzzer.armed = true
+  room.buzzer.opened = true
+  room.buzzer.openedAt = now
+  return [{ kind: "tiebreak-again", round: room.tiebreak.round }]
+}
+
+/**
+ * Call it by hand.
+ *
+ * Sometimes the room settles it another way — a coin, a closest-to, a
+ * concession — and the host needs to record the outcome without pretending a
+ * buzzer decided it.
+ */
+export function awardTiebreak(room, unitId) {
+  if (room.phase !== PHASE.TIEBREAK) return []
+  const unit = scorer(room, unitId)
+  if (!unit || !room.tiebreak.contenders.includes(unit.id)) return []
+  room.winner = unit.id
+  room.phase = PHASE.ENDED
+  room.buzzer.armed = false
+  return [{ kind: "tiebreak-won", unitId: unit.id }, { kind: "game-end" }]
+}
+
 // ── Save / resume ────────────────────────────────────────────────────────────
 
 /**
@@ -1290,6 +1445,7 @@ export function snapshotRoom(room) {
     board: room.board,
     settings: room.settings,
     phase: room.phase === PHASE.CLUE || room.phase === PHASE.WAGER || room.phase === PHASE.REVEAL ? PHASE.BOARD : room.phase,
+    winner: room.winner ?? null,
     roundIndex: room.roundIndex,
     players: [...room.players.values()].map((p) => ({
       id: p.id,
@@ -1319,12 +1475,16 @@ export function restoreRoom(code, snapshot) {
   if (!snapshot) return room
 
   room.board = normaliseBoard(snapshot.board)
+  room.winner = typeof snapshot.winner === "string" ? snapshot.winner : null
   room.roundIndex = Math.max(0, Math.min(num(snapshot.roundIndex, 0), room.board.rounds.length - 1))
   room.phase = Object.values(PHASE).includes(snapshot.phase) ? snapshot.phase : PHASE.LOBBY
   // Never resume into a clue: `snapshotRoom` refuses to save one, but a
   // hand-edited or older snapshot must not be able to strand the display on a
   // clue the room has no memory of.
   if (room.phase === PHASE.CLUE || room.phase === PHASE.WAGER || room.phase === PHASE.REVEAL) room.phase = PHASE.BOARD
+  // A play-off in flight is as transient as a buzzer race. Coming back to one
+  // three days later would be resuming a moment, not a game.
+  if (room.phase === PHASE.TIEBREAK) room.phase = PHASE.ENDED
 
   for (const t of snapshot.teams ?? []) {
     if (!t?.id) continue
@@ -1386,6 +1546,13 @@ export function projectState(room, role, viewerId = null) {
     },
   }
 
+  /*
+    In sudden death the clue on screen is the tie-break's. Presenting it through
+    the same `clue` field means the big screen, the cue cards and the phones all
+    draw it with the machinery they already have, under the same redaction.
+  */
+  const tb = room.phase === PHASE.TIEBREAK ? room.board.tiebreak : null
+
   const showAnswer = privileged || room.revealed
   /*
     Whether a phone gets the words at all.
@@ -1402,7 +1569,20 @@ export function projectState(room, role, viewerId = null) {
   */
   const mirrored = privileged || role !== "player" || room.settings.mirrorClue !== false
   const hidden = !mirrored || (room.phase === PHASE.WAGER && !privileged)
-  const clue = active && {
+  const clue = tb
+    ? {
+        id: "tiebreak",
+        value: 0,
+        prompt: mirrored ? tb.prompt : "",
+        media: mirrored ? tb.media : null,
+        nitro: false,
+        answer: showAnswer && mirrored ? tb.answer : null,
+        answerMedia: showAnswer && mirrored ? tb.answerMedia : null,
+        catIndex: -1,
+        clueIndex: -1,
+        category: "Tie-break",
+      }
+    : active && {
     id: active.id,
     value: active.value,
     prompt: hidden ? "" : active.prompt,
@@ -1449,6 +1629,14 @@ export function projectState(room, role, viewerId = null) {
     // press landed, and the big screen showing "testing" beats it showing a
     // lobby while the host is plainly doing something.
     check: room.check ? { since: room.check.openedAt, hits: room.check.hits, complete: checkComplete(room) } : null,
+    /*
+      The play-off. `tied` is offered whenever the game is over and level, so
+      the desk can propose one without every screen recomputing the leaders.
+    */
+    tiebreak: room.tiebreak && room.phase === PHASE.TIEBREAK ? { ...room.tiebreak, hasClue: !!room.board.tiebreak?.prompt } : null,
+    tied: room.phase === PHASE.ENDED && !room.winner && isTied(room) ? leaders(room).map((u) => u.id) : null,
+    /** Set once a tie has been settled — the scores stay level, someone won. */
+    winner: room.winner ?? null,
     final: projectFinal(room, privileged, viewerId),
     wager: room.wager,
     revealed: room.revealed,

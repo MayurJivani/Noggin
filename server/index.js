@@ -1119,6 +1119,10 @@ const ACTION_LABELS = {
   "final:start": "showed the final clue",
   "final:reveal": "started revealing",
   "final:judge": "ruled on the final",
+  "tiebreak:open": "started a tie-break",
+  "tiebreak:judge": "ruled on the tie-break",
+  "tiebreak:again": "reran the tie-break",
+  "tiebreak:award": "awarded the tie-break",
   "lifeline:grant": "started a phone call",
   "game:reset": "reset the game",
   "room:delete": "deleted the game",
@@ -1287,6 +1291,16 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.revealFinal(room))
     case "final:judge":
       return apply(room, G.judgeFinal(room, !!msg.correct))
+
+    // ── Level at the top ──
+    case "tiebreak:open":
+      return apply(room, G.openTiebreak(room))
+    case "tiebreak:judge":
+      return apply(room, G.judgeTiebreak(room, !!msg.correct, msg.unitId))
+    case "tiebreak:again":
+      return apply(room, G.tiebreakAgain(room))
+    case "tiebreak:award":
+      return apply(room, G.awardTiebreak(room, msg.unitId))
     case "clue:reveal":
       return apply(room, G.revealAnswer(room))
     case "clue:close":

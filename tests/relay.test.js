@@ -1205,3 +1205,85 @@ test("a reset turns out the sessions that were already open", async () => {
 
   assert.equal((await me()).user, null, "a reset that leaves the old session alive has reset nothing")
 })
+
+test("a tie after the final is played off, over the wire", async (t) => {
+  const host = client("host", { surface: "desk" })
+  await host.ready
+  const code = host.identity.code
+  host.send("board:set", { board: { ...BOARD, tiebreak: { prompt: "Name it", answer: "That" } } })
+  await settle()
+
+  const screen = client("display", { code })
+  const ann = client("player", { code, name: "Ann" })
+  const ben = client("player", { code, name: "Ben" })
+  const cal = client("player", { code, name: "Cal" })
+  await Promise.all([screen.ready, ann.ready, ben.ready, cal.ready])
+  await settle()
+
+  const id = (c) => c.identity.playerId
+  host.send("score:set", { playerId: id(ann), score: 500 })
+  host.send("score:set", { playerId: id(ben), score: 500 })
+  host.send("score:set", { playerId: id(cal), score: 100 })
+  host.send("game:start")
+  await settle()
+  // Clear the board so the game is genuinely over.
+  for (const [ci, qi] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+    host.send("clue:select", { catIndex: ci, clueIndex: qi })
+    host.send("clue:reveal")
+    host.send("clue:close")
+    await settle(60)
+  }
+  await settle()
+
+  await t.test("the room is told it is level, and by whom", () => {
+    assert.equal(host.state.phase, "ended")
+    assert.deepEqual([...(screen.state.tied ?? [])].sort(), [id(ann), id(ben)].sort())
+  })
+
+  host.send("tiebreak:open")
+  await settle()
+
+  await t.test("only the tied sides can press", async () => {
+    assert.equal(screen.state.phase, "tiebreak")
+    host.send("buzzer:arm")
+    await settle()
+
+    cal.drain()
+    cal.send("buzz")
+    await settle()
+    assert.ok(!cal.drain().includes("buzz-in"), "third place is watching, not playing")
+
+    ann.send("buzz")
+    await settle()
+    assert.equal(host.state.buzzer.winner, id(ann))
+  })
+
+  await t.test("a miss puts that side out and leaves it to the other", async () => {
+    host.send("tiebreak:judge", { correct: false })
+    await settle()
+    assert.deepEqual(host.state.tiebreak.spent, [id(ann)])
+    assert.equal(host.state.phase, "tiebreak", "nobody has won it yet")
+
+    host.send("buzzer:arm")
+    await settle()
+    ann.drain()
+    ann.send("buzz")
+    await settle()
+    assert.ok(!ann.drain().includes("buzz-in"), "and does not get another go")
+  })
+
+  await t.test("the winner is crowned without the scores moving", async () => {
+    ben.send("buzz")
+    await settle()
+    host.send("tiebreak:judge", { correct: true })
+    await settle()
+
+    assert.equal(screen.state.winner, id(ben))
+    assert.equal(screen.state.phase, "ended")
+    const scores = Object.fromEntries(screen.state.players.map((p) => [p.name, p.score]))
+    assert.deepEqual(scores, { Ann: 500, Ben: 500, Cal: 100 }, "they tied, and they still have")
+    assert.equal(screen.state.tied, null, "settled, so not offered again")
+  })
+
+  for (const c of [host, screen, ann, ben, cal]) c.ws.close()
+})
