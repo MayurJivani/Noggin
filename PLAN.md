@@ -25,6 +25,10 @@ What exists, and what is deliberately left for later.
 - **The cue cards** (`/cards`) — the tablet a host reads from: the clue, the
   answer, a grid to pick the next one, and the verdict under a thumb. The
   "slimmer host tab" the original plan wanted, finally.
+- **Screens that stay awake** — every screen that has to keep working unattended
+  holds a wake lock, re-acquired whenever the page comes back, with a muted-clip
+  fallback for iOS before 16.4 and an honest hint on the phone when neither
+  works.
 - **Operators** — the desk, the cue cards and the controller can see each other
   and what the last one of them did, with the surface they did it from. Shown to
   operators only; players and the big screen see none of it.
@@ -134,3 +138,5 @@ holding, so it avoids things that are absent or hostile on real devices:
   accumulates a hundred rows; the front page shows the most recent and the rest
   just sit there.
 - The big screen assumes a landscape display and a room that can see it.
+- The end-of-round and final-scores lists on the big screen show the top eight.
+  With more players than that the rest are on `/scores` rather than the TV.

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { holdsBuzz, isCalling, isSpent, rows as sideRows, wagerOf } from "../../lib/sides"
 import { scoreSize, useRolling } from "../../lib/useRolling"
+import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
@@ -32,6 +33,9 @@ export function PodiumApp() {
   const [error, setError] = useState(null)
   const { state, connected } = useRoom({ role: "display", code, onError: setError })
   const now = useCallback(() => Date.now(), [])
+
+  // A booth tablet that sleeps stops being a scoreboard.
+  useWakeLock()
 
   if (!code) return <Frame><CodeForm /></Frame>
   if (error) return <Frame><span className="text-muted">{error.message}</span></Frame>

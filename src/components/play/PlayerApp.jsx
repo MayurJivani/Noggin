@@ -3,6 +3,7 @@ import { useCountdown, useRoom } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
 import { readJson, removeStore, writeJson } from "../../lib/storage"
+import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
 import { FinalPanel } from "./FinalPanel"
@@ -168,6 +169,17 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
   const now = useCallback(() => Date.now(), [])
 
   /*
+    Keep the phone awake.
+
+    This is the single most avoidable way to lose a buzz. A phone locks after
+    thirty seconds; a locked phone has to be woken, unlocked and have the tab
+    found again, by which point the clue is long over — and the player has no
+    idea they were ever out of the game. Requested here rather than on the join
+    screen because the join tap is the gesture some browsers insist on.
+  */
+  const wake = useWakeLock()
+
+  /*
     Whether this phone shows the clue is the host's call, made from their desk.
 
     There is nothing to toggle here: with the setting off the relay does not
@@ -302,6 +314,14 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
         {connected && rtt != null && (
           <div className="mt-0.5 text-center text-[0.65rem] text-faint">
             {rtt}ms to the host{rtt > 400 ? " · slow connection" : ""}
+          </div>
+        )}
+        {/* Only when we could not take the lock. Saying "screen staying on" when
+            it is working would be a badge nobody asked for; saying nothing when
+            it is *not* working is how someone misses a clue. */}
+        {!wake.held && (
+          <div className="mt-0.5 text-center text-[0.65rem] text-live">
+            Keep your screen on — this phone won't stay awake by itself
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useRoom } from "../../lib/useRoom"
 import { playForEffect, unlock, isUnlocked, music } from "../../lib/sfx"
 import { nameOf, rows as sideRows } from "../../lib/sides"
+import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
@@ -65,6 +66,9 @@ export function DisplayStage({ code: initialCode }) {
   const { state, connected, send } = useRoom({ role: "display", code, onEffects, onError: setError })
   void send
 
+  // A projector that sleeps mid-round is the worst failure mode there is.
+  useWakeLock()
+
   // Nothing on this page is clickable, so the audio gesture has to be caught
   // wherever it lands — one tap anywhere arms the cues for the night.
   useEffect(() => {
@@ -77,21 +81,6 @@ export function DisplayStage({ code: initialCode }) {
     return () => {
       window.removeEventListener("pointerdown", arm)
       window.removeEventListener("keydown", arm)
-    }
-  }, [])
-
-  // A projector that sleeps mid-round is the worst failure mode there is.
-  useEffect(() => {
-    let lock
-    navigator.wakeLock
-      ?.request("screen")
-      .then((l) => (lock = l))
-      .catch(() => {})
-    const reacquire = () => document.visibilityState === "visible" && navigator.wakeLock?.request("screen").then((l) => (lock = l)).catch(() => {})
-    document.addEventListener("visibilitychange", reacquire)
-    return () => {
-      document.removeEventListener("visibilitychange", reacquire)
-      lock?.release?.().catch(() => {})
     }
   }, [])
 

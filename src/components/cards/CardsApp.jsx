@@ -7,6 +7,7 @@ import { AuthLoading, SignIn } from "../auth/SignIn"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { Operators } from "../ui/Operators"
+import { useWakeLock } from "../../lib/useWakeLock"
 
 /**
  * Cue cards: what the host holds.
@@ -69,6 +70,9 @@ export function CardsApp() {
 function CueCards({ state, send, connected }) {
   const { phase, clue, board, buzzer } = state
   const now = useCallback(() => Date.now(), [])
+
+  // Nobody wants to unlock a tablet between every clue.
+  useWakeLock()
   /** The grid, pulled up over a clue when the host wants to see what's left. */
   const [browsing, setBrowsing] = useState(false)
 

@@ -434,6 +434,27 @@ included, even on the reveal. The one exception is the final clue, which is
 played *on* the phones by writing an answer; withholding it there wouldn't hide
 the round, it would end it.
 
+## Keeping the screen on
+
+A phone locks itself after thirty seconds, and a locked phone is a player who
+cannot buzz: they have to wake it, unlock it and find the tab, by which point
+the clue is over — and they never learn they were out of the game. It is the
+most avoidable way to lose a race and it happens to somebody every time.
+
+So `/play`, `/display`, `/cards`, `/control`, `/podium` and `/scores` all hold a
+**screen wake lock** for as long as they are open. Two mechanisms: the Wake Lock
+API where it exists (Chrome/Android 84+, Safari 16.4+), and a muted looping
+1px video for iOS 16.3 and earlier, which will not sleep while it believes it
+is playing something.
+
+The part that matters, and the part most implementations get wrong: **a wake
+lock is released for you the moment the page is hidden, and does not come
+back**. Glance at a notification and it is gone. So it is re-acquired on every
+return to visibility — and rather than trusting the browser to fire a `release`
+event, the sentinel is asked whether it is still alive at the one moment that
+matters. If the lock cannot be taken at all, the player's screen says so
+instead of pretending.
+
 ## Reconnection
 
 Everything survives a reload, and everything survives the network going away.

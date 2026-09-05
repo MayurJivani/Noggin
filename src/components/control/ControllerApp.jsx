@@ -4,6 +4,7 @@ import { useAuth } from "../../lib/useAuth"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
 import { holdsBuzz, isSpent, nameOf, rows as sideRows } from "../../lib/sides"
 import { Operators } from "../ui/Operators"
+import { useWakeLock } from "../../lib/useWakeLock"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
@@ -101,6 +102,9 @@ function Console({ state, send, connected, auth, viaKey }) {
   const { phase, board, clue, players, buzzer, timer, lifeline } = state
   const round = board.round
   const now = useCallback(() => Date.now(), [])
+
+  // Nobody wants to unlock a tablet between every clue.
+  useWakeLock()
   // Sides, so a team nitro — which has no single holder — still gets a ✓/✕.
   const rows = sideRows(state)
   const onTheHook = buzzer.winner ?? (state.wager ? (state.wager.teamId ?? state.wager.playerId) : null)
