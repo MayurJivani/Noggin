@@ -1119,6 +1119,9 @@ const ACTION_LABELS = {
   "final:start": "showed the final clue",
   "final:reveal": "started revealing",
   "final:judge": "ruled on the final",
+  "survey:reveal": "opened a survey answer",
+  "survey:strike": "gave a strike",
+  "survey:close": "ended the survey round",
   "tiebreak:open": "started a tie-break",
   "tiebreak:judge": "ruled on the tie-break",
   "tiebreak:again": "reran the tie-break",
@@ -1291,6 +1294,14 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.revealFinal(room))
     case "final:judge":
       return apply(room, G.judgeFinal(room, !!msg.correct))
+
+    // ── The survey round ──
+    case "survey:reveal":
+      return apply(room, G.revealSurvey(room, Number(msg.index), msg.unitId))
+    case "survey:strike":
+      return apply(room, G.strikeSurvey(room, msg.unitId))
+    case "survey:close":
+      return apply(room, G.closeSurvey(room))
 
     // ── Level at the top ──
     case "tiebreak:open":

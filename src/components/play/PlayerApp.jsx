@@ -210,7 +210,10 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
   const inTiebreak = !!tb && tb.contenders.includes(myUnit)
   const tbOut = !!tb && tb.spent.includes(myUnit)
 
-  const live = (phase === "clue" || (phase === "tiebreak" && inTiebreak && !tbOut)) && !!me && !state.paused
+  /** The survey round is raced on the buzzer, not written on the phone. */
+  const survey = phase === "final" && state.final?.kind === "survey" && state.final?.stage === "survey"
+
+  const live = (phase === "clue" || survey || (phase === "tiebreak" && inTiebreak && !tbOut)) && !!me && !state.paused
   const team = state.teams?.find((t) => t.members.includes(me?.id))
 
   /*
@@ -230,7 +233,13 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
   // visibly been pressed and a screen that says nothing happened.
   const settling = !!buzzer.settleUntil && buzzer.order?.some((e) => e.playerId === me?.id)
 
-  const status = tb
+  const status = survey
+    ? iHoldIt
+      ? { text: "You're in — name one", tone: "live" }
+      : buzzer.armed
+        ? { text: "Survey — buzz to answer", tone: "good" }
+        : { text: "Survey — wait for it", tone: "dim" }
+    : tb
     ? !inTiebreak
       ? { text: "Tie-break — watch", tone: "dim" }
       : tbOut
@@ -352,7 +361,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
         )}
       </div>
 
-      {phase === "final" && <FinalPanel state={state} me={me} send={send} />}
+      {phase === "final" && !survey && <FinalPanel state={state} me={me} send={send} />}
 
       {/* The clue, quietly. Players look at the TV; this is for the person at
           the back who can't, and for audio clues they want in their own ear.
@@ -377,7 +386,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
         </div>
       )}
 
-      <div className={`relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-3 ${phase === "final" ? "hidden" : ""}`}>
+      <div className={`relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-3 ${phase === "final" && !survey ? "hidden" : ""}`}>
         <BuzzerButton
           canBuzz={canBuzz && connected}
           iHoldIt={iHoldIt || heard}

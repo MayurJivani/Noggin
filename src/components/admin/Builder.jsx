@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
+  FINAL_KINDS,
   applyValues,
   boardIssues,
   boardStats,
@@ -8,6 +9,7 @@ import {
   makeBoard,
   makeCategory,
   makeRound,
+  makeSurveyAnswer,
   patchCategory,
   patchClue,
   patchRound,
@@ -573,11 +575,29 @@ function FinalEditor({ board, setBoard }) {
     <div className="panel p-4">
       <label className="flex cursor-pointer items-center gap-2">
         <input type="checkbox" checked={!!final.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
-        <span className="font-display text-base text-gold">Play a final clue</span>
+        <span className="font-display text-base text-gold">Play a final round</span>
       </label>
-      <p className="mt-1 text-[11px] leading-relaxed text-faint">
-        Everyone still in the black bets part of their score before seeing it, writes an answer on their phone, and is turned over one at a
-        time — poorest first.
+
+      {/* Two different games, so the choice comes before anything else on the
+          form — half these fields only belong to one of them. */}
+      <div className={`mt-3 flex rounded-lg border border-edge p-0.5 ${final.enabled ? "" : "pointer-events-none opacity-40"}`}>
+        {FINAL_KINDS.map((k) => (
+          <button
+            key={k}
+            className={`flex-1 rounded-md px-3 py-1.5 font-body text-[12px] font-semibold transition-colors ${
+              (final.kind ?? "classic") === k ? "bg-gold text-[#17110a]" : "text-muted hover:text-ink"
+            }`}
+            onClick={() => patch({ kind: k })}
+          >
+            {k === "classic" ? "Blind wager" : "Survey says"}
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        {(final.kind ?? "classic") === "classic"
+          ? "Everyone still in the black bets part of their score before seeing it, writes an answer on their phone, and is turned over one at a time — poorest first."
+          : "A board of hidden answers with points on them. Whoever buzzes first gets to say one; find it on the board and they take the points, miss and it is a strike and the buzzer goes back out. A scramble rather than a reckoning — which is the better ending when someone is miles ahead."}
       </p>
 
       <div className={`mt-4 space-y-3 ${final.enabled ? "" : "pointer-events-none opacity-40"}`}>
@@ -591,7 +611,7 @@ function FinalEditor({ board, setBoard }) {
               onChange={(e) => patch({ category: e.target.value })}
             />
           </label>
-          <label className="w-28">
+          <label className={`w-28 ${(final.kind ?? "classic") === "survey" ? "hidden" : ""}`}>
             <div className="label mb-1">Clock</div>
             <input
               type="number"
@@ -616,16 +636,22 @@ function FinalEditor({ board, setBoard }) {
 
         <MediaField value={final.media ?? null} onChange={(media) => patch({ media })} label="Clue media" />
 
-        <label className="block">
-          <div className="label mb-1">Answer</div>
-          <textarea
-            className="field min-h-[56px] resize-y"
-            value={final.answer ?? ""}
-            onChange={(e) => patch({ answer: e.target.value })}
-          />
-        </label>
+        {(final.kind ?? "classic") === "survey" ? (
+          <SurveyAnswers final={final} patch={patch} />
+        ) : (
+          <>
+            <label className="block">
+              <div className="label mb-1">Answer</div>
+              <textarea
+                className="field min-h-[56px] resize-y"
+                value={final.answer ?? ""}
+                onChange={(e) => patch({ answer: e.target.value })}
+              />
+            </label>
 
-        <MediaField value={final.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
+            <MediaField value={final.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
+          </>
+        )}
       </div>
 
       <TiebreakEditor board={board} setBoard={setBoard} />
@@ -641,6 +667,68 @@ function FinalEditor({ board, setBoard }) {
  * the host can still run the buzzer and read something out — but a tie is a bad
  * moment to be inventing a question, so it is worth two minutes now.
  */
+/**
+ * The survey board, top answer first.
+ *
+ * Points are typed rather than derived: a real survey number like 38 would
+ * vanish beside a board of thousands, and the author is the only one who knows
+ * whether they want "how many said it" or something that can actually change
+ * the result.
+ */
+function SurveyAnswers({ final, patch }) {
+  const answers = final.answers ?? []
+  const set = (i, p) => patch({ answers: answers.map((a, j) => (j === i ? { ...a, ...p } : a)) })
+  const total = answers.reduce((n, a) => n + (Number(a.points) || 0), 0)
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-2">
+        <span className="label">Answers on the board</span>
+        <span className="text-[10px] text-faint">
+          {answers.length} · {total} points in play
+        </span>
+      </div>
+
+      <div className="mt-1.5 space-y-1.5">
+        {answers.map((a, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <span className="w-5 shrink-0 text-center font-value text-[13px] text-gold-dim">{i + 1}</span>
+            <input
+              className="field min-w-0 flex-1 py-1 text-[12px]"
+              placeholder={i === 0 ? "The most popular answer" : "Answer"}
+              value={a.text}
+              onChange={(e) => set(i, { text: e.target.value })}
+            />
+            <input
+              type="number"
+              min={0}
+              className="field w-20 py-1 text-right font-value text-[12px]"
+              value={a.points}
+              onChange={(e) => set(i, { points: Math.max(0, +e.target.value || 0) })}
+            />
+            <button
+              className="shrink-0 px-1 text-[11px] text-faint transition-colors hover:text-bad"
+              title="Remove"
+              onClick={() => patch({ answers: answers.filter((_, j) => j !== i) })}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        {answers.length === 0 && <div className="px-1 py-2 text-[11px] text-faint">Nothing on the board yet.</div>}
+      </div>
+
+      <button
+        className="btn mt-2 w-full py-1.5 text-[11px]"
+        disabled={answers.length >= 10}
+        onClick={() => patch({ answers: [...answers, makeSurveyAnswer()] })}
+      >
+        + Answer
+      </button>
+    </div>
+  )
+}
+
 function TiebreakEditor({ board, setBoard }) {
   const tiebreak = board.tiebreak ?? {}
   const patch = (p) => setBoard({ ...board, tiebreak: { ...tiebreak, ...p } })

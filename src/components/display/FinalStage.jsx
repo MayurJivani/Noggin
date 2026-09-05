@@ -11,6 +11,7 @@ import { VeinLine } from "../ui/Vein"
  * host starts turning them over.
  */
 export function FinalStage({ state, now }) {
+  if (state.final?.kind === "survey") return <SurveyBoard state={state} />
   const f = state.final
   if (!f) return null
 
@@ -168,6 +169,86 @@ function Revealing({ final }) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+
+/**
+ * The survey board, on the big screen.
+ *
+ * Numbered slots, blank until they open — the room is guessing at them and the
+ * whole tension is not knowing how many are left worth having. A slot flips to
+ * its answer and its points, with whoever found it underneath.
+ *
+ * The strikes are deliberately enormous. They are the only thing on this board
+ * that says "that was wrong", they happen fast, and they have to read from the
+ * back of a room over the noise of everyone shouting the answer.
+ */
+function SurveyBoard({ state }) {
+  const f = state.final
+  const rows = state.teams ?? state.players
+  const name = (id) => rows.find((r) => r.id === id)?.name ?? ""
+  const slots = f.answers ?? []
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-[2vmin] px-[4vmin]">
+      <div className="label" style={{ letterSpacing: "0.4em" }}>
+        {f.category || "Survey"}
+      </div>
+      <p className="max-w-[40ch] text-center font-display leading-[1.15] text-ink" style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))" }}>
+        {f.prompt}
+      </p>
+
+      <div className="grid w-full max-w-[80vmin] gap-[1.2vmin]" style={{ gridTemplateColumns: slots.length > 5 ? "1fr 1fr" : "1fr" }}>
+        {slots.map((a) => (
+          <div
+            key={a.index}
+            className={`flex items-center gap-[1.5vmin] rounded-[1vmin] border-[0.3vmin] px-[2vmin] py-[1.2vmin] transition-all duration-500 ${
+              a.open ? "border-gold bg-royal/50" : "border-edge bg-black/40"
+            }`}
+          >
+            <span className="font-value tabular-nums text-gold-dim" style={{ fontSize: "max(12px, calc(var(--stage) * 2))" }}>
+              {a.index + 1}
+            </span>
+            {a.open ? (
+              <>
+                <span className="min-w-0 flex-1 truncate font-display uppercase text-ink animate-slam" style={{ fontSize: "max(13px, calc(var(--stage) * 2.2))" }}>
+                  {a.text}
+                </span>
+                {a.by && (
+                  <span className="shrink-0 truncate text-muted" style={{ fontSize: "max(9px, calc(var(--stage) * 1.2))" }}>
+                    {name(a.by)}
+                  </span>
+                )}
+                <span className="shrink-0 font-value tabular-nums text-gold brass-sm" style={{ fontSize: "max(15px, calc(var(--stage) * 2.6))" }}>
+                  {a.points}
+                </span>
+              </>
+            ) : (
+              // A dotted rule rather than an empty box: it reads as "something
+              // goes here", which is exactly what the room is working on.
+              <span className="min-w-0 flex-1 border-b-[0.25vmin] border-dashed border-edge" style={{ height: "max(14px, calc(var(--stage) * 2.2))" }} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {f.strikes?.length > 0 && (
+        <div className="flex gap-[1.5vmin]">
+          {f.strikes.map((_, i) => (
+            <span key={i} className="font-display text-bad animate-pop" style={{ fontSize: "max(28px, calc(var(--stage) * 5))" }}>
+              ✕
+            </span>
+          ))}
+        </div>
+      )}
+
+      {f.cleared && (
+        <div className="font-display uppercase tracking-[0.3em] text-good animate-glow" style={{ fontSize: "max(14px, calc(var(--stage) * 2.4))" }}>
+          Board cleared
+        </div>
+      )}
     </div>
   )
 }

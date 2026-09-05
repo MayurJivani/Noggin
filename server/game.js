@@ -190,8 +190,33 @@ export function makeRound(name = "Round 1", values = [200, 400, 600, 800, 1000],
  * The last clue. Everyone plays it at once, in writing, having bet first —
  * which is why it lives beside the rounds rather than in one.
  */
+/**
+ * Two shapes of last round, because they are different games.
+ *
+ * `classic` is the one this started with: everyone bets blind, writes an answer
+ * against a clock, and is turned over one at a time.
+ *
+ * `survey` is the "we asked a hundred people" round — a board of hidden answers
+ * with points on them, a buzzer race for the right to guess, and a strike when
+ * you are wrong. It is a *scramble* rather than a reckoning, which makes it the
+ * better ending when the scores are lopsided: a blind wager cannot save you
+ * from 2000 behind, and eight answers on a board can.
+ */
+export const FINAL_KINDS = ["classic", "survey"]
+
 export function makeFinal() {
-  return { category: "", prompt: "", media: null, answer: "", answerMedia: null, seconds: 30, enabled: false }
+  return {
+    kind: "classic",
+    category: "",
+    prompt: "",
+    media: null,
+    answer: "",
+    answerMedia: null,
+    seconds: 30,
+    enabled: false,
+    /** Survey only: [{ text, points }], best answer first. */
+    answers: [],
+  }
 }
 
 /**
@@ -232,6 +257,11 @@ export function normaliseBoard(raw) {
   board.updatedAt = Date.now()
 
   board.final = {
+    kind: FINAL_KINDS.includes(raw.final?.kind) ? raw.final.kind : "classic",
+    answers: (Array.isArray(raw.final?.answers) ? raw.final.answers : []).slice(0, 10).map((a) => ({
+      text: str(a?.text, 80),
+      points: Math.max(0, num(a?.points, 0)),
+    })),
     category: str(raw.final?.category, 60),
     prompt: str(raw.final?.prompt, 600),
     media: media(raw.final?.media),
@@ -712,8 +742,10 @@ export function setWager(room, id, amount) {
 }
 
 export function armBuzzer(room, now = Date.now()) {
-  // Sudden death races on the same buzzer; only who may press it differs.
-  if ((room.phase !== PHASE.CLUE && room.phase !== PHASE.TIEBREAK) || room.paused) return []
+  // Sudden death and the survey round race on the same buzzer; only who may
+  // press it, and what they win, differs.
+  const races = room.phase === PHASE.CLUE || room.phase === PHASE.TIEBREAK || (room.phase === PHASE.FINAL && room.final?.stage === "survey")
+  if (!races || room.paused) return []
   if (room.wager) return [] // a nitro belongs to one side: no race to run
   room.buzzer.armed = true
   room.buzzer.opened = true
@@ -789,6 +821,9 @@ export function buzz(room, playerId, now = Date.now()) {
     // Everyone else is watching. A buzzer that still worked for them would
     // decide the game by accident.
     if (!inTiebreak(room, playerId)) return []
+  } else if (room.phase === PHASE.FINAL) {
+    // Only the survey round races; the classic final is written, not buzzed.
+    if (room.final?.stage !== "survey") return []
   } else if (room.phase !== PHASE.CLUE) return []
   // A frozen room takes no presses. The clue is still on screen and the button
   // is still under a thumb, so this has to be refused here rather than trusted
@@ -1221,6 +1256,11 @@ export function openFinal(room) {
   room.timer = null
   room.lastJudgement = null
   resetBuzzerState(room)
+  if (room.board.final.kind === "survey") {
+    room.final = { stage: "survey", revealed: [], awards: {}, strikes: [] }
+    return [{ kind: "final-open", survey: true }]
+  }
+
   room.final = {
     stage: "wager",
     wagers: {},
@@ -1309,6 +1349,75 @@ export function judgeFinal(room, correct) {
     effects.push({ kind: "final-reveal", playerId: room.final.order[room.final.revealIndex] })
   }
   return effects
+}
+
+// ── The survey round ─────────────────────────────────────────────────────────
+
+/**
+ * "We asked a hundred people."
+ *
+ * A board of hidden answers with points on them. Whoever buzzes first gets to
+ * say one; the host either finds it on the board — which opens it and pays them
+ * — or marks a strike and the buzzer goes back out to everyone.
+ *
+ * The rule that makes it work as an ending: **it is a scramble, not a
+ * reckoning.** A blind wager cannot rescue someone 2000 behind, but eight
+ * answers on a board can, so a game that was over stays live to the last slot.
+ *
+ * Deliberately *not* modelled: control of the board, play-or-pass, and the
+ * steal. They are most of Family Feud's rulebook and all of its bookkeeping,
+ * and in a living room they turn a fast round into an argument about procedure.
+ * Every answer is its own race instead.
+ */
+export function revealSurvey(room, index, target = room.buzzer.winner) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage !== "survey") return []
+  const slot = room.board.final.answers?.[index]
+  if (!slot || room.final.revealed.includes(index)) return []
+
+  room.final.revealed.push(index)
+  room.buzzer.armed = false
+  room.timer = null
+
+  // The host can open a slot with nobody holding the buzz — reading out the
+  // ones nobody got, at the end. That pays no one, which is correct.
+  const unit = target ? scorer(room, target) : null
+  if (unit) {
+    room.final.awards[index] = unit.id
+    unit.score += slot.points
+    record(unit, slot.points, "survey", slot.text)
+  }
+  room.buzzer.winner = null
+
+  const done = room.final.revealed.length >= room.board.final.answers.length
+  const effects = [{ kind: "survey-hit", index, points: slot.points, unitId: unit?.id ?? null, score: unit?.score ?? null }]
+  if (done) effects.push({ kind: "survey-cleared" })
+  return effects
+}
+
+/** Wrong. A cross on the board, and the buzzer goes back out to everyone. */
+export function strikeSurvey(room, target = room.buzzer.winner, now = Date.now()) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage !== "survey") return []
+  const unit = target ? scorer(room, target) : null
+  room.final.strikes.push({ unitId: unit?.id ?? null, at: now })
+
+  // Straight back out: nobody is spent, because on this board a wrong answer
+  // costs you the buzz and nothing else — there are still slots to find.
+  resetBuzzerState(room)
+  room.buzzer.armed = true
+  room.buzzer.opened = true
+  room.buzzer.openedAt = now
+  room.timer = null
+  return [{ kind: "survey-strike", unitId: unit?.id ?? null }]
+}
+
+/** That's the round. Straight to the end, where a tie may still be waiting. */
+export function closeSurvey(room) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage !== "survey") return []
+  room.final.stage = "done"
+  room.phase = PHASE.ENDED
+  resetBuzzerState(room)
+  room.timer = null
+  return [{ kind: "game-end" }]
 }
 
 // ── The tie-break ────────────────────────────────────────────────────────────
@@ -1723,11 +1832,42 @@ function projectFinal(room, privileged, viewerId) {
 
   const base = {
     enabled: true,
+    kind: spec.kind ?? "classic",
     category: spec.category,
     seconds: spec.seconds,
     stage: room.final?.stage ?? null,
   }
   if (!room.final) return base
+
+  /*
+    The survey board.
+
+    A hidden slot sends its *shape* and nothing else — no text, no points. The
+    room is guessing at them, and a slot that shipped its answer with `hidden:
+    true` would be a game decided by whoever opened devtools first. The host
+    gets the lot, because they have to find the match.
+  */
+  if (room.final.stage === "survey" || room.final.stage === "done") {
+    return {
+      ...base,
+      prompt: spec.prompt,
+      media: spec.media,
+      strikes: room.final.strikes,
+      answers: (spec.answers ?? []).map((a, i) => {
+        const open = privileged || room.final.revealed.includes(i)
+        return {
+          index: i,
+          open: room.final.revealed.includes(i),
+          text: open ? a.text : null,
+          points: open ? a.points : null,
+          by: room.final.awards[i] ?? null,
+        }
+      }),
+      /** So the big screen can draw the right number of empty slots. */
+      slots: (spec.answers ?? []).length,
+      cleared: room.final.revealed.length >= (spec.answers ?? []).length,
+    }
+  }
 
   const showClue = privileged || room.final.stage === "clue" || room.final.stage === "reveal"
   const revealedIds = room.final.order.slice(0, room.final.revealIndex + 1)

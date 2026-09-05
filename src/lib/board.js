@@ -51,6 +51,9 @@ export const makeRound = (name, values = DEFAULT_VALUES, categories = 5) => ({
   categories: Array.from({ length: categories }, () => makeCategory("", values)),
 })
 
+export const FINAL_KINDS = ["classic", "survey"]
+export const makeSurveyAnswer = () => ({ text: "", points: 0 })
+
 export const makeTiebreak = () => ({ prompt: "", media: null, answer: "", answerMedia: null })
 
 export const makeBoard = () => ({

@@ -247,6 +247,36 @@ Keys, because the other hand is holding a microphone:
 | <kbd>esc</kbd> | reset the buzzer race |
 | <kbd>⌘/ctrl</kbd>+<kbd>z</kbd> | undo the last ruling |
 
+## The final round
+
+Two shapes, chosen per board on the **✦ Final** tab, because they are different
+games and suit different endings.
+
+### Survey says
+
+"We asked a hundred people." A board of hidden answers with points on them.
+Whoever buzzes first gets to say one; the host either finds it on the list —
+which opens the slot and pays them — or marks a **strike**, and the buzzer goes
+straight back out to everyone.
+
+The reason to pick it: **it is a scramble, not a reckoning.** A blind wager
+cannot rescue somebody 2000 behind, and eight answers on a board can, so a game
+that was effectively over stays live to the last slot.
+
+Three things are deliberately *not* modelled: control of the board, play-or-pass
+and the steal. They are most of Family Feud's rulebook and all of its
+bookkeeping, and in a living room they turn a fast round into an argument about
+procedure. Every answer is simply its own race.
+
+A hidden slot sends its *shape* and nothing else — no text, no points. The room
+is guessing at them, and a slot that shipped its answer alongside a `hidden`
+flag would be a round decided by whoever opened devtools. Points are typed by
+the author rather than derived from a survey percentage: a real number like 38
+would vanish beside a board of thousands.
+
+Ending the round drops into the same place every other round does — so if it
+leaves two people level, the tie-break is offered.
+
 ## The final clue
 
 Off by default; switch it on from the **✦ Final** tab in the builder. It plays

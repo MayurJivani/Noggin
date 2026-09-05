@@ -45,6 +45,10 @@ What exists, and what is deliberately left for later.
   ones; deleting a game ends it live and removes the saved copy.
 - **Undo the last ruling** — one deep, restoring score, spent player, buzzer and
   tile together.
+- **Survey final** — an optional "we asked a hundred people" last round: hidden
+  answers with points, a buzzer race per slot, strikes. A scramble rather than a
+  reckoning, so a lopsided game stays live to the end. Chosen per board
+  alongside the blind-wager final.
 - **Tie-break** — sudden death when the game ends level: the tied sides only,
   first correct answer wins, nothing scored. Optional clue written beside the
   final; the host can rerun it or award it by hand if nobody takes it.

@@ -961,6 +961,7 @@ function TimerControls({ send, timer, now }) {
 function FinalControls({ state, send }) {
   const f = state.final
   if (!f) return null
+  if (f.kind === "survey") return <SurveyControls state={state} send={send} f={f} />
   const waiting = (f.players ?? []).filter((p) => !p.wagered).length
   const unanswered = (f.players ?? []).filter((p) => !p.answered).length
   const current = (f.players ?? []).find((p) => p.id === f.current)
@@ -1044,6 +1045,78 @@ function FinalControls({ state, send }) {
         </div>
       </div>
     </Empty>
+  )
+}
+
+/**
+ * Running the survey round.
+ *
+ * The host's job is a matching problem — somebody has said a thing and it is
+ * either on this list or it is not — so the list *is* the control. Click the
+ * slot to open it and pay whoever buzzed; if it is not there, Strike.
+ */
+function SurveyControls({ state, send, f }) {
+  const holder = nameOf(state, state.buzzer.winner)
+  const rows = sideRows(state)
+  const name = (id) => rows.find((r) => r.id === id)?.name ?? "?"
+  const left = (f.answers ?? []).filter((a) => !a.open).length
+
+  return (
+    <div className="panel flex min-h-0 flex-1 flex-col p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="label">Survey · {f.category || "final round"}</span>
+        <span className="text-[11px] text-faint">{left} left</span>
+        <div className="ml-auto flex gap-1.5">
+          <button className={`btn ${state.buzzer.armed ? "" : "btn-gold"}`} onClick={() => send("buzzer:arm")}>
+            Arm <Kbd>space</Kbd>
+          </button>
+          <button className="btn hover:border-bad hover:text-bad" onClick={() => confirm("End the survey round?") && send("survey:close")}>
+            End round
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-2 font-display text-lg leading-snug text-ink">{f.prompt}</div>
+
+      {holder ? (
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-live bg-live/10 px-3 py-2 animate-pop">
+          <span className="font-display text-lg text-live">{holder}</span>
+          <span className="text-[11px] text-muted">— find it on the board, or strike</span>
+          <button className="btn btn-bad ml-auto px-4 py-2 text-sm" onClick={() => send("survey:strike")}>
+            ✕ Strike
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 text-[11px] text-faint">Arm the buzzer and let them race for it.</div>
+      )}
+
+      {/* The board. Everything the host needs is one click away because the
+          decision is "is it this one?" repeated down a list. */}
+      <div className="mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+        {(f.answers ?? []).map((a) => (
+          <button
+            key={a.index}
+            disabled={a.open}
+            onClick={() => send("survey:reveal", { index: a.index })}
+            className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+              a.open ? "border-good/50 bg-good/10" : "border-edge hover:border-gold"
+            }`}
+          >
+            <span className="w-5 shrink-0 text-center font-value text-[13px] text-gold-dim">{a.index + 1}</span>
+            <span className={`min-w-0 flex-1 truncate text-[13px] ${a.open ? "text-muted line-through" : "text-ink"}`}>{a.text}</span>
+            {a.open && a.by && <span className="shrink-0 text-[10px] text-good">{name(a.by)}</span>}
+            <span className="shrink-0 font-value text-[15px] text-gold">{a.points}</span>
+          </button>
+        ))}
+      </div>
+
+      {f.strikes?.length > 0 && (
+        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-bad">
+          strikes: {f.strikes.map((_, i) => <span key={i}>✕</span>)}
+        </div>
+      )}
+      {f.cleared && <div className="mt-2 text-center text-[12px] text-good">Board cleared — end the round.</div>}
+    </div>
   )
 }
 
