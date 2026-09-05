@@ -26,7 +26,7 @@ export function SurveyApp() {
 
   useEffect(() => {
     if (!code) return
-    fetch(`${getRelayOrigin()}/survey?code=${encodeURIComponent(code)}`)
+    fetch(`${getRelayOrigin()}/api/survey?code=${encodeURIComponent(code)}`)
       .then(async (r) => {
         const j = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(j.error ?? "That survey isn't open.")
@@ -41,7 +41,7 @@ export function SurveyApp() {
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`${getRelayOrigin()}/survey?code=${encodeURIComponent(code)}`, {
+      const res = await fetch(`${getRelayOrigin()}/api/survey?code=${encodeURIComponent(code)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),

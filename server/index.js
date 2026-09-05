@@ -447,7 +447,12 @@ async function handleRequest(req, res) {
   }
 
   /*
-    The survey link: the one door here that is open to the internet by design.
+    The survey endpoint: the one door here that is open to the internet by design.
+
+    Under `/api/` because the *page* is `/survey`, and API routes are matched
+    before static files — so sharing the name meant the endpoint answered "no
+    survey with that code" to anyone opening the link, and the page never
+    loaded at all.
 
     No account, no room code typed, no seat taken — it is handed to people who
     are not playing, days before the game, and the whole conceit of the round is
@@ -458,7 +463,7 @@ async function handleRequest(req, res) {
     It only works on a *live* room, which is the rate limit that matters — a
     room that is not open collects nothing.
   */
-  if (url.pathname === "/survey") {
+  if (url.pathname === "/api/survey") {
     const code = String(url.searchParams.get("code") ?? "").toUpperCase()
     const room = rooms.get(code) ?? (await resumeRoom(code))
     const survey = room?.board?.survey
