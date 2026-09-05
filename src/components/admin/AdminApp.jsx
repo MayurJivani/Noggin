@@ -268,6 +268,7 @@ function HostDesk({ auth }) {
             onSettings={(settings) => send("settings:set", { settings })}
             onPush={push}
             pushState={pushState}
+            state={state}
           />
         ) : state ? (
           <GameControl

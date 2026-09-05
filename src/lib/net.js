@@ -56,6 +56,16 @@ export async function controllerUrl(code, key) {
   return `${await originForLan()}/control?code=${code}&key=${encodeURIComponent(key)}`
 }
 
+/**
+ * The survey link, for people who are not playing.
+ *
+ * Public on purpose — it is handed to colleagues and group chats days before
+ * the game, and asking them to sign in for one word would collect nothing.
+ */
+export async function surveyUrl(code) {
+  return `${await originForLan()}/survey?code=${code}`
+}
+
 /** The all-players scoreboard, for a second monitor or the control desk. */
 export async function scoresUrl(code) {
   return `${await originForLan()}/scores?code=${code}`

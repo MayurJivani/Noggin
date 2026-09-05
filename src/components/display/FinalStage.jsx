@@ -11,7 +11,6 @@ import { VeinLine } from "../ui/Vein"
  * host starts turning them over.
  */
 export function FinalStage({ state, now }) {
-  if (state.final?.kind === "survey") return <SurveyBoard state={state} />
   const f = state.final
   if (!f) return null
 
@@ -185,9 +184,8 @@ function Revealing({ final }) {
  * that says "that was wrong", they happen fast, and they have to read from the
  * back of a room over the noise of everyone shouting the answer.
  */
-function SurveyBoard({ state }) {
-  const f = state.final
-  const rows = state.teams ?? state.players
+export function SurveyBoard({ state, rows = [] }) {
+  const f = state.survey
   const name = (id) => rows.find((r) => r.id === id)?.name ?? ""
   const slots = f.answers ?? []
 

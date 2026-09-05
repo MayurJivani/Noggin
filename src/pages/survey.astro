@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { SurveyApp } from "../components/survey/SurveyApp"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — survey">
+  <SurveyApp client:only="react" />
+</Layout>

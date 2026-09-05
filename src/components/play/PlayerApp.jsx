@@ -210,8 +210,8 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
   const inTiebreak = !!tb && tb.contenders.includes(myUnit)
   const tbOut = !!tb && tb.spent.includes(myUnit)
 
-  /** The survey round is raced on the buzzer, not written on the phone. */
-  const survey = phase === "final" && state.final?.kind === "survey" && state.final?.stage === "survey"
+  /** The survey round is raced on the buzzer, then typed. */
+  const survey = phase === "survey"
 
   const live = (phase === "clue" || survey || (phase === "tiebreak" && inTiebreak && !tbOut)) && !!me && !state.paused
   const team = state.teams?.find((t) => t.members.includes(me?.id))
@@ -235,7 +235,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
 
   const status = survey
     ? iHoldIt
-      ? { text: "You're in — name one", tone: "live" }
+      ? { text: "You're in — type it", tone: "live" }
       : buzzer.armed
         ? { text: "Survey — buzz to answer", tone: "good" }
         : { text: "Survey — wait for it", tone: "dim" }
@@ -361,7 +361,10 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
         )}
       </div>
 
-      {phase === "final" && !survey && <FinalPanel state={state} me={me} send={send} />}
+      {phase === "final" && <FinalPanel state={state} me={me} send={send} />}
+      {/* Whoever holds the buzz types what they said, so the host is matching
+          words on a screen rather than something half-heard across a room. */}
+      {survey && iHoldIt && <SurveySay send={send} said={state.survey?.said?.text} />}
 
       {/* The clue, quietly. Players look at the TV; this is for the person at
           the back who can't, and for audio clues they want in their own ear.
@@ -386,7 +389,7 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
         </div>
       )}
 
-      <div className={`relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-3 ${phase === "final" && !survey ? "hidden" : ""}`}>
+      <div className={`relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-3 ${phase === "final" ? "hidden" : ""}`}>
         <BuzzerButton
           canBuzz={canBuzz && connected}
           iHoldIt={iHoldIt || heard}
@@ -527,5 +530,33 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, o
         </span>
       )}
     </button>
+  )
+}
+
+
+/**
+ * The answer, typed by whoever buzzed.
+ *
+ * Sent as they type rather than only on submit: the host is watching this
+ * appear and will often act on a half-typed word they can already see is right,
+ * which is faster than the room waiting for someone to find the send button.
+ */
+function SurveySay({ send, said }) {
+  const [text, setText] = useState(said ?? "")
+  return (
+    <div className="relative z-10 mx-4 mt-3 rounded-xl border border-live/60 bg-live/10 px-3 py-2.5">
+      <div className="label mb-1 text-live">Your answer</div>
+      <input
+        className="field text-center font-display text-lg"
+        autoFocus
+        maxLength={60}
+        value={text}
+        placeholder="Say it here"
+        onChange={(e) => {
+          setText(e.target.value)
+          send("survey:say", { text: e.target.value })
+        }}
+      />
+    </div>
   )
 }

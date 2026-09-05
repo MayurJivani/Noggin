@@ -446,6 +446,52 @@ async function handleRequest(req, res) {
     }
   }
 
+  /*
+    The survey link: the one door here that is open to the internet by design.
+
+    No account, no room code typed, no seat taken — it is handed to people who
+    are not playing, days before the game, and the whole conceit of the round is
+    that the board came from them. So it answers about the question and takes an
+    answer, and nothing else: it never reveals the board, the scores, or who is
+    in the room.
+
+    It only works on a *live* room, which is the rate limit that matters — a
+    room that is not open collects nothing.
+  */
+  if (url.pathname === "/survey") {
+    const code = String(url.searchParams.get("code") ?? "").toUpperCase()
+    const room = rooms.get(code) ?? (await resumeRoom(code))
+    const survey = room?.board?.survey
+
+    if (!room || !survey?.enabled) return json(res, 404, { error: "No survey is open with that code." })
+
+    if (req.method === "GET") {
+      return json(res, 200, {
+        title: room.board.title,
+        category: survey.category,
+        prompt: survey.prompt,
+        open: !!survey.collecting,
+        responses: (room.responses ?? []).length,
+      })
+    }
+
+    if (req.method === "POST") {
+      let payload
+      try {
+        payload = JSON.parse(await readBody(req, 4 * 1024))
+      } catch {
+        return json(res, 400, { error: "Bad request." })
+      }
+      if (!survey.collecting) return json(res, 403, { error: "This survey has closed." })
+      const added = G.addResponse(room, payload?.text)
+      if (!added) return json(res, 400, { error: "That answer was empty, or the survey is full." })
+      markDirty(room)
+      // The host desk shows the count climbing while people answer.
+      broadcast(room)
+      return json(res, 200, added)
+    }
+  }
+
   if (req.method === "GET" && url.pathname.startsWith("/files/")) {
     let raw
     try {
@@ -1119,6 +1165,7 @@ const ACTION_LABELS = {
   "final:start": "showed the final clue",
   "final:reveal": "started revealing",
   "final:judge": "ruled on the final",
+  "survey:open": "started the survey round",
   "survey:reveal": "opened a survey answer",
   "survey:strike": "gave a strike",
   "survey:close": "ended the survey round",
@@ -1296,6 +1343,8 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.judgeFinal(room, !!msg.correct))
 
     // ── The survey round ──
+    case "survey:open":
+      return apply(room, G.openSurvey(room))
     case "survey:reveal":
       return apply(room, G.revealSurvey(room, Number(msg.index), msg.unitId))
     case "survey:strike":
@@ -1392,6 +1441,8 @@ function handlePlayerMessage(room, meta, msg) {
       return apply(room, G.setFinalWager(room, meta.playerId, msg.amount))
     case "final:answer":
       return apply(room, G.setFinalAnswer(room, meta.playerId, msg.text))
+    case "survey:say":
+      return apply(room, G.saySurvey(room, meta.playerId, msg.text))
     case "lifeline:request": {
       // The player asks; the host still has to grant it, so this is a signal,
       // not a mutation. Nothing about the game changes until the host acts.

@@ -226,6 +226,7 @@ function StagePanel({ state, send, now }) {
   if (phase === "final") return <FinalControls state={state} send={send} />
 
   if (phase === "tiebreak") return <TiebreakControls state={state} send={send} />
+  if (phase === "survey") return <SurveyControls state={state} send={send} f={state.survey} />
 
   if (phase === "intermission" || phase === "ended") {
     const top = contenders[0]
@@ -261,6 +262,19 @@ function StagePanel({ state, send, now }) {
               </div>
               <button className="btn btn-gold mt-3 px-5 py-2 animate-pop" onClick={() => send("tiebreak:open")}>
                 Play a tie-break
+              </button>
+            </div>
+          )}
+
+          {/* Last of all, once the final and any tie-break are settled. */}
+          {state.survey?.offered && !tied && (
+            <div className="mx-auto mt-3 max-w-sm rounded-xl border border-gold-deep/60 bg-royal/30 px-4 py-3">
+              <div className="font-display text-gold">One more round</div>
+              <div className="mt-1 text-[12px] text-muted">
+                {state.survey.category || "Survey"} · {state.survey.slots} answers on the board
+              </div>
+              <button className="btn btn-gold mt-3 px-5 py-2" onClick={() => send("survey:open")}>
+                Play the survey round
               </button>
             </div>
           )}
@@ -1079,12 +1093,20 @@ function SurveyControls({ state, send, f }) {
       <div className="mt-2 font-display text-lg leading-snug text-ink">{f.prompt}</div>
 
       {holder ? (
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-live bg-live/10 px-3 py-2 animate-pop">
-          <span className="font-display text-lg text-live">{holder}</span>
-          <span className="text-[11px] text-muted">— find it on the board, or strike</span>
-          <button className="btn btn-bad ml-auto px-4 py-2 text-sm" onClick={() => send("survey:strike")}>
-            ✕ Strike
-          </button>
+        <div className="mt-2 rounded-lg border border-live bg-live/10 px-3 py-2 animate-pop">
+          <div className="flex items-center gap-2">
+            <span className="font-display text-lg text-live">{holder}</span>
+            {/* What they typed on their phone. Matching something you misheard
+                across a noisy room is how the wrong slot gets opened. */}
+            {f.said?.text ? (
+              <span className="min-w-0 flex-1 truncate font-display text-xl text-ink">“{f.said.text}”</span>
+            ) : (
+              <span className="flex-1 text-[11px] text-muted">— waiting for them to type it…</span>
+            )}
+            <button className="btn btn-bad shrink-0 px-4 py-2 text-sm" onClick={() => send("survey:strike")}>
+              ✕ Strike
+            </button>
+          </div>
         </div>
       ) : (
         <div className="mt-2 text-[11px] text-faint">Arm the buzzer and let them race for it.</div>

@@ -247,35 +247,48 @@ Keys, because the other hand is holding a microphone:
 | <kbd>esc</kbd> | reset the buzzer race |
 | <kbd>⌘/ctrl</kbd>+<kbd>z</kbd> | undo the last ruling |
 
-## The final round
+## The survey round
 
-Two shapes, chosen per board on the **✦ Final** tab, because they are different
-games and suit different endings.
+"We asked a hundred people." Optional, and played **last** — after the final,
+and after any tie-break has settled it. A board of hidden answers with points on
+them; whoever buzzes first says one, and it is either on the board or it is a
+strike and the buzzer goes straight back out.
 
-### Survey says
-
-"We asked a hundred people." A board of hidden answers with points on them.
-Whoever buzzes first gets to say one; the host either finds it on the list —
-which opens the slot and pays them — or marks a **strike**, and the buzzer goes
-straight back out to everyone.
-
-The reason to pick it: **it is a scramble, not a reckoning.** A blind wager
+The reason it goes last: **it is a scramble, not a reckoning.** A blind wager
 cannot rescue somebody 2000 behind, and eight answers on a board can, so a game
-that was effectively over stays live to the last slot.
+that was effectively decided stays live to the final slot.
+
+Whoever buzzes **types their answer on their phone**, and it appears on the
+host's screen. The host's job here is a matching problem — is this thing on the
+list — and matching something you half-heard across a noisy room is how the
+wrong slot gets opened.
+
+### Asking a hundred people
+
+The format's conceit is that the board came from somewhere, so it can. **Copy
+link** on the survey editor gives you a public page — `/survey?code=XXXX` — to
+hand to colleagues, a group chat, anyone. No account, no room code to type, no
+seat taken, and nothing about the game visible: it shows the question, takes one
+answer, and that is all it can do.
+
+Answers are folded into what people *meant* rather than what they typed — case,
+punctuation, spacing and a leading article, so "bin bags", "Bin Bags" and
+"binbags." are one answer rather than three. Deliberately shallow: anything
+cleverer starts merging things that are genuinely different, and you are about
+to read the list anyway. The label put on the board is the spelling most people
+used, preferring the one that needed no article stripped.
+
+**Build the board** turns the top of the tally into slots, with points scaled
+off the votes. Edit anything afterwards.
+
+It is the one door here open to the internet by design, so it is capped: 1000
+responses a room, 60 characters each, and it only answers for a room that is
+actually open. Collection can be closed without disabling the round.
 
 Three things are deliberately *not* modelled: control of the board, play-or-pass
 and the steal. They are most of Family Feud's rulebook and all of its
 bookkeeping, and in a living room they turn a fast round into an argument about
 procedure. Every answer is simply its own race.
-
-A hidden slot sends its *shape* and nothing else — no text, no points. The room
-is guessing at them, and a slot that shipped its answer alongside a `hidden`
-flag would be a round decided by whoever opened devtools. Points are typed by
-the author rather than derived from a survey percentage: a real number like 38
-would vanish beside a board of thousands.
-
-Ending the round drops into the same place every other round does — so if it
-leaves two people level, the tie-break is offered.
 
 ## The final clue
 

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
-  FINAL_KINDS,
   applyValues,
   boardIssues,
   boardStats,
@@ -17,6 +16,7 @@ import {
   scatterNitro,
 } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
+import { surveyUrl } from "../../lib/net"
 import { MediaField } from "../ui/MediaField"
 import { ImportCsv } from "./ImportCsv"
 
@@ -27,7 +27,7 @@ import { ImportCsv } from "./ImportCsv"
  * opens it in the inspector on the right. Everything autosaves to the relay, so
  * closing the tab at 1am doesn't cost you the quiz.
  */
-export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, onSettings, onPush, pushState }) {
+export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, onSettings, onPush, pushState, state }) {
   const [selected, setSelected] = useState(null) // { catIndex, clueIndex }
   const [saved, setSaved] = useState("idle")
   const [boards, setBoards] = useState([])
@@ -225,7 +225,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
         </div>
 
         {roundIndex === -1 ? (
-          <FinalEditor board={board} setBoard={setBoard} />
+          <FinalEditor board={board} setBoard={setBoard} tally={state?.survey?.tally} code={state?.code} />
         ) : (
         <div className="panel overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-edge px-4 py-2.5">
@@ -567,7 +567,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
  * Off by default: plenty of quizzes just end when the board is cleared, and a
  * blank final appearing on the projector would be worse than none at all.
  */
-function FinalEditor({ board, setBoard }) {
+function FinalEditor({ board, setBoard, tally, code }) {
   const final = board.final ?? {}
   const patch = (p) => setBoard({ ...board, final: { ...final, ...p } })
 
@@ -578,26 +578,9 @@ function FinalEditor({ board, setBoard }) {
         <span className="font-display text-base text-gold">Play a final round</span>
       </label>
 
-      {/* Two different games, so the choice comes before anything else on the
-          form — half these fields only belong to one of them. */}
-      <div className={`mt-3 flex rounded-lg border border-edge p-0.5 ${final.enabled ? "" : "pointer-events-none opacity-40"}`}>
-        {FINAL_KINDS.map((k) => (
-          <button
-            key={k}
-            className={`flex-1 rounded-md px-3 py-1.5 font-body text-[12px] font-semibold transition-colors ${
-              (final.kind ?? "classic") === k ? "bg-gold text-[#17110a]" : "text-muted hover:text-ink"
-            }`}
-            onClick={() => patch({ kind: k })}
-          >
-            {k === "classic" ? "Blind wager" : "Survey says"}
-          </button>
-        ))}
-      </div>
-
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        {(final.kind ?? "classic") === "classic"
-          ? "Everyone still in the black bets part of their score before seeing it, writes an answer on their phone, and is turned over one at a time — poorest first."
-          : "A board of hidden answers with points on them. Whoever buzzes first gets to say one; find it on the board and they take the points, miss and it is a strike and the buzzer goes back out. A scramble rather than a reckoning — which is the better ending when someone is miles ahead."}
+      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+        Everyone still in the black bets part of their score before seeing it, writes an answer on their phone, and is turned over one at a
+        time — poorest first.
       </p>
 
       <div className={`mt-4 space-y-3 ${final.enabled ? "" : "pointer-events-none opacity-40"}`}>
@@ -611,7 +594,7 @@ function FinalEditor({ board, setBoard }) {
               onChange={(e) => patch({ category: e.target.value })}
             />
           </label>
-          <label className={`w-28 ${(final.kind ?? "classic") === "survey" ? "hidden" : ""}`}>
+          <label className="w-28">
             <div className="label mb-1">Clock</div>
             <input
               type="number"
@@ -636,24 +619,19 @@ function FinalEditor({ board, setBoard }) {
 
         <MediaField value={final.media ?? null} onChange={(media) => patch({ media })} label="Clue media" />
 
-        {(final.kind ?? "classic") === "survey" ? (
-          <SurveyAnswers final={final} patch={patch} />
-        ) : (
-          <>
-            <label className="block">
-              <div className="label mb-1">Answer</div>
-              <textarea
-                className="field min-h-[56px] resize-y"
-                value={final.answer ?? ""}
-                onChange={(e) => patch({ answer: e.target.value })}
-              />
-            </label>
+        <label className="block">
+          <div className="label mb-1">Answer</div>
+          <textarea
+            className="field min-h-[56px] resize-y"
+            value={final.answer ?? ""}
+            onChange={(e) => patch({ answer: e.target.value })}
+          />
+        </label>
 
-            <MediaField value={final.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
-          </>
-        )}
+        <MediaField value={final.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
       </div>
 
+      <SurveyEditor board={board} setBoard={setBoard} tally={tally} code={code} />
       <TiebreakEditor board={board} setBoard={setBoard} />
     </div>
   )
@@ -668,63 +646,167 @@ function FinalEditor({ board, setBoard }) {
  * moment to be inventing a question, so it is worth two minutes now.
  */
 /**
- * The survey board, top answer first.
+ * The survey round: its question, its board, and where the board came from.
  *
- * Points are typed rather than derived: a real survey number like 38 would
- * vanish beside a board of thousands, and the author is the only one who knows
- * whether they want "how many said it" or something that can actually change
- * the result.
+ * The format's conceit is that a hundred people were asked, so the editor's
+ * centre of gravity is the **link** rather than the answer list. Write the
+ * question, send the link to a group chat for a day, then build the board out
+ * of what people actually said — which is both less work and a far better round
+ * than eight answers invented at a desk.
  */
-function SurveyAnswers({ final, patch }) {
-  const answers = final.answers ?? []
+function SurveyEditor({ board, setBoard, tally, code }) {
+  const survey = board.survey ?? {}
+  const patch = (p) => setBoard({ ...board, survey: { ...survey, ...p } })
+  const answers = survey.answers ?? []
   const set = (i, p) => patch({ answers: answers.map((a, j) => (j === i ? { ...a, ...p } : a)) })
   const total = answers.reduce((n, a) => n + (Number(a.points) || 0), 0)
 
+  const [url, setUrl] = useState("")
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (code && survey.enabled) surveyUrl(code).then(setUrl)
+  }, [code, survey.enabled])
+
+  /** Turn the top of the tally into the board, points scaled off the votes. */
+  const build = (rows) => {
+    const top = rows.slice(0, 8)
+    if (!top.length) return
+    if (answers.length && !confirm(`Replace the ${answers.length} answers on the board with the top ${top.length}?`)) return
+    patch({ answers: top.map((g) => ({ text: g.label, points: g.count * 50 })) })
+  }
+
   return (
-    <div>
-      <div className="flex items-baseline gap-2">
-        <span className="label">Answers on the board</span>
-        <span className="text-[10px] text-faint">
-          {answers.length} · {total} points in play
-        </span>
-      </div>
+    <div className="mt-5 border-t border-edge pt-4">
+      <label className="flex cursor-pointer items-center gap-2">
+        <input type="checkbox" checked={!!survey.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
+        <span className="font-display text-base text-gold">Play a survey round</span>
+      </label>
+      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+        "We asked a hundred people." Played <span className="text-muted">last</span> — after the final, and after any tie-break. Hidden
+        answers with points; whoever buzzes first says one, and it is either on the board or it is a strike. A scramble rather than a
+        reckoning, so a game somebody has already won stays live to the end.
+      </p>
 
-      <div className="mt-1.5 space-y-1.5">
-        {answers.map((a, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <span className="w-5 shrink-0 text-center font-value text-[13px] text-gold-dim">{i + 1}</span>
+      <div className={`mt-3 space-y-3 ${survey.enabled ? "" : "pointer-events-none opacity-40"}`}>
+        <div className="flex gap-3">
+          <label className="w-36 shrink-0">
+            <div className="label mb-1">Category</div>
+            <input className="field font-display uppercase" value={survey.category ?? ""} onChange={(e) => patch({ category: e.target.value })} />
+          </label>
+          <label className="min-w-0 flex-1">
+            <div className="label mb-1">Question</div>
             <input
-              className="field min-w-0 flex-1 py-1 text-[12px]"
-              placeholder={i === 0 ? "The most popular answer" : "Answer"}
-              value={a.text}
-              onChange={(e) => set(i, { text: e.target.value })}
+              className="field"
+              placeholder="Name something you always forget to buy"
+              value={survey.prompt ?? ""}
+              onChange={(e) => patch({ prompt: e.target.value })}
             />
-            <input
-              type="number"
-              min={0}
-              className="field w-20 py-1 text-right font-value text-[12px]"
-              value={a.points}
-              onChange={(e) => set(i, { points: Math.max(0, +e.target.value || 0) })}
-            />
-            <button
-              className="shrink-0 px-1 text-[11px] text-faint transition-colors hover:text-bad"
-              title="Remove"
-              onClick={() => patch({ answers: answers.filter((_, j) => j !== i) })}
-            >
-              ✕
-            </button>
+          </label>
+        </div>
+
+        {/* The link. This is the point of the round. */}
+        <div className="rounded-lg border border-gold-deep/40 bg-royal/20 px-3 py-2.5">
+          <div className="flex items-baseline gap-2">
+            <span className="label">Ask people</span>
+            <span className="text-[10px] text-faint">no account needed at their end</span>
+            <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[10px] text-muted">
+              <input type="checkbox" checked={survey.collecting !== false} onChange={(e) => patch({ collecting: e.target.checked })} />
+              open
+            </label>
           </div>
-        ))}
-        {answers.length === 0 && <div className="px-1 py-2 text-[11px] text-faint">Nothing on the board yet.</div>}
-      </div>
 
-      <button
-        className="btn mt-2 w-full py-1.5 text-[11px]"
-        disabled={answers.length >= 10}
-        onClick={() => patch({ answers: [...answers, makeSurveyAnswer()] })}
-      >
-        + Answer
-      </button>
+          {code ? (
+            <>
+              <div className="mt-1.5 break-all rounded-md border border-edge bg-black/30 px-2 py-1.5 text-[10px] text-muted">{url || "…"}</div>
+              <div className="mt-1.5 flex gap-1.5">
+                <button
+                  className="btn btn-gold flex-1 py-1.5 text-[11px]"
+                  disabled={!url}
+                  onClick={() => {
+                    navigator.clipboard?.writeText(url)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1800)
+                  }}
+                >
+                  {copied ? "Copied ✓" : "Copy link"}
+                </button>
+                <a className="btn px-2.5 py-1.5 text-[11px]" href={url || "#"} target="_blank" rel="noreferrer">
+                  Open ↗
+                </a>
+              </div>
+            </>
+          ) : (
+            <div className="mt-1.5 text-[10px] text-faint">The link appears once the room is open — switch to Run for a moment.</div>
+          )}
+        </div>
+
+        {/* What came back. */}
+        {tally?.length > 0 && (
+          <div className="rounded-lg border border-edge px-3 py-2.5">
+            <div className="flex items-baseline gap-2">
+              <span className="label">Answers in</span>
+              <span className="text-[10px] text-faint">{tally.reduce((n, g) => n + g.count, 0)} replies · {tally.length} distinct</span>
+              <button className="btn ml-auto px-2 py-0.5 text-[10px]" onClick={() => build(tally)}>
+                Build the board
+              </button>
+            </div>
+            <div className="mt-1.5 max-h-40 space-y-0.5 overflow-y-auto">
+              {tally.slice(0, 20).map((g) => (
+                <div key={g.key} className="flex items-baseline gap-2 text-[11px]">
+                  <span className="w-8 shrink-0 text-right font-value text-gold">{g.count}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted">{g.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-baseline gap-2">
+            <span className="label">The board</span>
+            <span className="text-[10px] text-faint">
+              {answers.length} · {total} points in play
+            </span>
+          </div>
+
+          <div className="mt-1.5 space-y-1.5">
+            {answers.map((a, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="w-5 shrink-0 text-center font-value text-[13px] text-gold-dim">{i + 1}</span>
+                <input
+                  className="field min-w-0 flex-1 py-1 text-[12px]"
+                  placeholder={i === 0 ? "The most popular answer" : "Answer"}
+                  value={a.text}
+                  onChange={(e) => set(i, { text: e.target.value })}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  className="field w-20 py-1 text-right font-value text-[12px]"
+                  value={a.points}
+                  onChange={(e) => set(i, { points: Math.max(0, +e.target.value || 0) })}
+                />
+                <button
+                  className="shrink-0 px-1 text-[11px] text-faint transition-colors hover:text-bad"
+                  title="Remove"
+                  onClick={() => patch({ answers: answers.filter((_, j) => j !== i) })}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {answers.length === 0 && <div className="px-1 py-2 text-[11px] text-faint">Nothing on the board yet.</div>}
+          </div>
+
+          <button
+            className="btn mt-2 w-full py-1.5 text-[11px]"
+            disabled={answers.length >= 10}
+            onClick={() => patch({ answers: [...answers, makeSurveyAnswer()] })}
+          >
+            + Answer
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

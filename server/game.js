@@ -17,6 +17,7 @@ export const PHASE = {
   REVEAL: "reveal", // answer shown
   INTERMISSION: "intermission", // between rounds
   FINAL: "final", // the last clue: wager, write, reveal
+  SURVEY: "survey", // "we asked a hundred people" — a board of hidden answers
   TIEBREAK: "tiebreak", // level at the top: sudden death, buzzer, no points
   ENDED: "ended",
 }
@@ -190,33 +191,25 @@ export function makeRound(name = "Round 1", values = [200, 400, 600, 800, 1000],
  * The last clue. Everyone plays it at once, in writing, having bet first —
  * which is why it lives beside the rounds rather than in one.
  */
-/**
- * Two shapes of last round, because they are different games.
- *
- * `classic` is the one this started with: everyone bets blind, writes an answer
- * against a clock, and is turned over one at a time.
- *
- * `survey` is the "we asked a hundred people" round — a board of hidden answers
- * with points on them, a buzzer race for the right to guess, and a strike when
- * you are wrong. It is a *scramble* rather than a reckoning, which makes it the
- * better ending when the scores are lopsided: a blind wager cannot save you
- * from 2000 behind, and eight answers on a board can.
- */
-export const FINAL_KINDS = ["classic", "survey"]
-
 export function makeFinal() {
-  return {
-    kind: "classic",
-    category: "",
-    prompt: "",
-    media: null,
-    answer: "",
-    answerMedia: null,
-    seconds: 30,
-    enabled: false,
-    /** Survey only: [{ text, points }], best answer first. */
-    answers: [],
-  }
+  return { category: "", prompt: "", media: null, answer: "", answerMedia: null, seconds: 30, enabled: false }
+}
+
+/**
+ * "We asked a hundred people" — its own round, after everything else.
+ *
+ * A board of hidden answers with points on them, a buzzer race for the right to
+ * guess, and a strike when you are wrong. It comes *last*, after the final and
+ * after any tie-break, because it is a scramble rather than a reckoning: a
+ * blind wager cannot rescue somebody 2000 behind, and eight answers on a board
+ * can, so it is the round that keeps a decided game alive to the end.
+ *
+ * The answers can be written by hand or built from what real people said — see
+ * `tallyResponses`. That is the whole conceit of the format, and the reason the
+ * survey link exists.
+ */
+export function makeSurvey() {
+  return { enabled: false, category: "", prompt: "", answers: [], collecting: true }
 }
 
 /**
@@ -240,6 +233,7 @@ export function makeBoard() {
       makeRound("Round 2", [400, 800, 1200, 1600, 2000]),
     ],
     final: makeFinal(),
+    survey: makeSurvey(),
     tiebreak: makeTiebreak(),
   }
 }
@@ -256,12 +250,18 @@ export function normaliseBoard(raw) {
   board.title = str(raw.title, 80) || "Untitled Game"
   board.updatedAt = Date.now()
 
-  board.final = {
-    kind: FINAL_KINDS.includes(raw.final?.kind) ? raw.final.kind : "classic",
-    answers: (Array.isArray(raw.final?.answers) ? raw.final.answers : []).slice(0, 10).map((a) => ({
+  board.survey = {
+    enabled: !!raw.survey?.enabled,
+    collecting: raw.survey?.collecting !== false,
+    category: str(raw.survey?.category, 60),
+    prompt: str(raw.survey?.prompt, 600),
+    answers: (Array.isArray(raw.survey?.answers) ? raw.survey.answers : []).slice(0, 10).map((a) => ({
       text: str(a?.text, 80),
       points: Math.max(0, num(a?.points, 0)),
     })),
+  }
+
+  board.final = {
     category: str(raw.final?.category, 60),
     prompt: str(raw.final?.prompt, 600),
     media: media(raw.final?.media),
@@ -357,6 +357,10 @@ export function createRoom(code, settings = {}) {
     operators: new Map(),
     /** The last thing an operator did, so the other screens can see it. */
     lastAction: null,
+    /** { revealed, awards, strikes, said } while the survey round runs. */
+    survey: null,
+    /** What the public survey link has collected. See `addResponse`. */
+    responses: [],
     /** { contenders, spent } while a tie is being played off. */
     tiebreak: null,
     /** Who actually won, once a tie has been settled. See `openTiebreak`. */
@@ -744,7 +748,7 @@ export function setWager(room, id, amount) {
 export function armBuzzer(room, now = Date.now()) {
   // Sudden death and the survey round race on the same buzzer; only who may
   // press it, and what they win, differs.
-  const races = room.phase === PHASE.CLUE || room.phase === PHASE.TIEBREAK || (room.phase === PHASE.FINAL && room.final?.stage === "survey")
+  const races = room.phase === PHASE.CLUE || room.phase === PHASE.TIEBREAK || room.phase === PHASE.SURVEY
   if (!races || room.paused) return []
   if (room.wager) return [] // a nitro belongs to one side: no race to run
   room.buzzer.armed = true
@@ -821,10 +825,7 @@ export function buzz(room, playerId, now = Date.now()) {
     // Everyone else is watching. A buzzer that still worked for them would
     // decide the game by accident.
     if (!inTiebreak(room, playerId)) return []
-  } else if (room.phase === PHASE.FINAL) {
-    // Only the survey round races; the classic final is written, not buzzed.
-    if (room.final?.stage !== "survey") return []
-  } else if (room.phase !== PHASE.CLUE) return []
+  } else if (room.phase !== PHASE.CLUE && room.phase !== PHASE.SURVEY) return []
   // A frozen room takes no presses. The clue is still on screen and the button
   // is still under a thumb, so this has to be refused here rather than trusted
   // to every client remembering to grey itself out.
@@ -1211,6 +1212,7 @@ export function resetGame(room) {
   }
   room.paused = null
   room.check = null
+  room.survey = null
   room.tiebreak = null
   room.winner = null
   room.phase = PHASE.LOBBY
@@ -1256,11 +1258,6 @@ export function openFinal(room) {
   room.timer = null
   room.lastJudgement = null
   resetBuzzerState(room)
-  if (room.board.final.kind === "survey") {
-    room.final = { stage: "survey", revealed: [], awards: {}, strikes: [] }
-    return [{ kind: "final-open", survey: true }]
-  }
-
   room.final = {
     stage: "wager",
     wagers: {},
@@ -1369,26 +1366,143 @@ export function judgeFinal(room, correct) {
  * and in a living room they turn a fast round into an argument about procedure.
  * Every answer is its own race instead.
  */
-export function revealSurvey(room, index, target = room.buzzer.winner) {
-  if (room.phase !== PHASE.FINAL || room.final?.stage !== "survey") return []
-  const slot = room.board.final.answers?.[index]
-  if (!slot || room.final.revealed.includes(index)) return []
+/**
+ * Asking a hundred people, for real.
+ *
+ * The format's whole conceit is that the board came from somewhere. A public
+ * link — no account, no room code typed, no seat taken — lets the host collect
+ * answers from anyone over the days before, and then build the board out of
+ * what people actually said.
+ *
+ * Responses are capped hard because this is the one door in the app that is
+ * open to the internet by design. A cap on the total and on the length is
+ * cheaper and more honest than trying to work out who is behind each one.
+ */
+const MAX_RESPONSES = 1000
 
-  room.final.revealed.push(index)
+export function addResponse(room, text, now = Date.now()) {
+  if (!room.board.survey?.enabled || !room.board.survey.collecting) return null
+  const clean = str(text, 60).trim()
+  if (!clean) return null
+  room.responses ??= []
+  if (room.responses.length >= MAX_RESPONSES) return null
+  room.responses.push({ text: clean, at: now })
+  return { count: room.responses.length }
+}
+
+/**
+ * Fold responses into what people meant rather than what they typed.
+ *
+ * "bin bags", "Bin Bags" and "binbags." are one answer, and a tally that
+ * treated them as three would put the top answer fourth. Deliberately shallow —
+ * case, punctuation, spacing and a leading article. Anything cleverer (plurals,
+ * synonyms) would start merging things that are genuinely different, and the
+ * host is about to read the list anyway.
+ */
+export const surveyKey = (text) =>
+  String(text ?? "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/^(a|an|the)\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+
+/**
+ * Which way of writing it goes on the board.
+ *
+ * This ends up in a slot the whole room reads, so it should look like something
+ * a person would write. In order: the spellings that needed no article
+ * stripped — "Batteries" over "the batteries" — then the commonest, then the
+ * shortest. Ties fall back to insertion order, which is stable, so the same
+ * responses always produce the same board.
+ */
+function bestSpelling(key, spellings) {
+  const scored = [...spellings.entries()].map(([text, count]) => ({
+    text,
+    count,
+    // Already in its normal form, rather than reached by stripping an article.
+    exact: text.trim().toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ") === key,
+  }))
+  scored.sort((a, b) => Number(b.exact) - Number(a.exact) || b.count - a.count || a.text.length - b.text.length)
+  return scored[0].text
+}
+
+export function tallyResponses(room) {
+  const groups = new Map()
+  for (const r of room.responses ?? []) {
+    const key = surveyKey(r.text)
+    if (!key) continue
+    const g = groups.get(key) ?? { key, count: 0, spellings: new Map() }
+    g.count += 1
+    // The label is what goes on the board, so it should be how most people
+    // wrote it — not whichever version happened to arrive first. "the
+    // batteries" is a poor thing to put in a slot when nine people said
+    // "batteries".
+    g.spellings.set(r.text, (g.spellings.get(r.text) ?? 0) + 1)
+    groups.set(key, g)
+  }
+
+  return [...groups.values()]
+    .map((g) => ({ key: g.key, count: g.count, label: bestSpelling(g.key, g.spellings) }))
+    // Equal counts break on the *normalised* key, so the order does not depend
+    // on anybody's capitalisation.
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+}
+
+export function openSurvey(room) {
+  // Last, after the final and after any tie-break has settled it. A survey
+  // round played before them would just be another round.
+  if (room.phase !== PHASE.ENDED && room.phase !== PHASE.INTERMISSION) return []
+  if (!room.board.survey?.enabled) return []
+
+  room.phase = PHASE.SURVEY
+  room.timer = null
+  room.active = null
+  room.wager = null
+  room.revealed = false
+  resetBuzzerState(room)
+  room.survey = { revealed: [], awards: {}, strikes: [], said: null }
+  return [{ kind: "survey-open" }]
+}
+
+/**
+ * What the player who buzzed says it is.
+ *
+ * Typed on their phone rather than shouted, because the host's job here is a
+ * matching problem — is this thing on the list — and matching something you
+ * misheard across a noisy room is how the wrong slot gets opened. It also
+ * settles the arguments: the words are on the screen.
+ */
+export function saySurvey(room, playerId, text) {
+  if (room.phase !== PHASE.SURVEY) return []
+  // Only whoever holds the buzz. Everyone typing at once would be a chat.
+  if (!room.buzzer.winner || !sameSide(room, room.buzzer.winner, playerId)) return []
+  const unit = scorer(room, playerId)
+  room.survey.said = { unitId: unit?.id ?? null, playerId, text: str(text, 80) }
+  return [{ kind: "survey-said", playerId }]
+}
+
+export function revealSurvey(room, index, target = room.buzzer.winner) {
+  if (room.phase !== PHASE.SURVEY) return []
+  const slot = room.board.survey.answers?.[index]
+  if (!slot || room.survey.revealed.includes(index)) return []
+
+  room.survey.revealed.push(index)
   room.buzzer.armed = false
   room.timer = null
+  room.survey.said = null
 
   // The host can open a slot with nobody holding the buzz — reading out the
   // ones nobody got, at the end. That pays no one, which is correct.
   const unit = target ? scorer(room, target) : null
   if (unit) {
-    room.final.awards[index] = unit.id
+    room.survey.awards[index] = unit.id
     unit.score += slot.points
     record(unit, slot.points, "survey", slot.text)
   }
   room.buzzer.winner = null
 
-  const done = room.final.revealed.length >= room.board.final.answers.length
+  const done = room.survey.revealed.length >= room.board.survey.answers.length
   const effects = [{ kind: "survey-hit", index, points: slot.points, unitId: unit?.id ?? null, score: unit?.score ?? null }]
   if (done) effects.push({ kind: "survey-cleared" })
   return effects
@@ -1396,9 +1510,10 @@ export function revealSurvey(room, index, target = room.buzzer.winner) {
 
 /** Wrong. A cross on the board, and the buzzer goes back out to everyone. */
 export function strikeSurvey(room, target = room.buzzer.winner, now = Date.now()) {
-  if (room.phase !== PHASE.FINAL || room.final?.stage !== "survey") return []
+  if (room.phase !== PHASE.SURVEY) return []
   const unit = target ? scorer(room, target) : null
-  room.final.strikes.push({ unitId: unit?.id ?? null, at: now })
+  room.survey.strikes.push({ unitId: unit?.id ?? null, at: now })
+  room.survey.said = null
 
   // Straight back out: nobody is spent, because on this board a wrong answer
   // costs you the buzz and nothing else — there are still slots to find.
@@ -1412,11 +1527,11 @@ export function strikeSurvey(room, target = room.buzzer.winner, now = Date.now()
 
 /** That's the round. Straight to the end, where a tie may still be waiting. */
 export function closeSurvey(room) {
-  if (room.phase !== PHASE.FINAL || room.final?.stage !== "survey") return []
-  room.final.stage = "done"
+  if (room.phase !== PHASE.SURVEY) return []
   room.phase = PHASE.ENDED
   resetBuzzerState(room)
   room.timer = null
+  room.survey.said = null
   return [{ kind: "game-end" }]
 }
 
@@ -1555,6 +1670,9 @@ export function snapshotRoom(room) {
     settings: room.settings,
     phase: room.phase === PHASE.CLUE || room.phase === PHASE.WAGER || room.phase === PHASE.REVEAL ? PHASE.BOARD : room.phase,
     winner: room.winner ?? null,
+    // Collected before the game, often days before — losing them to a restart
+    // would lose the round.
+    responses: room.responses ?? [],
     roundIndex: room.roundIndex,
     players: [...room.players.values()].map((p) => ({
       id: p.id,
@@ -1585,6 +1703,10 @@ export function restoreRoom(code, snapshot) {
 
   room.board = normaliseBoard(snapshot.board)
   room.winner = typeof snapshot.winner === "string" ? snapshot.winner : null
+  room.responses = (Array.isArray(snapshot.responses) ? snapshot.responses : [])
+    .slice(0, MAX_RESPONSES)
+    .map((r) => ({ text: str(r?.text, 60), at: num(r?.at, 0) }))
+    .filter((r) => r.text)
   room.roundIndex = Math.max(0, Math.min(num(snapshot.roundIndex, 0), room.board.rounds.length - 1))
   room.phase = Object.values(PHASE).includes(snapshot.phase) ? snapshot.phase : PHASE.LOBBY
   // Never resume into a clue: `snapshotRoom` refuses to save one, but a
@@ -1593,7 +1715,7 @@ export function restoreRoom(code, snapshot) {
   if (room.phase === PHASE.CLUE || room.phase === PHASE.WAGER || room.phase === PHASE.REVEAL) room.phase = PHASE.BOARD
   // A play-off in flight is as transient as a buzzer race. Coming back to one
   // three days later would be resuming a moment, not a game.
-  if (room.phase === PHASE.TIEBREAK) room.phase = PHASE.ENDED
+  if (room.phase === PHASE.TIEBREAK || room.phase === PHASE.SURVEY) room.phase = PHASE.ENDED
 
   for (const t of snapshot.teams ?? []) {
     if (!t?.id) continue
@@ -1746,6 +1868,40 @@ export function projectState(room, role, viewerId = null) {
     tied: room.phase === PHASE.ENDED && !room.winner && isTied(room) ? leaders(room).map((u) => u.id) : null,
     /** Set once a tie has been settled — the scores stay level, someone won. */
     winner: room.winner ?? null,
+    /*
+      The survey board.
+
+      A hidden slot sends its *shape* and nothing else — no text, no points. The
+      room is guessing at them, and a slot that shipped its answer alongside a
+      `hidden` flag would be a round decided by whoever opened devtools. The
+      host gets the lot, because they have to find the match.
+    */
+    survey: room.board.survey?.enabled
+      ? {
+          enabled: true,
+          offered: room.phase === PHASE.ENDED && !room.survey,
+          live: room.phase === PHASE.SURVEY,
+          category: room.board.survey.category,
+          prompt: room.phase === PHASE.SURVEY || privileged ? room.board.survey.prompt : "",
+          collecting: !!room.board.survey.collecting,
+          responses: (room.responses ?? []).length,
+          tally: privileged ? tallyResponses(room) : undefined,
+          slots: room.board.survey.answers.length,
+          strikes: room.survey?.strikes ?? [],
+          said: room.survey?.said ?? null,
+          cleared: !!room.survey && room.survey.revealed.length >= room.board.survey.answers.length,
+          answers: room.board.survey.answers.map((a, i) => {
+            const open = privileged || !!room.survey?.revealed.includes(i)
+            return {
+              index: i,
+              open: !!room.survey?.revealed.includes(i),
+              text: open ? a.text : null,
+              points: open ? a.points : null,
+              by: room.survey?.awards[i] ?? null,
+            }
+          }),
+        }
+      : null,
     final: projectFinal(room, privileged, viewerId),
     wager: room.wager,
     revealed: room.revealed,
@@ -1832,42 +1988,11 @@ function projectFinal(room, privileged, viewerId) {
 
   const base = {
     enabled: true,
-    kind: spec.kind ?? "classic",
     category: spec.category,
     seconds: spec.seconds,
     stage: room.final?.stage ?? null,
   }
   if (!room.final) return base
-
-  /*
-    The survey board.
-
-    A hidden slot sends its *shape* and nothing else — no text, no points. The
-    room is guessing at them, and a slot that shipped its answer with `hidden:
-    true` would be a game decided by whoever opened devtools first. The host
-    gets the lot, because they have to find the match.
-  */
-  if (room.final.stage === "survey" || room.final.stage === "done") {
-    return {
-      ...base,
-      prompt: spec.prompt,
-      media: spec.media,
-      strikes: room.final.strikes,
-      answers: (spec.answers ?? []).map((a, i) => {
-        const open = privileged || room.final.revealed.includes(i)
-        return {
-          index: i,
-          open: room.final.revealed.includes(i),
-          text: open ? a.text : null,
-          points: open ? a.points : null,
-          by: room.final.awards[i] ?? null,
-        }
-      }),
-      /** So the big screen can draw the right number of empty slots. */
-      slots: (spec.answers ?? []).length,
-      cleared: room.final.revealed.length >= (spec.answers ?? []).length,
-    }
-  }
 
   const showClue = privileged || room.final.stage === "clue" || room.final.stage === "reveal"
   const revealedIds = room.final.order.slice(0, room.final.revealIndex + 1)

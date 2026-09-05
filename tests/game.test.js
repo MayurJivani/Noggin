@@ -1275,13 +1275,12 @@ test("resetting the game forgets who won", () => {
 
 // ── The survey round ─────────────────────────────────────────────────────────
 
-/** A room whose final is a survey board, ready to open. */
+/** A room with a survey board waiting at the end. */
 function surveyed(n = 3) {
   const room = setup(n)
-  room.board.final = {
-    ...G.makeFinal(),
+  room.board.survey = {
     enabled: true,
-    kind: "survey",
+    collecting: true,
     category: "SUPERMARKET",
     prompt: "Name something you always forget to buy",
     answers: [
@@ -1290,51 +1289,75 @@ function surveyed(n = 3) {
       { text: "Batteries", points: 200 },
     ],
   }
+  room.phase = G.PHASE.ENDED
   return room
 }
 
-test("a survey final opens onto its board rather than the betting", () => {
+test("the survey round comes last, after everything else is settled", () => {
   const room = surveyed()
-  assert.deepEqual(kinds(G.openFinal(room)), ["final-open"])
-  assert.equal(room.final.stage, "survey")
-  assert.deepEqual(room.final.revealed, [])
-  assert.equal(room.phase, G.PHASE.FINAL)
+  room.phase = G.PHASE.CLUE
+  assert.deepEqual(G.openSurvey(room), [], "not while a clue is up")
+
+  room.phase = G.PHASE.ENDED
+  assert.deepEqual(kinds(G.openSurvey(room)), ["survey-open"])
+  assert.equal(room.phase, G.PHASE.SURVEY)
+})
+
+test("a board with no survey has nothing to open", () => {
+  const room = setup(2)
+  room.phase = G.PHASE.ENDED
+  assert.deepEqual(G.openSurvey(room), [])
+  assert.equal(G.projectState(room, "host").survey, null)
 })
 
 test("the board is hidden from the room and open to the host", () => {
   const room = surveyed()
-  G.openFinal(room)
+  G.openSurvey(room)
 
-  const seen = G.projectState(room, "display").final
+  const seen = G.projectState(room, "display").survey
   assert.equal(seen.slots, 3, "the shape is public — that is the tension")
   assert.deepEqual(
     seen.answers.map((a) => [a.text, a.points]),
     [[null, null], [null, null], [null, null]],
-    "a slot that shipped its answer would be a game decided by devtools",
+    "a slot that shipped its answer would be a round decided by devtools",
   )
-  assert.equal(G.projectState(room, "host").final.answers[0].text, "Milk", "the host has to find the match")
+  assert.equal(G.projectState(room, "host").survey.answers[0].text, "Milk", "the host has to find the match")
 })
 
 test("the buzzer races for it, and finding one pays", () => {
   const room = surveyed()
-  G.openFinal(room)
+  G.openSurvey(room)
   G.armBuzzer(room, 0)
   assert.deepEqual(kinds(G.buzz(room, "p1", 10)), ["buzz-in"])
 
-  const fx = G.revealSurvey(room, 1)
-  assert.deepEqual(kinds(fx), ["survey-hit"])
+  assert.deepEqual(kinds(G.revealSurvey(room, 1)), ["survey-hit"])
   assert.equal(room.players.get("p1").score, 300)
-  assert.equal(room.final.awards[1], "p1")
+  assert.equal(room.survey.awards[1], "p1")
   assert.equal(room.buzzer.winner, null, "and the buzz is given back up")
 
-  const seen = G.projectState(room, "display").final
+  const seen = G.projectState(room, "display").survey
   assert.equal(seen.answers[1].text, "Bin bags", "open to everyone now")
   assert.equal(seen.answers[0].text, null, "the rest stay hidden")
 })
 
+test("whoever buzzed types what they said, and only they can", () => {
+  const room = surveyed()
+  G.openSurvey(room)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+
+  assert.deepEqual(G.saySurvey(room, "p1", "Bin bags"), [], "everyone typing at once would be a chat")
+  assert.deepEqual(kinds(G.saySurvey(room, "p0", "Milk")), ["survey-said"])
+  assert.equal(G.projectState(room, "host").survey.said.text, "Milk")
+
+  // And it clears when the host acts, so the next racer starts blank.
+  G.revealSurvey(room, 0)
+  assert.equal(room.survey.said, null)
+})
+
 test("a strike costs the buzz and nothing else", () => {
   const room = surveyed()
-  G.openFinal(room)
+  G.openSurvey(room)
   G.armBuzzer(room, 0)
   G.buzz(room, "p0", 10)
 
@@ -1347,7 +1370,7 @@ test("a strike costs the buzz and nothing else", () => {
 
 test("the same slot cannot be claimed twice", () => {
   const room = surveyed()
-  G.openFinal(room)
+  G.openSurvey(room)
   G.armBuzzer(room, 0)
   G.buzz(room, "p0", 10)
   G.revealSurvey(room, 0)
@@ -1361,7 +1384,7 @@ test("the same slot cannot be claimed twice", () => {
 
 test("clearing the board is announced", () => {
   const room = surveyed()
-  G.openFinal(room)
+  G.openSurvey(room)
   for (const i of [0, 1]) {
     G.armBuzzer(room, 0)
     G.buzz(room, "p0", 10)
@@ -1370,52 +1393,105 @@ test("clearing the board is announced", () => {
   G.armBuzzer(room, 0)
   G.buzz(room, "p0", 10)
   assert.deepEqual(kinds(G.revealSurvey(room, 2)), ["survey-hit", "survey-cleared"])
-  assert.equal(G.projectState(room, "display").final.cleared, true)
+  assert.equal(G.projectState(room, "display").survey.cleared, true)
 })
 
 test("the host can open a slot nobody got, and it pays nobody", () => {
   const room = surveyed()
-  G.openFinal(room)
-  // No buzz winner: reading out the ones nobody found, at the end.
+  G.openSurvey(room)
   G.revealSurvey(room, 2, null)
-  assert.equal(room.final.awards[2], undefined)
-  assert.equal(G.projectState(room, "display").final.answers[2].text, "Batteries")
+  assert.equal(room.survey.awards[2], undefined)
+  assert.equal(G.projectState(room, "display").survey.answers[2].text, "Batteries")
   for (const p of room.players.values()) assert.equal(p.score, 0)
-})
-
-test("the round ends into the same place every other round does", () => {
-  const room = surveyed(2)
-  G.openFinal(room)
-  G.armBuzzer(room, 0)
-  G.buzz(room, "p0", 10)
-  G.revealSurvey(room, 0)
-  assert.deepEqual(kinds(G.closeSurvey(room)), ["game-end"])
-  assert.equal(room.phase, G.PHASE.ENDED)
 })
 
 test("a survey round can leave a tie, and the tie-break picks it up", () => {
   const room = surveyed(2)
-  G.openFinal(room)
-  // Both find a 400-point answer's worth, ending level.
+  G.openSurvey(room)
   room.players.get("p0").score = 400
   room.players.get("p1").score = 400
-  G.closeSurvey(room)
+  assert.deepEqual(kinds(G.closeSurvey(room)), ["game-end"])
 
+  assert.equal(room.phase, G.PHASE.ENDED)
   assert.equal(G.isTied(room), true)
   assert.deepEqual(kinds(G.openTiebreak(room)), ["tiebreak-open"])
 })
 
 test("teams take the points as a team", () => {
   const { room, a } = teamed(4)
-  room.board.final = { ...G.makeFinal(), enabled: true, kind: "survey", prompt: "?", answers: [{ text: "Milk", points: 400 }] }
-  G.openFinal(room)
+  room.board.survey = { enabled: true, collecting: true, category: "", prompt: "?", answers: [{ text: "Milk", points: 400 }] }
+  room.phase = G.PHASE.ENDED
+  G.openSurvey(room)
   G.armBuzzer(room, 0)
   const one = G.membersOf(room, a.id)[0].id
   G.buzz(room, one, 10)
   G.revealSurvey(room, 0)
 
   assert.equal(a.score, 400)
-  assert.equal(room.final.awards[0], a.id, "the side found it, not the phone")
+  assert.equal(room.survey.awards[0], a.id, "the side found it, not the phone")
+})
+
+// ── Asking a hundred people ──────────────────────────────────────────────────
+
+test("the public link collects answers, and says how many", () => {
+  const room = surveyed()
+  assert.deepEqual(G.addResponse(room, "Milk", 1), { count: 1 })
+  assert.deepEqual(G.addResponse(room, "  Bin bags  ", 2), { count: 2 })
+  assert.equal(G.addResponse(room, "   ", 3), null, "an empty answer is not an answer")
+  assert.equal(room.responses.length, 2)
+  assert.equal(G.projectState(room, "display").survey.responses, 2)
+})
+
+test("collection can be closed without disabling the round", () => {
+  const room = surveyed()
+  room.board.survey.collecting = false
+  assert.equal(G.addResponse(room, "Milk", 1), null)
+})
+
+test("the tally folds what people meant, not what they typed", () => {
+  const room = surveyed()
+  for (const t of ["Milk", "milk", "  MILK ", "bin bags", "Bin Bags!", "the batteries", "Batteries"]) G.addResponse(room, t, 1)
+
+  const tally = G.tallyResponses(room)
+  assert.deepEqual(
+    tally.map((g) => [g.key, g.count]),
+    [
+      ["milk", 3],
+      ["batteries", 2],
+      ["bin bags", 2],
+    ],
+    "case, punctuation and a leading article are not different answers",
+  )
+  assert.equal(tally[0].label, "Milk", "labelled how most people wrote it")
+  assert.equal(tally[1].label, "Batteries", "not 'the batteries', which one person typed")
+})
+
+test("equal answers order by the normalised form, not by capitalisation", () => {
+  const room = surveyed()
+  for (const t of ["zebra", "Apple"]) G.addResponse(room, t, 1)
+  assert.deepEqual(G.tallyResponses(room).map((g) => g.key), ["apple", "zebra"])
+})
+
+test("the tally is the host's alone", () => {
+  const room = surveyed()
+  G.addResponse(room, "Milk", 1)
+  assert.equal(G.projectState(room, "player", "p0").survey.tally, undefined, "it is the answer sheet")
+  assert.ok(G.projectState(room, "host").survey.tally.length)
+})
+
+test("collected answers survive being saved", () => {
+  const room = surveyed()
+  G.addResponse(room, "Milk", 1)
+  G.addResponse(room, "Bin bags", 2)
+  const back = G.restoreRoom("TEST", G.snapshotRoom(room))
+  assert.equal(back.responses.length, 2, "they were gathered over days — losing them loses the round")
+  assert.deepEqual(G.tallyResponses(back).map((g) => g.count), [1, 1])
+})
+
+test("a survey round in flight is never resumed into", () => {
+  const room = surveyed()
+  G.openSurvey(room)
+  assert.equal(G.restoreRoom("TEST", G.snapshotRoom(room)).phase, G.PHASE.ENDED)
 })
 
 test("the written final is untouched by any of this", () => {

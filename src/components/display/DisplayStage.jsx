@@ -8,7 +8,7 @@ import { Brand, BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
 import { VeinLine } from "../ui/Vein"
 import { BoardGrid } from "./BoardGrid"
-import { FinalStage } from "./FinalStage"
+import { FinalStage, SurveyBoard } from "./FinalStage"
 import { ClueCard } from "./ClueCard"
 import { ScoreBar } from "./ScoreBar"
 import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, TimerRing } from "./Overlays"
@@ -161,6 +161,7 @@ function Stage({ code, state, connected, error, audioOn, flash, splash, origin, 
         {phase === "intermission" && <Interlude title="Round cleared" rows={rows} sub={board.round?.name} />}
         {phase === "ended" && <Interlude title="Final scores" rows={rows} final winner={state.winner} tied={state.tied} />}
         {phase === "tiebreak" && <Tiebreak state={state} rows={rows} />}
+        {phase === "survey" && <SurveyBoard state={state} rows={rows} />}
 
         {(phase === "board" || phase === "clue" || phase === "wager" || phase === "reveal") && (
           <div className="relative h-full w-full">
