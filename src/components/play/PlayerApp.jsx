@@ -6,6 +6,7 @@ import { readJson, removeStore, writeJson } from "../../lib/storage"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
+import { Diagnostics } from "./Diagnostics"
 import { FinalPanel } from "./FinalPanel"
 import { VeinLine } from "../ui/Vein"
 
@@ -23,6 +24,7 @@ export function PlayerApp() {
   const [saved] = useState(() => readJson(STORAGE, {}))
   const params = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams()
 
+  const [debug] = useState(() => params.get("debug") === "1")
   const [code, setCode] = useState((params.get("code") ?? saved.code ?? "").toUpperCase())
   const [name, setName] = useState(saved.name ?? "")
   const [joined, setJoined] = useState(false)
@@ -95,6 +97,7 @@ export function PlayerApp() {
   const me = state.players.find((p) => p.id === identity?.playerId)
   return (
     <Board
+      debug={debug}
       state={state}
       me={me}
       connected={connected}
@@ -164,7 +167,7 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
   )
 }
 
-function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }) {
+function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, debug = false }) {
   const { phase, buzzer, clue, lifeline } = state
   const now = useCallback(() => Date.now(), [])
 
@@ -178,6 +181,10 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
     screen because the join tap is the gesture some browsers insist on.
   */
   const wake = useWakeLock()
+
+  /** The last few things the button heard. Only kept when asked for. */
+  const [log, setLog] = useState([])
+  const note = debug ? (what) => setLog((l) => [...l.slice(-7), what]) : undefined
 
   /*
     Whether this phone shows the clue is the host's call, made from their desk.
@@ -359,10 +366,13 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
           disabled={!testing && (spent || onPenalty)}
           pressed={pressed}
           onPress={press}
+          onEvent={note}
           offline={!connected}
           roomy={!showClue}
         />
       </div>
+
+      {debug && <Diagnostics log={log} state={state} me={me} connected={connected} rtt={rtt} wake={wake} />}
 
       <footer className="relative z-10 shrink-0 space-y-2 px-4 pb-5">
         <button
@@ -402,22 +412,36 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave }
  * Events, and on those the buzzer simply did nothing. Falling back to `onClick`
  * would work but costs the ~300ms the fallback exists to avoid.
  */
-function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = false, roomy = false, label = "BUZZ" }) {
+function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, offline = false, roomy = false, label = "BUZZ" }) {
   const lastFire = useRef(0)
 
   /**
-   * Whichever event arrives first wins; the duplicate is dropped.
+   * Three ways in, whichever arrives first, and never `preventDefault`.
    *
-   * `preventDefault` is only attempted where it can actually work. React
-   * registers `touchstart` passively, so calling it from the touch path does
-   * nothing except log an error in Safari — scrolling and double-tap zoom are
-   * already ruled out by `touch-action: none` on the button itself.
+   * This is the third go at making Safari work, so it is now built to not
+   * depend on being right about which events a browser sends.
+   *
+   * - **No `preventDefault`.** It was called on `pointerdown`, and on iOS that
+   *   is documented to suppress the compatibility events that follow —
+   *   `touchstart`, `touchend`, `click` — and to withhold user activation. So
+   *   the one line meant to make the button feel immediate was also the line
+   *   removing every fallback behind it. It buys nothing here either:
+   *   `touch-action: none` already rules out scrolling and double-tap zoom, and
+   *   `user-select: none` rules out selection.
+   * - **`click` as a backstop.** Slower, but it is the one event every browser
+   *   sends for every button, and a buzz that lands 200ms late beats one that
+   *   never lands. It costs nothing when the fast paths work, because of:
+   * - **One press per interaction.** The window is wide enough to swallow the
+   *   `click` that follows a touch even when the button is held down for a
+   *   moment. A second real press inside half a second is meaningless anyway —
+   *   the presser is already in the race.
    */
   const fire = (e) => {
-    if (e.type !== "touchstart" && e.cancelable) e.preventDefault()
     const now = Date.now()
-    if (now - lastFire.current < 350) return
+    onEvent?.(e.type)
+    if (now - lastFire.current < 500) return
     lastFire.current = now
+    onEvent?.(`→ ${e.type}`)
     onPress()
   }
 
@@ -436,8 +460,10 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, offline = 
   */
   return (
     <button
+      type="button"
       onPointerDown={fire}
       onTouchStart={fire}
+      onClick={fire}
       onContextMenu={(e) => e.preventDefault()}
       className={`relative aspect-square ${
         roomy ? "w-[min(78vw,42vh,26rem)]" : "w-[min(72vw,30vh,20rem)]"

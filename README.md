@@ -455,6 +455,23 @@ event, the sentinel is asked whether it is still alive at the one moment that
 matters. If the lock cannot be taken at all, the player's screen says so
 instead of pretending.
 
+## When the buzzer misbehaves
+
+Add `&debug=1` to a player link — `/play?code=XXXX&debug=1` — and the phone
+explains itself: which events the button is receiving, whether the press reached
+the socket, whether the relay agreed, and what the browser admits to supporting.
+
+It exists because "the buzzer doesn't work in Safari" is unanswerable from a
+laptop. The failure only happens on a device nobody debugging it is holding,
+with no console and no devtools, belonging to someone who is at a party. A
+screenshot of that panel settles it in one round trip instead of five.
+
+The line to read first is **button events**. Nothing there at all means the
+press is not reaching the button — a layout or overlay problem. Events listed
+but no arrow means they are arriving and being de-duplicated. An arrow with
+`in the race: no` means the press was sent and the relay declined it, which is a
+game-state answer (locked, spent, already in) rather than a device one.
+
 ## Reconnection
 
 Everything survives a reload, and everything survives the network going away.
