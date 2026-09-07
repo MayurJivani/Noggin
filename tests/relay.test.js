@@ -1311,6 +1311,6 @@ test("a mistyped link gets the 404 page, and a 404 status with it", async (t) =>
   assert.equal(await asset.text(), "not found")
 
   // And a real page is still a real page.
-  const real = await fetch(`http://127.0.0.1:${PORT}/sounds`, { headers: { Accept: "text/html" } })
+  const real = await fetch(`http://127.0.0.1:${PORT}/play`, { headers: { Accept: "text/html" } })
   assert.equal(real.status, 200)
 })

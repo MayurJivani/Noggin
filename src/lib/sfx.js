@@ -42,8 +42,8 @@ export const SAMPLES_ENABLED = false
  * **Off until approved.** These are new and they are the easiest sounds in the
  * app to get wrong: a game cue fires a dozen times an hour and is *meant* to be
  * noticed, whereas a UI tick fires every few seconds on the host desk and is
- * only good if it disappears into the furniture. Hear them all on `/sounds`
- * before this goes true.
+ * only good if it disappears into the furniture. They are also not wired to a
+ * single button yet, so turning this on alone changes nothing — see `playUi`.
  */
 export const UI_SFX_ENABLED = false
 
@@ -67,10 +67,67 @@ export const UI_SFX_ENABLED = false
  * - `"gold"` — struck bells and brass, to match what the app looks like.
  * - `"arcade"` — a chip blip with a gold tail on it.
  *
- * All six are synthesised, so all six are latency-free, and they are A/B'd
- * against each other on `/sounds` — this constant is the whole switch.
+ * All six are synthesised, so all six are latency-free. They were compared side
+ * by side on a listening page that has since been removed, its job done; the
+ * result is `CHOSEN` below.
  */
-export const CUE_TAKE = "current"
+
+/**
+ * The cues that ship, chosen one at a time.
+ *
+ * This is the outcome of an actual listening session rather than a designer's
+ * preference, and it is a *mix* — which is the right shape for it. A take is a
+ * consistent set of decisions about length, weight and brightness, but no
+ * single set of those decisions is right for twenty cues that do completely
+ * different jobs. The tick fires five times in five seconds and wants to stay
+ * out of the way; the buzz has to stop a room mid-sentence. Asking both to
+ * come from the same take is asking one of them to be wrong.
+ *
+ * The pattern that came out of it is worth naming, because it is not random:
+ * **the heavy moments went warm and the quick ones stayed plain.** Everything
+ * that marks a change of state — the buzz, the pause, the board arriving, the
+ * final — took V4, the longest and lowest. Everything that happens *during*
+ * play and must not interrupt it — the tick, the arm, the clock, the lifeline
+ * — stayed on the original. The middle went to V2 and V3.
+ *
+ * Set `FORCE_TAKE` below to hear one take across the board instead.
+ */
+export const CHOSEN = {
+  // Warm and weighted: the moments the room reacts to bodily.
+  buzz: "v4",
+  reject: "v4",
+  undo: "v4",
+  pause: "v4",
+  resume: "v4",
+  finalOpen: "v4",
+  boardOpen: "v4",
+  roundStart: "v4",
+
+  // Plain and out of the way: the ones that fire during play.
+  arm: "current",
+  tick: "current",
+  timeUp: "current",
+  nitro: "current",
+  lifeline: "current",
+  clueClose: "current",
+
+  // The middle ground.
+  select: "v2",
+  correct: "v2",
+  wrong: "v2",
+  reveal: "v3",
+  wagerLock: "v3",
+  join: "v3",
+}
+
+/**
+ * Play every cue from one take, ignoring `CHOSEN`.
+ *
+ * `null` in normal use. Set it to a take name to hear the whole game in one
+ * voice — which is the only way to judge whether a mix has gone incoherent,
+ * and is much easier than reverting twenty entries by hand.
+ */
+export const FORCE_TAKE = null
 
 let ctx = null
 let master = null
@@ -953,7 +1010,9 @@ export const V4 = {
  * stage. Still synthesised, so still free of the one risk that matters — a
  * buzz-in lands with the press rather than after a decode.
  *
- * Not live until `CUE_TAKE` says so. Compare them on `/sounds`.
+ * Nothing here is live: the review picked from the plain family throughout.
+ * Kept rather than deleted, because the next time a cue needs rethinking the
+ * expensive part is having something to compare it against.
  */
 export const ALT = {
   select: () => bell(1046, 0, 0.35, { gain: 0.12 }),
@@ -1216,7 +1275,7 @@ export function playUi(id) {
  */
 export const PLAIN = { ...sfx }
 
-/** Every take, by the name `CUE_TAKE` uses. `current` needs no table. */
+/** Every take, by the name `CHOSEN` uses. `current` needs no table. */
 export const TAKES = { current: PLAIN, v2: V2, v3: V3, v4: V4, gold: ALT, arcade: ARCADE }
 
 /**
@@ -1233,9 +1292,20 @@ export const TAKES = { current: PLAIN, v2: V2, v3: V3, v4: V4, gold: ALT, arcade
  */
 export const CROWD = ["roundEnd", "gameOver"]
 
-// One assignment rather than a branch at every call site: pick the take once
-// and every `sfx.buzz()` in the app follows it.
-Object.assign(sfx, TAKES[CUE_TAKE] ?? PLAIN)
+/**
+ * Fold the chosen cues into `sfx`, once, here.
+ *
+ * Resolving per call site would mean every component knowing about takes; this
+ * way `sfx.buzz()` stays `sfx.buzz()` everywhere in the app and there is one
+ * place to look when a cue sounds wrong.
+ *
+ * A name that matches no take is skipped rather than allowed to blank a cue —
+ * a typo in `CHOSEN` should cost you the choice, not the sound.
+ */
+for (const [id, take] of Object.entries(CHOSEN)) {
+  const cue = TAKES[FORCE_TAKE ?? take]?.[id]
+  if (cue) sfx[id] = cue
+}
 
 // ── The music bed ────────────────────────────────────────────────────────────
 

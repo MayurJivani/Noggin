@@ -1,9 +1,5 @@
 # Sounds
 
-**Hear everything first at `/sounds`.** Every cue the game can make is on that
-page with the moment it fires, including the ones described here as off. It is
-the only honest way to review sound, and it needs no room and no account.
-
 Empty on purpose. The soundboard and the music bed are **off** until someone
 chooses what they should sound like — see `SAMPLES_ENABLED` at the top of
 `src/lib/sfx.js`.

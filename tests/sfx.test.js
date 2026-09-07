@@ -1,8 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
 
-import { CROWD, PLAIN, TAKES, ui, playForEffect, playUi, board, BOARD_CUES } from "../src/lib/sfx.js"
+import { CHOSEN, CROWD, PLAIN, TAKES, ui, playForEffect, playUi, board, BOARD_CUES } from "../src/lib/sfx.js"
 
 /**
  * Sound cannot be reviewed by reading a diff, so these do not try — they check
@@ -78,6 +77,40 @@ test("every relay effect the display reacts to lands on a real cue", () => {
   assert.doesNotThrow(() => playForEffect({ kind: "something-new" }))
 })
 
+test("the chosen mix names real cues and real takes, and covers everything", () => {
+  for (const [id, take] of Object.entries(CHOSEN)) {
+    assert.ok(PLAIN[id], `CHOSEN names "${id}", which is not a cue`)
+    assert.ok(TAKES[take], `CHOSEN sends ${id} to take "${take}", which does not exist`)
+    assert.ok(TAKES[take][id], `take "${take}" has no ${id}, so the choice would silently fall through`)
+  }
+
+  // Every cue must have been decided, except the two that belong to the sample
+  // layer. An undecided cue is not an error at runtime — it just quietly keeps
+  // whatever the original set did, which is exactly the kind of thing nobody
+  // notices until a game is running.
+  for (const id of Object.keys(PLAIN)) {
+    if (CROWD.includes(id)) {
+      assert.ok(!CHOSEN[id], `${id} is a crowd cue and must stay on the sample layer`)
+      continue
+    }
+    assert.ok(CHOSEN[id], `no take chosen for ${id}`)
+  }
+})
+
+test("the shipping cues are the ones that were chosen", async () => {
+  // Identity, not behaviour: prove the fold actually happened and put each cue
+  // on the take the review asked for.
+  const { installAudioStub } = await import("./audio-stub.js")
+  installAudioStub()
+  const sound = await import("../src/lib/sfx.js?chosen")
+
+  for (const [id, take] of Object.entries(sound.CHOSEN)) {
+    assert.equal(sound.sfx[id], sound.TAKES[take][id], `${id} is not playing the ${take} take`)
+  }
+  // And the crowd cues were left alone.
+  for (const id of sound.CROWD) assert.equal(sound.sfx[id], sound.PLAIN[id], `${id} was overwritten`)
+})
+
 test("every cue runs to the end with a context in place", async () => {
   // The check that would have caught the `sweep` ReferenceError. Without a
   // context every cue returns at its first line, so the tests above prove only
@@ -116,18 +149,3 @@ test("every cue runs to the end with a context in place", async () => {
   }
 })
 
-test("the audition page names cues that exist", () => {
-  // The page is JSX and cannot be imported here, but its roster is a plain
-  // list of ids — and a mistyped one is a button that makes no sound, which
-  // is the single worst bug an approval page could have.
-  const src = readFileSync(new URL("../src/components/sounds/SoundsApp.jsx", import.meta.url), "utf8")
-  const section = (name) => src.split(`const ${name} = [`)[1]?.split("\n]")[0] ?? ""
-
-  const game = [...section("GAME").matchAll(/\["([a-zA-Z]+)",/g)].map((m) => m[1])
-  assert.ok(game.length > 10, "the game section lost its roster")
-  for (const id of game) assert.ok(PLAIN[id], `/sounds offers "${id}", which is not a cue`)
-
-  const uiIds = [...section("UI").matchAll(/\["([a-zA-Z]+)",/g)].map((m) => m[1])
-  assert.ok(uiIds.length > 5, "the interface section lost its roster")
-  for (const id of uiIds) assert.ok(ui[id], `/sounds offers ui "${id}", which is not a cue`)
-})

@@ -18,29 +18,38 @@ What exists, and what is deliberately left for later.
 - **Buzzer sound-check** — prove every phone's button reaches the relay before
   the first clue, with each phone's round-trip beside it. A test press scores
   nothing and is not a race entry.
-- **The listening room** (`/sounds`) — every noise the game can make, on a page,
-  with the moment each one fires and three takes of each side by side. Sound
-  cannot be reviewed by reading a diff, so it gets a surface. Each row takes a
-  verdict — keep this take, or send it back with a note — which is remembered
-  per device and read back as a block of text to hand over. No relay
-  connection, no room, no state: it makes noises and nothing else.
-- **Six takes of every game cue.** Four are one family, differing in production
-  rather than material: `current` is the original, plain and legible; `v2` is
-  the original made properly — an onset, a body of two detuned voices, sub
-  weight under the three moments a room reacts to physically; `v3` is V2
-  tightened for a hall, where a long tail smears into the next thing; `v4` is V2
-  warmed for a living room. Two change the material instead: `gold` is struck
-  bells and brass, `arcade` a chip blip with a gold tail. All synthesised, so a
-  buzz-in still lands *with* the press. `CUE_TAKE` in `src/lib/sfx.js` is the
-  whole switch.
+- **Six takes of every game cue, and a chosen mix.** Four takes are one family,
+  differing in production rather than material: `current` is the original, plain
+  and legible; `v2` is the original made properly — an onset, a body of two
+  detuned voices, sub weight under the moments a room reacts to physically;
+  `v3` is V2 tightened for a hall, where a long tail smears into the next thing;
+  `v4` is V2 warmed for a living room. Two change the material instead: `gold`
+  is struck bells and brass, `arcade` a chip blip with a gold tail. All
+  synthesised, so a buzz-in still lands *with* the press.
+
+  What ships is `CHOSEN` in `src/lib/sfx.js` — **one take per cue**, from a real
+  listening session rather than a preference. The pattern that came out of it:
+  the heavy moments went warm and the quick ones stayed plain. Everything
+  marking a change of state took V4; everything firing *during* play stayed on
+  the original. A single take for twenty cues that do different jobs was always
+  going to be wrong for some of them. `FORCE_TAKE` overrides the lot when you
+  need to hear one voice across the board.
+
+  The listening page that produced this is **gone** — it existed to be compared
+  on, that comparison happened, and a public page making noises is not something
+  to leave standing once it has nothing left to decide. The two unchosen takes
+  (`gold`, `arcade`) are kept in source: the expensive part of rethinking a cue
+  is having something to hold it against.
 - **A 404 page** — the one page rendered at build time with no island at all, so
   it survives a browser having a bad day. Two ways out rather than a back
   button: the people who land here are a player whose link is wrong and a host
   whose bookmark moved, and they want opposite things.
 - **Interface sounds** — a tap, a tab, a toggle, a panel, a save, a refusal.
-  Built, auditionable and **off**, on their own bus so they can be silenced
-  without touching the game. Not yet wired to any button, deliberately: they
-  should be chosen before they are spread across fifty call sites.
+  Built and **off**, on their own bus so they can be silenced without touching
+  the game. Never reviewed and not wired to any button, so `UI_SFX_ENABLED`
+  alone changes nothing — the wiring is deliberately the last step, since
+  spreading unapproved cues across fifty call sites is work that gets thrown
+  away.
 - **The soundboard** — built, and **switched off** until sounds are chosen:
   a sample engine, a fifteen-cue roster, a bed that ducks under a clue, relay
   messages to fire them. One constant (`SAMPLES_ENABLED`) and a folder of MP3s
