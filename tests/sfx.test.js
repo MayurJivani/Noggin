@@ -78,6 +78,44 @@ test("every relay effect the display reacts to lands on a real cue", () => {
   assert.doesNotThrow(() => playForEffect({ kind: "something-new" }))
 })
 
+test("every cue runs to the end with a context in place", async () => {
+  // The check that would have caught the `sweep` ReferenceError. Without a
+  // context every cue returns at its first line, so the tests above prove only
+  // that the module loads — this one makes the bodies actually run.
+  const { installAudioStub } = await import("./audio-stub.js")
+  const stub = installAudioStub()
+  const sound = await import("../src/lib/sfx.js?live")
+  sound.unlock()
+  assert.equal(stub.contexts.length, 1, "unlock should have built exactly one context")
+
+  const made = () => JSON.stringify(stub.contexts[0].made)
+  const ran = (fn) => {
+    const before = made()
+    fn()
+    return before !== made()
+  }
+
+  for (const [take, table] of Object.entries(sound.TAKES)) {
+    for (const [id, fn] of Object.entries(table)) {
+      assert.doesNotThrow(() => fn(), `${take}.${id} threw once it had a context`)
+    }
+  }
+  for (const [id, fn] of Object.entries(sound.ui)) {
+    assert.doesNotThrow(() => fn(), `ui.${id} threw once it had a context`)
+  }
+  for (const [id, fn] of Object.entries(sound.board)) {
+    assert.doesNotThrow(() => fn(), `board.${id} threw once it had a context`)
+  }
+
+  // And every one of them must actually build something. A cue that throws
+  // nothing and makes nothing is the silent failure this file exists for.
+  for (const [take, table] of Object.entries(sound.TAKES)) {
+    for (const [id, fn] of Object.entries(table)) {
+      assert.ok(ran(fn), `${take}.${id} created no audio nodes at all`)
+    }
+  }
+})
+
 test("the audition page names cues that exist", () => {
   // The page is JSX and cannot be imported here, but its roster is a plain
   // list of ids — and a mistyped one is a button that makes no sound, which

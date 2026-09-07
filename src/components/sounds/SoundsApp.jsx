@@ -27,11 +27,14 @@ import { VeinLine } from "../ui/Vein"
  */
 const TAKES_UI = [
   ["current", "Current", ""],
+  ["v2", "V2", ""],
+  ["v3", "V3", ""],
+  ["v4", "V4", ""],
   ["gold", "Gold", "btn-gold"],
   ["arcade", "Arcade", "border-amethyst/70 text-amethyst"],
 ]
 
-const TAKE_LABEL = { current: "Current", gold: "Gold", arcade: "Arcade" }
+const TAKE_LABEL = { current: "Current", v2: "V2", v3: "V3", v4: "V4", gold: "Gold", arcade: "Arcade" }
 
 /** The game's own cues, with the moment each one fires. */
 const GAME = [
@@ -145,13 +148,16 @@ export function SoundsApp() {
           title="The game"
           note={
             <>
-              Three takes of each, all synthesised, so all three land the instant they fire.
+              Six takes of each, all synthesised, so all six land the instant they fire.
               <br />
-              <b className="text-ink">Current</b> is what ships today — square waves and filtered noise, plain and legible.
-              {" "}
-              <b className="text-gold">Gold</b> rebuilds each cue from struck bells and brass, to match what the app looks
-              like. <b className="text-amethyst">Arcade</b> fires a chip blip and lets it decay into that same gold: arcade
-              attack, expensive tail.
+              <b className="text-ink">Current · V2 · V3 · V4</b> are one family — the same squares, triangles and filtered
+              noise, differing in production rather than material. Current is the original. V2 is it made properly: an
+              onset, a body of two detuned voices, sub weight where the room reacts. <b className="text-ink">V3</b> is V2
+              tightened — shorter and brighter, for a hall where a long tail smears into the next thing.{" "}
+              <b className="text-ink">V4</b> is V2 warmed — longer and lower, for a living room.
+              <br />
+              <b className="text-gold">Gold</b> and <b className="text-amethyst">Arcade</b> change the material instead:
+              struck bells and brass, and a chip blip with a gold tail.
               {" "}Live now: <b className="text-ink">{TAKE_LABEL[CUE_TAKE] ?? "Current"}</b>.
             </>
           }
@@ -165,9 +171,13 @@ export function SoundsApp() {
               {TAKES_UI.map(([take, name, cls]) => (
                 <button
                   key={take}
-                  className={`btn shrink-0 px-3 py-1.5 text-[12px] disabled:opacity-30 ${cls} ${
-                    verdicts[id]?.pick === take ? "ring-2 ring-good ring-offset-1 ring-offset-panel" : ""
-                  }`}
+                  // The family is separated from the other two by a gap rather
+                  // than a heading: six buttons in a row is already a lot, and
+                  // the eye needs to know which four are variations on one
+                  // thing before it starts comparing them.
+                  className={`btn shrink-0 px-2.5 py-1.5 text-[12px] disabled:opacity-30 ${cls} ${
+                    take === "gold" ? "ml-3" : ""
+                  } ${verdicts[id]?.pick === take ? "ring-2 ring-good ring-offset-1 ring-offset-panel" : ""}`}
                   disabled={!TAKES[take]?.[id]}
                   onClick={() => play(`${label} · ${name.toLowerCase()}`, TAKES[take][id])}
                 >
@@ -178,11 +188,7 @@ export function SoundsApp() {
                 id={id}
                 value={verdicts[id]}
                 onChange={(patch) => set(id, patch)}
-                options={[
-                  ["current", "✓ Current"],
-                  ["gold", "✓ Gold"],
-                  ["arcade", "✓ Arcade"],
-                ]}
+                options={TAKES_UI.map(([take, name]) => [take, `✓ ${name}`])}
               />
             </li>
           ))}

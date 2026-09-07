@@ -50,14 +50,24 @@ export const UI_SFX_ENABLED = false
 /**
  * Which take of the game's own cues to play.
  *
- * - `"current"` — what has always shipped: square waves and filtered noise,
- *   plain and legible.
- * - `"gold"` — the same cues rebuilt from struck bells and brass, to match the
- *   black-and-gold the rest of the app is made of.
- * - `"arcade"` — a chip blip with a gold tail on it. Arcade attack, expensive
- *   decay.
+ * Four of these are the same family — squares, triangles and filtered noise —
+ * and differ in production rather than material:
  *
- * All three are synthesised, so all three are latency-free, and they are A/B'd
+ * - `"current"` — the original. Plain and legible, now without the clicks and
+ *   the static that were never intended.
+ * - `"v2"` — the original made properly: an onset, a body of two detuned
+ *   voices, and sub weight under the three moments a room reacts to.
+ * - `"v3"` — V2 tightened. Shorter, brighter, further forward; for a hall,
+ *   where a long tail smears into whatever happens next.
+ * - `"v4"` — V2 warmed. Longer, lower, softer; for a living room, where
+ *   nothing needs to cut through a crowd.
+ *
+ * Two are a change of material rather than of degree:
+ *
+ * - `"gold"` — struck bells and brass, to match what the app looks like.
+ * - `"arcade"` — a chip blip with a gold tail on it.
+ *
+ * All six are synthesised, so all six are latency-free, and they are A/B'd
  * against each other on `/sounds` — this constant is the whole switch.
  */
 export const CUE_TAKE = "current"
@@ -222,7 +232,7 @@ function tone(freq, start, dur, { type = "sine", gain = 0.3, sweep = null, bus =
   osc.stop(t0 + dur + 0.05)
 }
 
-function noise(start, dur, gain = 0.15, { bus = null, filter = null, q = 1 } = {}) {
+function noise(start, dur, gain = 0.15, { bus = null, filter = null, q = 1, sweep = null } = {}) {
   if (!ctx) return
   const t0 = ctx.currentTime + start
   const frames = Math.max(1, Math.floor(ctx.sampleRate * dur))
@@ -231,15 +241,37 @@ function noise(start, dur, gain = 0.15, { bus = null, filter = null, q = 1 } = {
   for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames)
   const src = ctx.createBufferSource()
   const env = ctx.createGain()
-  env.gain.value = gain
   src.buffer = buf
+
+  /*
+    An attack, however short.
+
+    The buffer's first sample is already at full amplitude — the `1 - i/frames`
+    taper only shapes the tail — so starting the gain flat at `gain` steps the
+    output from silence to maximum in one sample. That step is a click, and a
+    click on the front of a noise burst is what makes a whoosh sound like a
+    buzz. Milliseconds are enough; the cue still lands on time.
+  */
+  env.gain.setValueAtTime(0.0001, t0)
+  env.gain.exponentialRampToValueAtTime(gain, t0 + Math.min(0.012, dur * 0.25))
 
   let node = src
   if (filter) {
     const bp = ctx.createBiquadFilter()
     bp.type = typeof filter === "number" ? "bandpass" : filter.type
-    bp.frequency.value = typeof filter === "number" ? filter : filter.freq
+    const from = typeof filter === "number" ? filter : filter.freq
     bp.Q.value = q
+    bp.frequency.setValueAtTime(from, t0)
+    /*
+      A band that moves.
+
+      This is the other half of the same bug. Noise through a *stationary*
+      bandpass is exactly what an untuned radio is, and no amount of choosing
+      the centre frequency changes that — the ear reads movement, not position.
+      Sweeping the band is what turns the same white noise into air moving past
+      something.
+    */
+    if (sweep) bp.frequency.exponentialRampToValueAtTime(Math.max(20, sweep), t0 + dur)
     node = src.connect(bp)
   }
   node.connect(env).connect(bus ?? cueBus)
@@ -351,33 +383,82 @@ function thud(start = 0, { gain = 0.3, freq = 90, bus = null } = {}) {
   noise(start, 0.09, gain * 0.35, { filter: { type: "lowpass", freq: 400 }, bus })
 }
 
+/**
+ * A crowd, out of individual hands.
+ *
+ * The old version of this was one long noise burst through a fixed bandpass,
+ * which is not what a crowd is — it is what a radio between stations is. A
+ * clap is a *transient*: three milliseconds of broadband crack and nothing
+ * after it, and a room full of people is a few hundred of those at random
+ * offsets with no two quite the same brightness.
+ *
+ * This still will not fool anyone, and it is not meant to. It is meant to
+ * sound like applause heard through a wall rather than like a fault on the
+ * line, which is the difference between a stand-in and a bug. Real recordings
+ * remain the answer — see `CROWD`.
+ */
+function crowd(dur, density, gain, { bus = null, spread = 1 } = {}) {
+  const claps = Math.round(dur * density)
+  for (let i = 0; i < claps; i++) {
+    // Front-loaded: a room does not start applauding in unison, but it does
+    // start together enough that a flat distribution sounds like rain.
+    const at = Math.random() ** 0.75 * dur
+    const bright = 1400 + Math.random() * 2600 * spread
+    noise(at, 0.02 + Math.random() * 0.025, gain * (0.5 + Math.random() * 0.7), {
+      filter: { type: "bandpass", freq: bright },
+      q: 1.1,
+      bus,
+    })
+  }
+}
+
 /** Plain stand-ins, used only when a sample is missing. */
 const synth = {
-  applause: () => noise(0, 2.2, 0.14, { filter: { type: "bandpass", freq: 1900 }, q: 0.6 }),
+  applause: () => crowd(2.2, 55, 0.075),
   drumroll: () => {
-    for (let i = 0; i < 40; i++) noise((i / 40) ** 2 * 1.8, 0.035, 0.12, { filter: { type: "bandpass", freq: 260 } })
+    for (let i = 0; i < 40; i++) noise((i / 40) ** 2 * 1.8, 0.035, 0.12, { filter: { type: "bandpass", freq: 260 }, q: 1.6 })
     noise(1.85, 1.2, 0.2, { filter: { type: "highpass", freq: 2600 } })
   },
   airhorn: () => [233, 311, 466].forEach((f) => tone(f, 0, 0.8, { type: "sawtooth", gain: 0.14 })),
-  fanfare: () => [392, 523, 659, 784, 1046].forEach((f, i) => tone(f, i * 0.12, 0.6, { type: "square", gain: 0.14 })),
+  fanfare: () => {
+    ;[392, 523, 659, 784, 1046].forEach((f, i) => tone(f, i * 0.12, 0.6, { type: "square", gain: 0.14 }))
+    // A riser under the climb, arriving with the top note rather than the
+    // bottom one, so the run has somewhere to be going.
+    noise(0, 0.52, 0.07, { filter: { type: "bandpass", freq: 500 }, q: 2, sweep: 4000 })
+  },
   trombone: () => [233, 220, 196, 174].forEach((f, i) => tone(f, i * 0.3, 0.34, { type: "sawtooth", gain: 0.2, sweep: f * 0.94 })),
   boo: () => [98, 116, 131].forEach((f) => tone(f, 0, 1.4, { type: "sawtooth", gain: 0.09, sweep: f * 0.8 })),
   gong: () => {
     tone(110, 0, 3, { type: "sine", gain: 0.22 })
-    noise(0, 2.4, 0.08, { filter: { type: "lowpass", freq: 900 } })
+    // The wash under it now falls away rather than sitting still, so it reads
+    // as a struck thing ringing out instead of a hum arriving alongside.
+    noise(0, 2.4, 0.09, { filter: { type: "lowpass", freq: 2200 }, q: 0.8, sweep: 260 })
   },
-  whoosh: () => noise(0, 0.7, 0.14, { filter: { type: "bandpass", freq: 900 }, q: 0.4 }),
+  /*
+    A riser, not a hiss.
+
+    This was a fixed 900Hz bandpass at Q 0.4 — so wide it barely filtered
+    anything, which left plain white noise with a click on the front. That is
+    the "noise buzz" on the board going up and on a new round starting, both of
+    which play this. A band that climbs, and narrow enough to have a pitch to
+    it, is what makes moving air out of the same random numbers.
+  */
+  whoosh: () => noise(0, 0.7, 0.16, { filter: { type: "bandpass", freq: 320 }, q: 2.2, sweep: 3600 }),
   ding: () => {
     tone(1760, 0, 0.5, { type: "sine", gain: 0.22 })
     tone(2637, 0.01, 0.4, { type: "sine", gain: 0.1 })
   },
   buzzer: () => {
+    // 140 against 147 beats seven times a second, which is what makes a game
+    // show buzzer sound wrong rather than merely low. The sub under it is new.
+    thud(0, { gain: 0.2, freq: 68 })
     tone(140, 0, 0.75, { type: "square", gain: 0.22 })
     tone(147, 0, 0.75, { type: "square", gain: 0.18 })
   },
   tada: () => {
     tone(784, 0, 0.14, { type: "triangle", gain: 0.3 })
     tone(1046, 0.11, 0.4, { type: "triangle", gain: 0.3 })
+    tone(1568, 0.13, 0.3, { type: "triangle", gain: 0.1 })
   },
   crickets: () => {
     for (let i = 0; i < 12; i++) {
@@ -385,9 +466,9 @@ const synth = {
       for (let n = 0; n < 3; n++) tone(4200, at + n * 0.035, 0.028, { type: "square", gain: 0.05 })
     }
   },
-  cheer: () => noise(0, 1.8, 0.12, { filter: { type: "bandpass", freq: 1400 }, q: 0.5 }),
+  cheer: () => crowd(1.8, 45, 0.07, { spread: 1.3 }),
   laugh: () => [220, 196, 220, 175].forEach((f, i) => tone(f, i * 0.16, 0.14, { type: "sawtooth", gain: 0.12 })),
-  ovation: () => noise(0, 4, 0.16, { filter: { type: "bandpass", freq: 1900 }, q: 0.6 }),
+  ovation: () => crowd(4, 60, 0.08),
 }
 
 // ── The soundboard ───────────────────────────────────────────────────────────
@@ -454,21 +535,43 @@ export function playCue(id) {
  */
 export const sfx = {
   /** Tile picked off the board. */
-  select: () => tone(660, 0, 0.09, { type: "triangle", gain: 0.18 }),
+  select: () => {
+    tone(660, 0, 0.09, { type: "triangle", gain: 0.18 })
+    // A tick on the front. Two milliseconds of air is the difference between a
+    // note starting and a thing being *pressed*.
+    noise(0, 0.02, 0.05, { filter: { type: "bandpass", freq: 3200 }, q: 1.4 })
+  },
   /** Someone got there first. */
   buzz: () => {
+    // Sub underneath. On a laptop this is barely there; over a PA it is the
+    // whole reason a buzz-in stops the room.
+    thud(0, { gain: 0.22, freq: 75 })
     tone(180, 0, 0.28, { type: "square", gain: 0.22 })
     tone(240, 0.02, 0.26, { type: "square", gain: 0.14 })
   },
   /** Jumped the gun. */
-  reject: () => tone(150, 0, 0.16, { type: "sawtooth", gain: 0.16, sweep: 80 }),
+  reject: () => {
+    tone(150, 0, 0.16, { type: "sawtooth", gain: 0.16, sweep: 80 })
+    thud(0, { gain: 0.1, freq: 105 })
+  },
   /** Last five seconds of any countdown. */
   tick: () => tone(1200, 0, 0.03, { type: "sine", gain: 0.1 }),
   /** The buzzer opens. */
-  arm: () => tone(1046, 0, 0.09, { type: "sine", gain: 0.14 }),
+  arm: () => {
+    tone(1046, 0, 0.09, { type: "sine", gain: 0.14 })
+    tone(1568, 0.02, 0.07, { type: "sine", gain: 0.07 })
+  },
   /** Back to the grid after a clue. */
-  clueClose: () => tone(520, 0, 0.14, { type: "sine", gain: 0.1, sweep: 300 }),
-  reveal: () => tone(523, 0, 0.35, { type: "triangle", gain: 0.22 }),
+  clueClose: () => {
+    tone(520, 0, 0.14, { type: "sine", gain: 0.1, sweep: 300 })
+    noise(0, 0.18, 0.05, { filter: { type: "bandpass", freq: 1800 }, q: 1.8, sweep: 400 })
+  },
+  reveal: () => {
+    tone(523, 0, 0.35, { type: "triangle", gain: 0.22 })
+    // A fifth over it, quieter and shorter. Fills the cue out without turning
+    // it into a chord that has to resolve.
+    tone(784, 0.03, 0.26, { type: "triangle", gain: 0.09 })
+  },
   /** A ruling taken back. */
   undo: () => tone(700, 0, 0.16, { type: "sine", gain: 0.12, sweep: 420 }),
   /** A phone takes a seat in the lobby. */
@@ -480,6 +583,9 @@ export const sfx = {
     tone(440, 0, 0.12, { type: "square", gain: 0.22 })
     tone(440, 0.16, 0.12, { type: "square", gain: 0.22 })
     tone(330, 0.32, 0.4, { type: "square", gain: 0.22 })
+    // Weight on the last one only. Three equal beeps is an alarm clock; two
+    // and a landing is a verdict.
+    thud(0.32, { gain: 0.16, freq: 80 })
   },
   lifeline: () => {
     tone(880, 0, 0.1, { type: "sine", gain: 0.2 })
@@ -514,6 +620,329 @@ export const sfx = {
   roundEnd: () => sample("applause", synth.applause, { bus: boardBus, gain: 0.7 }),
   /** That's the game. */
   gameOver: () => sample("ovation", synth.ovation, { bus: boardBus, gain: 1 }),
+}
+
+/**
+ * A stab: two voices a few cents apart, with a tick of air on the front.
+ *
+ * The detune is the whole trick, and it is the single thing most missing from
+ * the original set. One oscillator is a test tone. Two of them seven cents
+ * apart beat slowly against each other, and that slow movement is what the ear
+ * hears as an instrument rather than as a signal generator. The tick of noise
+ * on the front does the same job at the other end: it gives the note an onset,
+ * so it sounds struck rather than switched on.
+ */
+function stab(freq, start = 0, dur = 0.22, { gain = 0.16, type = "triangle", bus = null, sweep = null, air = 2600 } = {}) {
+  tone(freq, start, dur, { type, gain, bus, sweep, detune: -7 })
+  tone(freq, start, dur * 0.9, { type, gain: gain * 0.66, bus, sweep, detune: 7 })
+  if (air) noise(start, 0.022, gain * 0.3, { filter: { type: "bandpass", freq: air }, q: 1.5, bus })
+}
+
+/**
+ * V2 — the same idea as the original set, made properly.
+ *
+ * Not a change of material. This is still squares, triangles and filtered
+ * noise, and every cue is recognisably the one it replaces: the buzz is still
+ * a low square pair, the wrong answer is still two notes beating against each
+ * other, the tick is still a tick. Anyone who knows the current set will not
+ * have to relearn a thing.
+ *
+ * What changed is production. Every cue now has the three parts a sound needs
+ * and the originals mostly lacked:
+ *
+ * - **An onset.** A tick of air on the front, so a note is struck rather than
+ *   switched on.
+ * - **A body.** Two detuned voices instead of one, so it beats slowly and
+ *   reads as an instrument.
+ * - **Weight, where the moment deserves it.** Sub under the buzz, the miss and
+ *   the last beep of the clock — the three the room reacts to physically.
+ *
+ * The transitions are risers rather than washes, which is the fix for the
+ * static that started all this.
+ */
+export const V2 = {
+  select: () => stab(660, 0, 0.1, { gain: 0.16, type: "triangle", air: 3200 }),
+  /** Low, loud and physical. The one cue that has to stop a room mid-sentence. */
+  buzz: () => {
+    thud(0, { gain: 0.26, freq: 72 })
+    stab(180, 0, 0.3, { gain: 0.2, type: "square", air: 2400 })
+    stab(270, 0.02, 0.24, { gain: 0.11, type: "square", air: null })
+    noise(0, 0.22, 0.07, { filter: { type: "bandpass", freq: 2600 }, q: 1.6, sweep: 500 })
+  },
+  /** Down and out. Nothing here rises, because nothing here was earned. */
+  reject: () => {
+    thud(0, { gain: 0.12, freq: 105 })
+    tone(150, 0, 0.18, { type: "sawtooth", gain: 0.15, sweep: 72 })
+    noise(0, 0.16, 0.05, { filter: { type: "bandpass", freq: 1400 }, q: 1.8, sweep: 300 })
+  },
+  arm: () => {
+    stab(1046, 0, 0.1, { gain: 0.12, type: "sine", air: 4200 })
+    tone(1568, 0.03, 0.08, { type: "sine", gain: 0.06 })
+  },
+  /** Fires five times in a row, so it stays one clean transient and nothing more. */
+  tick: () => tone(1300, 0, 0.028, { type: "sine", gain: 0.1 }),
+  clueClose: () => {
+    stab(520, 0, 0.16, { gain: 0.1, type: "sine", sweep: 300, air: null })
+    noise(0, 0.2, 0.055, { filter: { type: "bandpass", freq: 2000 }, q: 1.8, sweep: 380 })
+  },
+  reveal: () => {
+    stab(523, 0, 0.4, { gain: 0.19, type: "triangle" })
+    tone(784, 0.04, 0.3, { type: "triangle", gain: 0.08 })
+  },
+  undo: () => stab(700, 0, 0.18, { gain: 0.11, type: "sine", sweep: 420, air: null }),
+  join: () => {
+    stab(880, 0, 0.08, { gain: 0.11, type: "sine", air: 3600 })
+    stab(1318, 0.07, 0.14, { gain: 0.1, type: "sine", air: null })
+  },
+  timeUp: () => {
+    stab(440, 0, 0.13, { gain: 0.19, type: "square", air: 2600 })
+    stab(440, 0.17, 0.13, { gain: 0.19, type: "square", air: 2600 })
+    stab(330, 0.34, 0.42, { gain: 0.2, type: "square", air: 2200 })
+    thud(0.34, { gain: 0.17, freq: 78 })
+  },
+  lifeline: () => {
+    stab(880, 0, 0.11, { gain: 0.16, type: "sine", air: 3800 })
+    stab(660, 0.13, 0.11, { gain: 0.16, type: "sine", air: null })
+    stab(880, 0.26, 0.22, { gain: 0.16, type: "sine", air: null })
+  },
+  pause: () => {
+    stab(523, 0, 0.17, { gain: 0.14, type: "sine", air: 2800 })
+    stab(392, 0.14, 0.32, { gain: 0.14, type: "sine", air: null })
+  },
+  resume: () => {
+    stab(392, 0, 0.15, { gain: 0.14, type: "sine", air: 2800 })
+    stab(523, 0.12, 0.28, { gain: 0.14, type: "sine", air: null })
+  },
+  wagerLock: () => {
+    stab(392, 0, 0.13, { gain: 0.14, type: "square", air: 2400 })
+    stab(523, 0.11, 0.22, { gain: 0.14, type: "square", air: null })
+  },
+  /** Up, and it keeps going up. */
+  correct: () => {
+    stab(784, 0, 0.15, { gain: 0.18, type: "triangle" })
+    stab(1046, 0.11, 0.18, { gain: 0.18, type: "triangle", air: null })
+    stab(1318, 0.21, 0.38, { gain: 0.15, type: "triangle", air: null })
+    noise(0, 0.34, 0.05, { filter: { type: "bandpass", freq: 700 }, q: 2.2, sweep: 5000 })
+  },
+  /** The seven-beats-a-second pair, with a floor under it and a fall over it. */
+  wrong: () => {
+    thud(0, { gain: 0.24, freq: 66 })
+    tone(140, 0, 0.7, { type: "square", gain: 0.2 })
+    tone(147, 0, 0.7, { type: "square", gain: 0.16 })
+    noise(0, 0.3, 0.055, { filter: { type: "bandpass", freq: 1600 }, q: 1.6, sweep: 240 })
+  },
+  nitro: () => {
+    ;[392, 523, 659, 784, 1046].forEach((f, i) => stab(f, i * 0.11, 0.5, { gain: 0.13, type: "square", air: i ? null : 3000 }))
+    noise(0, 0.5, 0.075, { filter: { type: "bandpass", freq: 480 }, q: 2, sweep: 5200 })
+    thud(0.44, { gain: 0.16, freq: 82 })
+  },
+  /** A riser and a chord landing on top of it. The board arriving, not appearing. */
+  boardOpen: () => {
+    noise(0, 0.75, 0.11, { filter: { type: "bandpass", freq: 260 }, q: 2.4, sweep: 4200 })
+    ;[262, 392, 523].forEach((f) => stab(f, 0.62, 0.6, { gain: 0.12, type: "triangle", air: null }))
+    thud(0.62, { gain: 0.14, freq: 70 })
+  },
+  roundStart: () => {
+    noise(0, 0.5, 0.09, { filter: { type: "bandpass", freq: 340 }, q: 2.4, sweep: 3800 })
+    ;[330, 440, 659].forEach((f) => stab(f, 0.4, 0.44, { gain: 0.11, type: "triangle", air: null }))
+  },
+  /** The only one that falls. Everything about the final is downward. */
+  finalOpen: () => {
+    thud(0, { gain: 0.3, freq: 55 })
+    tone(110, 0, 3, { type: "sine", gain: 0.2 })
+    tone(146, 0.05, 1.4, { type: "sawtooth", gain: 0.07, sweep: 138 })
+    noise(0, 1.6, 0.07, { filter: { type: "bandpass", freq: 2600 }, q: 1.4, sweep: 180 })
+  },
+}
+
+/**
+ * V3 — the same set, tightened.
+ *
+ * Everything is shorter, brighter and further forward. Where V2 lets a cue
+ * ring, this one cuts it off; where V2 sits a note at 523, this sits it an
+ * octave's worth of attention higher and takes the sub away. The result reads
+ * as a modern broadcast package — quick, clean, slightly clinical.
+ *
+ * It exists because the right length for a cue depends on the room. In a
+ * living room V2's tails are warmth; in a hall with any reverb at all they
+ * smear into the next thing that happens, and a host talking over a cue that
+ * is still going will turn it down until it may as well not be there.
+ *
+ * One thing is *not* shortened: the wrong-answer pair. That cue's whole
+ * identity is 140 against 147 beating seven times a second, and a beat needs
+ * time to happen — cut it to a fifth of a second and it stops being a buzzer
+ * and becomes a click.
+ */
+export const V3 = {
+  select: () => stab(880, 0, 0.06, { gain: 0.15, type: "triangle", air: 4000 }),
+  buzz: () => {
+    thud(0, { gain: 0.18, freq: 88 })
+    stab(220, 0, 0.18, { gain: 0.2, type: "square", air: 3200 })
+    stab(330, 0.015, 0.14, { gain: 0.1, type: "square", air: null })
+    noise(0, 0.14, 0.07, { filter: { type: "bandpass", freq: 3400 }, q: 1.8, sweep: 900 })
+  },
+  reject: () => {
+    tone(190, 0, 0.11, { type: "sawtooth", gain: 0.15, sweep: 95 })
+    noise(0, 0.1, 0.05, { filter: { type: "bandpass", freq: 1800 }, q: 2, sweep: 500 })
+  },
+  arm: () => stab(1318, 0, 0.06, { gain: 0.12, type: "sine", air: 5000 }),
+  tick: () => tone(1600, 0, 0.022, { type: "sine", gain: 0.09 }),
+  clueClose: () => {
+    stab(660, 0, 0.09, { gain: 0.09, type: "sine", sweep: 420, air: null })
+    noise(0, 0.12, 0.05, { filter: { type: "bandpass", freq: 2600 }, q: 2, sweep: 700 })
+  },
+  reveal: () => {
+    stab(659, 0, 0.22, { gain: 0.17, type: "triangle", air: 3800 })
+    tone(988, 0.03, 0.16, { type: "triangle", gain: 0.07 })
+  },
+  undo: () => stab(880, 0, 0.1, { gain: 0.1, type: "sine", sweep: 560, air: null }),
+  join: () => {
+    stab(1046, 0, 0.05, { gain: 0.1, type: "sine", air: 4400 })
+    stab(1568, 0.05, 0.09, { gain: 0.09, type: "sine", air: null })
+  },
+  timeUp: () => {
+    stab(523, 0, 0.08, { gain: 0.18, type: "square", air: 3400 })
+    stab(523, 0.12, 0.08, { gain: 0.18, type: "square", air: 3400 })
+    stab(392, 0.24, 0.26, { gain: 0.19, type: "square", air: 3000 })
+  },
+  lifeline: () => {
+    stab(1046, 0, 0.07, { gain: 0.15, type: "sine", air: 4400 })
+    stab(784, 0.08, 0.07, { gain: 0.15, type: "sine", air: null })
+    stab(1046, 0.16, 0.14, { gain: 0.15, type: "sine", air: null })
+  },
+  pause: () => {
+    stab(659, 0, 0.09, { gain: 0.13, type: "sine", air: 3400 })
+    stab(494, 0.09, 0.18, { gain: 0.13, type: "sine", air: null })
+  },
+  resume: () => {
+    stab(494, 0, 0.08, { gain: 0.13, type: "sine", air: 3400 })
+    stab(659, 0.08, 0.16, { gain: 0.13, type: "sine", air: null })
+  },
+  wagerLock: () => {
+    stab(523, 0, 0.07, { gain: 0.13, type: "square", air: 3000 })
+    stab(659, 0.07, 0.13, { gain: 0.13, type: "square", air: null })
+  },
+  correct: () => {
+    stab(1046, 0, 0.08, { gain: 0.17, type: "triangle", air: 4200 })
+    stab(1318, 0.07, 0.09, { gain: 0.17, type: "triangle", air: null })
+    stab(1568, 0.14, 0.2, { gain: 0.14, type: "triangle", air: null })
+    noise(0, 0.2, 0.045, { filter: { type: "bandpass", freq: 1200 }, q: 2.4, sweep: 6000 })
+  },
+  /** Not shortened. See the note above — the beat is the cue. */
+  wrong: () => {
+    thud(0, { gain: 0.16, freq: 78 })
+    tone(140, 0, 0.55, { type: "square", gain: 0.19 })
+    tone(147, 0, 0.55, { type: "square", gain: 0.15 })
+    noise(0, 0.16, 0.05, { filter: { type: "bandpass", freq: 2400 }, q: 1.8, sweep: 500 })
+  },
+  nitro: () => {
+    ;[523, 659, 784, 1046, 1318].forEach((f, i) => stab(f, i * 0.07, 0.24, { gain: 0.12, type: "square", air: i ? null : 4000 }))
+    noise(0, 0.34, 0.065, { filter: { type: "bandpass", freq: 900 }, q: 2.2, sweep: 6500 })
+  },
+  boardOpen: () => {
+    noise(0, 0.42, 0.09, { filter: { type: "bandpass", freq: 500 }, q: 2.6, sweep: 5200 })
+    ;[523, 784, 1046].forEach((f) => stab(f, 0.34, 0.3, { gain: 0.1, type: "triangle", air: null }))
+  },
+  roundStart: () => {
+    noise(0, 0.3, 0.08, { filter: { type: "bandpass", freq: 620 }, q: 2.6, sweep: 4800 })
+    ;[659, 880, 1318].forEach((f) => stab(f, 0.24, 0.24, { gain: 0.095, type: "triangle", air: null }))
+  },
+  finalOpen: () => {
+    thud(0, { gain: 0.24, freq: 62 })
+    tone(147, 0, 1.6, { type: "sine", gain: 0.17 })
+    tone(196, 0.04, 0.8, { type: "sawtooth", gain: 0.06, sweep: 185 })
+    noise(0, 0.9, 0.06, { filter: { type: "bandpass", freq: 3000 }, q: 1.6, sweep: 300 })
+  },
+}
+
+/**
+ * V4 — the same set, warmed.
+ *
+ * The opposite trade to V3. Longer tails, more weight underneath, sine and
+ * triangle where the others use square, and softer onsets. It is the version
+ * for a living room and a television rather than a hall and a PA: nothing here
+ * is trying to cut through a crowd, so nothing here is harsh.
+ *
+ * The risk it takes on purpose is *slowness* — these cues occupy more time,
+ * and in a fast round played over a big board that will feel like the game
+ * waiting for the sound. That is the trade, stated rather than hidden: pick
+ * this one if the room is small and the pace is conversation.
+ */
+export const V4 = {
+  select: () => stab(523, 0, 0.16, { gain: 0.15, type: "sine", air: 2200 }),
+  buzz: () => {
+    thud(0, { gain: 0.3, freq: 62 })
+    stab(147, 0, 0.44, { gain: 0.19, type: "triangle", air: 1800 })
+    stab(220, 0.03, 0.36, { gain: 0.11, type: "triangle", air: null })
+  },
+  reject: () => {
+    thud(0, { gain: 0.14, freq: 92 })
+    tone(130, 0, 0.28, { type: "triangle", gain: 0.15, sweep: 62 })
+  },
+  arm: () => stab(880, 0, 0.18, { gain: 0.12, type: "sine", air: 3000 }),
+  tick: () => tone(1046, 0, 0.04, { type: "sine", gain: 0.09 }),
+  clueClose: () => stab(440, 0, 0.3, { gain: 0.1, type: "sine", sweep: 262, air: 1600 }),
+  reveal: () => {
+    stab(392, 0, 0.7, { gain: 0.18, type: "sine", air: 2000 })
+    tone(588, 0.06, 0.52, { type: "sine", gain: 0.08 })
+  },
+  undo: () => stab(587, 0, 0.3, { gain: 0.11, type: "sine", sweep: 350, air: null }),
+  join: () => {
+    stab(659, 0, 0.14, { gain: 0.11, type: "sine", air: 2600 })
+    stab(988, 0.1, 0.26, { gain: 0.1, type: "sine", air: null })
+  },
+  timeUp: () => {
+    stab(392, 0, 0.2, { gain: 0.18, type: "triangle", air: 2000 })
+    stab(392, 0.24, 0.2, { gain: 0.18, type: "triangle", air: 2000 })
+    stab(262, 0.48, 0.75, { gain: 0.2, type: "triangle", air: 1600 })
+    thud(0.48, { gain: 0.2, freq: 66 })
+  },
+  lifeline: () => {
+    stab(659, 0, 0.18, { gain: 0.15, type: "sine", air: 2600 })
+    stab(523, 0.18, 0.18, { gain: 0.15, type: "sine", air: null })
+    stab(784, 0.36, 0.42, { gain: 0.15, type: "sine", air: null })
+  },
+  pause: () => {
+    stab(440, 0, 0.26, { gain: 0.14, type: "sine", air: 2200 })
+    stab(330, 0.2, 0.5, { gain: 0.14, type: "sine", air: null })
+  },
+  resume: () => {
+    stab(330, 0, 0.22, { gain: 0.14, type: "sine", air: 2200 })
+    stab(440, 0.17, 0.44, { gain: 0.14, type: "sine", air: null })
+  },
+  wagerLock: () => {
+    stab(330, 0, 0.2, { gain: 0.14, type: "triangle", air: 2000 })
+    stab(440, 0.16, 0.34, { gain: 0.14, type: "triangle", air: null })
+  },
+  correct: () => {
+    stab(523, 0, 0.24, { gain: 0.17, type: "sine", air: 2600 })
+    stab(659, 0.16, 0.28, { gain: 0.17, type: "sine", air: null })
+    stab(880, 0.32, 0.7, { gain: 0.15, type: "sine", air: null })
+  },
+  wrong: () => {
+    thud(0, { gain: 0.28, freq: 60 })
+    tone(110, 0, 0.9, { type: "triangle", gain: 0.2 })
+    tone(116, 0, 0.9, { type: "triangle", gain: 0.16 })
+  },
+  nitro: () => {
+    ;[262, 330, 392, 523, 659].forEach((f, i) => stab(f, i * 0.14, 0.8, { gain: 0.12, type: "triangle", air: i ? null : 2400 }))
+    thud(0.56, { gain: 0.18, freq: 66 })
+  },
+  boardOpen: () => {
+    noise(0, 1.1, 0.1, { filter: { type: "bandpass", freq: 180 }, q: 2.2, sweep: 2400 })
+    ;[131, 196, 262].forEach((f) => stab(f, 0.9, 1, { gain: 0.12, type: "triangle", air: null }))
+    thud(0.9, { gain: 0.16, freq: 62 })
+  },
+  roundStart: () => {
+    noise(0, 0.75, 0.085, { filter: { type: "bandpass", freq: 220 }, q: 2.2, sweep: 2200 })
+    ;[196, 262, 392].forEach((f) => stab(f, 0.6, 0.75, { gain: 0.11, type: "triangle", air: null }))
+  },
+  finalOpen: () => {
+    thud(0, { gain: 0.32, freq: 48 })
+    tone(87, 0, 4, { type: "sine", gain: 0.21 })
+    tone(131, 0.08, 2.2, { type: "triangle", gain: 0.07, sweep: 124 })
+    noise(0, 2.4, 0.07, { filter: { type: "bandpass", freq: 1800 }, q: 1.3, sweep: 120 })
+  },
 }
 
 /**
@@ -788,7 +1217,7 @@ export function playUi(id) {
 export const PLAIN = { ...sfx }
 
 /** Every take, by the name `CUE_TAKE` uses. `current` needs no table. */
-export const TAKES = { current: PLAIN, gold: ALT, arcade: ARCADE }
+export const TAKES = { current: PLAIN, v2: V2, v3: V3, v4: V4, gold: ALT, arcade: ARCADE }
 
 /**
  * The two cues no take may claim.

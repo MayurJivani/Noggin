@@ -24,13 +24,15 @@ What exists, and what is deliberately left for later.
   verdict — keep this take, or send it back with a note — which is remembered
   per device and read back as a block of text to hand over. No relay
   connection, no room, no state: it makes noises and nothing else.
-- **Three takes of every game cue.** `current` is the original: square waves and
-  filtered noise. `gold` rebuilds each cue from struck bells and brass, to match
-  what the app looks like. `arcade` fires a chip blip and lets it decay into
-  that same gold — arcade attack, expensive tail — except where the room is
-  being punished, which ends flat and dead, because a ring is a reward. All
-  synthesised, so a buzz-in still lands *with* the press. `CUE_TAKE` in
-  `src/lib/sfx.js` is the whole switch.
+- **Six takes of every game cue.** Four are one family, differing in production
+  rather than material: `current` is the original, plain and legible; `v2` is
+  the original made properly — an onset, a body of two detuned voices, sub
+  weight under the three moments a room reacts to physically; `v3` is V2
+  tightened for a hall, where a long tail smears into the next thing; `v4` is V2
+  warmed for a living room. Two change the material instead: `gold` is struck
+  bells and brass, `arcade` a chip blip with a gold tail. All synthesised, so a
+  buzz-in still lands *with* the press. `CUE_TAKE` in `src/lib/sfx.js` is the
+  whole switch.
 - **A 404 page** — the one page rendered at build time with no island at all, so
   it survives a browser having a bad day. Two ways out rather than a back
   button: the people who land here are a player whose link is wrong and a host
@@ -125,6 +127,29 @@ What exists, and what is deliberately left for later.
 - **Spectator view.** A read-only `/display` variant for people watching from
   another room.
 - **Persisted game history.** Who won, what was missed, which clues nobody got.
+
+## Audio notes
+
+Two mistakes account for nearly every synthesised cue that sounds like a fault
+rather than a sound, and both were in this codebase:
+
+- **Noise through a stationary filter is static.** The ear reads *movement*,
+  not position, so no choice of centre frequency turns a fixed bandpass into a
+  whoosh — the band has to sweep. The board going up and a new round starting
+  both used a fixed 900Hz band at Q 0.4, which is so wide it barely filtered at
+  all, and both sounded like an untuned radio.
+- **A gain that starts at full value clicks.** The noise buffer's first sample
+  is already at amplitude, so setting the envelope flat steps from silence to
+  maximum in one sample. Milliseconds of attack fix it and cost nothing.
+
+`tests/audio-stub.js` is the reason these stay fixed. Node has no
+`AudioContext`, so without it every cue returns at its first line and a test
+that calls all of them proves only that the module loads — which is exactly how
+a `ReferenceError` three lines past that guard survived a green suite and
+silenced half the cues in the app. The stub makes no sound and models no DSP;
+it exists to make the bodies run, and to be strict where real Web Audio is
+strict: `exponentialRampToValueAtTime` rejects a target of zero, and scheduling
+times must be finite.
 
 ## Browser notes
 
