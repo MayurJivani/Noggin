@@ -208,9 +208,13 @@ export function SurveyBoard({ state, rows = [] }) {
       <div className="grid w-full max-w-[80vmin] gap-[1.2vmin]" style={{ gridTemplateColumns: slots.length > 5 ? "1fr 1fr" : "1fr" }}>
         {slots.map((a) => (
           <div
-            key={a.index}
-            className={`flex items-center gap-[1.5vmin] rounded-[1vmin] border-[0.3vmin] px-[2vmin] py-[1.2vmin] transition-all duration-500 ${
-              a.open ? "border-gold bg-royal/50" : "border-edge bg-black/40"
+            // Keyed on whether it is open, so React rebuilds the row at the
+            // moment it turns over and the flip actually plays. Without this
+            // the class arrives on an element that is already mounted and
+            // nothing animates at all.
+            key={`${a.index}:${a.open ? "up" : "down"}`}
+            className={`flex items-center gap-[1.5vmin] rounded-[1vmin] border-[0.3vmin] px-[2vmin] py-[1.2vmin] transition-colors duration-500 ${
+              a.open ? "border-gold bg-royal/50 animate-flip-in" : "border-edge bg-black/40"
             }`}
           >
             <span className="font-value tabular-nums text-gold-dim" style={{ fontSize: "max(12px, calc(var(--stage) * 2))" }}>
@@ -218,7 +222,10 @@ export function SurveyBoard({ state, rows = [] }) {
             </span>
             {a.open ? (
               <>
-                <span className="min-w-0 flex-1 truncate font-display uppercase text-ink animate-slam" style={{ fontSize: "max(13px, calc(var(--stage) * 2.2))" }}>
+                {/* No entrance of its own: the row it sits in is already
+                    turning over, and two animations on one event read as a
+                    glitch rather than as emphasis. */}
+                <span className="min-w-0 flex-1 truncate font-display uppercase text-ink" style={{ fontSize: "max(13px, calc(var(--stage) * 2.2))" }}>
                   {a.text}
                 </span>
                 {a.by && (
@@ -242,7 +249,15 @@ export function SurveyBoard({ state, rows = [] }) {
       {f.strikes?.length > 0 && (
         <div className="flex gap-[1.5vmin]">
           {f.strikes.map((_, i) => (
-            <span key={i} className="font-display text-bad animate-pop" style={{ fontSize: "max(28px, calc(var(--stage) * 5))" }}>
+            <span
+              key={i}
+              // No stagger, deliberately. Strikes arrive one at a time, so only
+              // the new one mounts and animates — a per-index delay would do
+              // nothing to the ones already on screen and simply hold the new
+              // one back by a tenth of a second every time.
+              className="font-display text-bad animate-stamp"
+              style={{ fontSize: "max(28px, calc(var(--stage) * 5))" }}
+            >
               ✕
             </span>
           ))}

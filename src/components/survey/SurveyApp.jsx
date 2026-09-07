@@ -86,7 +86,10 @@ export function SurveyApp() {
               <p className="mt-1 text-[12px] text-muted">Your answers are going onto a game show board.</p>
             </div>
           ) : (
-            <>
+            // Keyed on the question, so moving on looks like a new card
+            // arriving rather than the words on the old one changing — the
+            // difference between "next question" and "that didn't send".
+            <div key={q.id} className="animate-settle">
               <div className="flex items-baseline justify-center gap-2">
                 {q.category && (
                   <span className="label" style={{ letterSpacing: "0.3em" }}>
@@ -124,7 +127,7 @@ export function SurveyApp() {
                 skip this one
               </button>
             )}
-            </>
+            </div>
           )}
         </div>
 

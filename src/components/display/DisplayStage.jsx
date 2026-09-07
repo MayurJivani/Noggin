@@ -156,6 +156,21 @@ function Stage({ code, state, connected, error, audioOn, flash, splash, origin, 
       <div className="bulbs relative z-10 mx-[2.5vmin] shrink-0" />
 
       <main className="relative z-10 min-h-0 flex-1">
+        {/*
+          A bar of light across the stage whenever the round changes.
+
+          Keyed on the round's name, so it remounts and replays exactly once per
+          round and never on a re-render. It passes over the board rather than
+          replacing it, which matters — the grid is what half the room is
+          reading, and a full-screen transition would take it away from them to
+          announce something they can already see in the header.
+        */}
+        <span
+          key={board.round?.name ?? "no-round"}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 z-20 w-[28%] bg-gradient-to-r from-transparent via-gold/25 to-transparent opacity-0 animate-streak"
+        />
+
         {phase === "lobby" && <Lobby code={state.code} players={players} teams={state.teams} title={board.title} check={state.check} />}
         {phase === "final" && <FinalStage state={state} now={() => Date.now()} />}
         {phase === "intermission" && <Interlude title="Round cleared" rows={rows} sub={board.round?.name} />}

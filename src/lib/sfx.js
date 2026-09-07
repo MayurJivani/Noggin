@@ -36,11 +36,34 @@
  */
 export const SAMPLES_ENABLED = false
 
+/**
+ * The interface's own noises — a tap, a toggle, a panel opening.
+ *
+ * **Off until approved.** These are new and they are the easiest sounds in the
+ * app to get wrong: a game cue fires a dozen times an hour and is *meant* to be
+ * noticed, whereas a UI tick fires every few seconds on the host desk and is
+ * only good if it disappears into the furniture. Hear them all on `/sounds`
+ * before this goes true.
+ */
+export const UI_SFX_ENABLED = false
+
+/**
+ * Which take of the game's own cues to play.
+ *
+ * `"current"` is what has always shipped: square waves and filtered noise,
+ * plain and legible. `"gold"` is the same cues rebuilt out of struck bells and
+ * brass to match the black-and-gold the rest of the app is made of. Both are
+ * synthesised, both are latency-free, and they are A/B'd side by side on
+ * `/sounds` — this constant is the whole switch.
+ */
+export const CUE_TAKE = "current"
+
 let ctx = null
 let master = null
 let cueBus = null
 let boardBus = null
 let musicBus = null
+let uiBus = null
 
 export function unlock() {
   if (typeof window === "undefined") return
@@ -64,6 +87,13 @@ export function unlock() {
     musicBus.gain.value = 0
     musicBus.connect(master)
 
+    // Its own bus so it can be turned down to nothing without touching the
+    // game. An operator who finds interface clicks irritating should be able to
+    // silence them and still hear the buzzer.
+    uiBus = ctx.createGain()
+    uiBus.gain.value = 0.7
+    uiBus.connect(master)
+
     // Warm the short ones now: a soundboard button that has to fetch and decode
     // before it makes a sound is a button the host presses twice.
     preload()
@@ -78,6 +108,11 @@ export function setVolume(v) {
 /** How loud the bed sits under everything else. */
 export function setMusicVolume(v) {
   if (musicBus) musicBus.gain.value = Math.max(0, Math.min(1, v))
+}
+
+/** How loud the interface is, if at all. */
+export function setUiVolume(v) {
+  if (uiBus) uiBus.gain.value = Math.max(0, Math.min(1, v))
 }
 
 export const isUnlocked = () => !!ctx && ctx.state === "running"
@@ -205,6 +240,71 @@ function noise(start, dur, gain = 0.15, { bus = null, filter = null, q = 1 } = {
   }
   node.connect(env).connect(bus ?? cueBus)
   src.start(t0)
+}
+
+/**
+ * A struck bell — the sound the theme is asking for.
+ *
+ * Gold reads as metal, and metal is *inharmonic*: a bell's overtones sit at
+ * ratios like 2.76 and 5.40 rather than the neat 2 and 3 of a plucked string,
+ * which is exactly why it rings instead of playing a note. The high partials
+ * are also given shorter decays than the low ones, because that decay order is
+ * what makes a strike sound struck rather than held — get it wrong and the
+ * same frequencies sound like an organ.
+ */
+const BELL_PARTIALS = [
+  // ratio, share of the gain, share of the decay
+  [1, 1, 1],
+  [2.76, 0.5, 0.7],
+  [5.4, 0.26, 0.45],
+  [8.93, 0.12, 0.26],
+]
+
+function bell(freq, start = 0, dur = 1.2, { gain = 0.22, bus = null } = {}) {
+  for (const [ratio, g, decay] of BELL_PARTIALS) {
+    tone(freq * ratio, start, dur * decay, { type: "sine", gain: gain * g, bus })
+  }
+}
+
+/**
+ * A brass note: a sawtooth heard through a filter that opens as it is blown.
+ *
+ * The two details that stop this sounding like a buzzer are both in the attack
+ * — the filter sweeping up over the first 70ms, and the pitch starting a hair
+ * flat and settling. That scoop is what a player does with their lip, and its
+ * absence is most of why synthesised fanfares sound like alarms.
+ */
+function brass(freq, start = 0, dur = 0.5, { gain = 0.18, bus = null, open = 6 } = {}) {
+  if (!ctx) return
+  const t0 = ctx.currentTime + start
+  const osc = ctx.createOscillator()
+  const lp = ctx.createBiquadFilter()
+  const env = ctx.createGain()
+
+  osc.type = "sawtooth"
+  osc.frequency.setValueAtTime(freq * 0.985, t0)
+  osc.frequency.exponentialRampToValueAtTime(freq, t0 + 0.09)
+
+  lp.type = "lowpass"
+  lp.Q.value = 1.2
+  lp.frequency.setValueAtTime(freq * 1.2, t0)
+  lp.frequency.exponentialRampToValueAtTime(freq * open, t0 + 0.07)
+  lp.frequency.exponentialRampToValueAtTime(freq * 1.6, t0 + dur)
+
+  env.gain.setValueAtTime(0.0001, t0)
+  env.gain.exponentialRampToValueAtTime(gain, t0 + 0.03)
+  env.gain.setValueAtTime(gain, t0 + dur * 0.6)
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+
+  osc.connect(lp).connect(env).connect(bus ?? cueBus)
+  osc.start(t0)
+  osc.stop(t0 + dur + 0.05)
+}
+
+/** Weight under a cue. Felt through a PA more than heard through a laptop. */
+function thud(start = 0, { gain = 0.3, freq = 90, bus = null } = {}) {
+  tone(freq, start, 0.24, { type: "sine", gain, sweep: freq * 0.45, bus })
+  noise(start, 0.09, gain * 0.35, { filter: { type: "lowpass", freq: 400 }, bus })
 }
 
 /** Plain stand-ins, used only when a sample is missing. */
@@ -371,6 +471,166 @@ export const sfx = {
   /** That's the game. */
   gameOver: () => sample("ovation", synth.ovation, { bus: boardBus, gain: 1 }),
 }
+
+/**
+ * The same cues, rebuilt in the app's own material.
+ *
+ * Everything here is a bell or a brass note rather than a raw oscillator, so
+ * the game sounds like the thing it looks like: struck metal over a black
+ * stage. Still synthesised, so still free of the one risk that matters — a
+ * buzz-in lands with the press rather than after a decode.
+ *
+ * Not live until `CUE_TAKE` says so. Compare them on `/sounds`.
+ */
+export const ALT = {
+  select: () => bell(1046, 0, 0.35, { gain: 0.12 }),
+  /** Body, blat and ring, in that order — the whole event in 40ms of attack. */
+  buzz: () => {
+    thud(0, { gain: 0.3, freq: 80 })
+    brass(233, 0, 0.42, { gain: 0.16 })
+    bell(880, 0.02, 0.9, { gain: 0.14 })
+  },
+  reject: () => {
+    thud(0, { gain: 0.16, freq: 110 })
+    tone(160, 0, 0.2, { type: "sawtooth", gain: 0.1, sweep: 70 })
+  },
+  arm: () => bell(2093, 0, 0.5, { gain: 0.1 }),
+  tick: () => bell(2637, 0, 0.06, { gain: 0.06 }),
+  clueClose: () => bell(660, 0, 0.4, { gain: 0.09 }),
+  undo: () => bell(784, 0, 0.4, { gain: 0.09 }),
+  reveal: () => {
+    bell(523, 0, 1.1, { gain: 0.16 })
+    bell(784, 0.08, 0.9, { gain: 0.1 })
+  },
+  join: () => {
+    bell(1318, 0, 0.3, { gain: 0.09 })
+    bell(1976, 0.06, 0.4, { gain: 0.07 })
+  },
+  /** Two brass notes climbing, and gold left ringing over the top. */
+  correct: () => {
+    brass(392, 0, 0.3, { gain: 0.14 })
+    brass(523, 0.1, 0.32, { gain: 0.14 })
+    bell(1046, 0.2, 1.4, { gain: 0.16 })
+  },
+  /** A closed, flat pair a semitone apart. Dissonant on purpose; no ring. */
+  wrong: () => {
+    thud(0, { gain: 0.28, freq: 70 })
+    brass(146, 0.02, 0.7, { gain: 0.14, open: 3 })
+    brass(155, 0.02, 0.7, { gain: 0.1, open: 3 })
+  },
+  timeUp: () => {
+    bell(440, 0, 0.5, { gain: 0.16 })
+    bell(440, 0.22, 0.5, { gain: 0.16 })
+    bell(330, 0.44, 1.6, { gain: 0.18 })
+  },
+  lifeline: () => {
+    bell(880, 0, 0.4, { gain: 0.14 })
+    bell(660, 0.12, 0.4, { gain: 0.14 })
+    bell(1318, 0.24, 1.1, { gain: 0.14 })
+  },
+  wagerLock: () => {
+    brass(392, 0, 0.16, { gain: 0.13, open: 4 })
+    brass(523, 0.1, 0.26, { gain: 0.13, open: 4 })
+  },
+  pause: () => {
+    bell(523, 0, 0.4, { gain: 0.11 })
+    bell(392, 0.13, 0.8, { gain: 0.11 })
+  },
+  resume: () => {
+    bell(392, 0, 0.35, { gain: 0.11 })
+    bell(523, 0.11, 0.8, { gain: 0.11 })
+  },
+  nitro: () => {
+    ;[392, 523, 659, 784].forEach((f, i) => brass(f, i * 0.09, 0.34, { gain: 0.15 }))
+    bell(1046, 0.36, 1.8, { gain: 0.18 })
+  },
+  boardOpen: () => {
+    noise(0, 0.6, 0.1, { filter: { type: "bandpass", freq: 900 }, q: 0.4 })
+    bell(523, 0.28, 1.6, { gain: 0.14 })
+  },
+  roundStart: () => {
+    noise(0, 0.5, 0.09, { filter: { type: "bandpass", freq: 1100 }, q: 0.4 })
+    bell(659, 0.22, 1.2, { gain: 0.13 })
+  },
+  /** Low and long. The final should sound like the room getting quieter. */
+  finalOpen: () => {
+    thud(0, { gain: 0.3, freq: 60 })
+    bell(110, 0.02, 3.4, { gain: 0.2 })
+    brass(146, 0.1, 1.2, { gain: 0.1, open: 2.5 })
+  },
+}
+
+/**
+ * The interface's noises.
+ *
+ * Deliberately tiny — a fifth the gain of a game cue, and none of them longer
+ * than half a second. The test for one of these is not "does it sound good on
+ * its own" but "can the host press this two hundred times in an evening".
+ */
+export const ui = {
+  /** Any ordinary button. */
+  tap: () => bell(1568, 0, 0.18, { gain: 0.05, bus: uiBus }),
+  toggleOn: () => {
+    bell(1046, 0, 0.22, { gain: 0.05, bus: uiBus })
+    bell(1568, 0.05, 0.3, { gain: 0.045, bus: uiBus })
+  },
+  toggleOff: () => {
+    bell(1568, 0, 0.2, { gain: 0.045, bus: uiBus })
+    bell(1046, 0.05, 0.28, { gain: 0.05, bus: uiBus })
+  },
+  /** Moving between tabs on the desk. The most-fired cue in the app. */
+  tab: () => bell(1318, 0, 0.14, { gain: 0.04, bus: uiBus }),
+  open: () => {
+    noise(0, 0.22, 0.03, { filter: { type: "bandpass", freq: 1200 }, q: 0.5, bus: uiBus })
+    bell(880, 0.03, 0.4, { gain: 0.05, bus: uiBus })
+  },
+  close: () => {
+    bell(880, 0, 0.16, { gain: 0.04, bus: uiBus })
+    noise(0.02, 0.18, 0.025, { filter: { type: "lowpass", freq: 900 }, bus: uiBus })
+  },
+  /** Something was written down: a board saved, a clue committed. */
+  save: () => {
+    bell(1046, 0, 0.3, { gain: 0.06, bus: uiBus })
+    bell(1568, 0.07, 0.5, { gain: 0.05, bus: uiBus })
+  },
+  /**
+   * A refusal — a bad code, a form that won't go.
+   *
+   * Dull and low, with no ring at all, so it can never be mistaken across a
+   * room for the wrong-answer cue. An operator's mistake is not an event in
+   * the game and must not sound like one.
+   */
+  error: () => {
+    thud(0, { gain: 0.14, freq: 120, bus: uiBus })
+    tone(196, 0.02, 0.22, { type: "triangle", gain: 0.08, bus: uiBus })
+  },
+  /** Arriving somewhere new: a room opened, a screen switched. */
+  nav: () => noise(0, 0.34, 0.045, { filter: { type: "bandpass", freq: 800 }, q: 0.35, bus: uiBus }),
+}
+
+/**
+ * Fire an interface cue by name.
+ *
+ * Every caller goes through here rather than touching `ui` directly, so the
+ * whole layer is one constant away from silence and no component has to know
+ * whether it is switched on.
+ */
+export function playUi(id) {
+  if (!UI_SFX_ENABLED) return
+  ui[id]?.()
+}
+
+/**
+ * The plain take, kept aside before the chosen one is folded in.
+ *
+ * Only the audition page wants this: once `sfx` has been overwritten there is
+ * otherwise no way left to hear what the alternative replaced.
+ */
+export const PLAIN = { ...sfx }
+
+// One assignment rather than a branch at every call site: pick the take once
+// and every `sfx.buzz()` in the app follows it.
+if (CUE_TAKE === "gold") Object.assign(sfx, ALT)
 
 // ── The music bed ────────────────────────────────────────────────────────────
 

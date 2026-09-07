@@ -18,6 +18,19 @@ What exists, and what is deliberately left for later.
 - **Buzzer sound-check** — prove every phone's button reaches the relay before
   the first clue, with each phone's round-trip beside it. A test press scores
   nothing and is not a race entry.
+- **The listening room** (`/sounds`) — every noise the game can make, on a page,
+  with the moment each one fires. Sound cannot be reviewed by reading a diff, so
+  it gets a surface: the game's cues are there in two takes side by side, and the
+  interface layer is there in full before any of it is switched on. No relay
+  connection, no room, no state — it makes noises and nothing else.
+- **A second take of every game cue** — the same twenty cues rebuilt out of
+  struck bells and brass rather than square waves, so the game sounds like what
+  it looks like. Still synthesised, so a buzz-in still lands *with* the press.
+  Not live: `CUE_TAKE` in `src/lib/sfx.js` is the whole switch.
+- **Interface sounds** — a tap, a tab, a toggle, a panel, a save, a refusal.
+  Built, auditionable and **off**, on their own bus so they can be silenced
+  without touching the game. Not yet wired to any button, deliberately: they
+  should be chosen before they are spread across fifty call sites.
 - **The soundboard** — built, and **switched off** until sounds are chosen:
   a sample engine, a fifteen-cue roster, a bed that ducks under a clue, relay
   messages to fire them. One constant (`SAMPLES_ENABLED`) and a folder of MP3s

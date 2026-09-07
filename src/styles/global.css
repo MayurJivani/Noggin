@@ -48,6 +48,11 @@
   --animate-sheen: sheen 2.4s ease-in-out infinite;
   --animate-molten: molten 9s ease-in-out infinite;
   --animate-float: float 6s ease-in-out infinite;
+  --animate-stamp: stamp 0.42s cubic-bezier(0.2, 1.3, 0.3, 1) backwards;
+  --animate-flip-in: flip-in 0.5s cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
+  --animate-ripple: ripple 0.6s ease-out forwards;
+  --animate-streak: streak 0.9s cubic-bezier(0.3, 0, 0.2, 1) backwards;
+  --animate-settle: settle 0.55s cubic-bezier(0.2, 1.2, 0.3, 1) backwards;
 }
 
 @keyframes tile-in {
@@ -110,6 +115,41 @@
 }
 /* Gold running down a seam, like a river finding its channel. */
 @keyframes vein-flow { to { stroke-dashoffset: -100; } }
+
+/* A rubber stamp coming down: far too big, blurred by its own speed, landing
+   hard and slightly crooked. The overshoot at 70% is the thump. */
+@keyframes stamp {
+  0%   { opacity: 0; transform: scale(2.6) rotate(-14deg); filter: blur(5px); }
+  55%  { opacity: 1; }
+  70%  { transform: scale(0.88) rotate(3deg); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1) rotate(-4deg); filter: blur(0); }
+}
+/* A card turning face up. The board hides answers, so revealing one should
+   look like the panel itself rotated rather than like text fading in. */
+@keyframes flip-in {
+  0%   { opacity: 0; transform: perspective(600px) rotateX(-88deg); transform-origin: center bottom; }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: perspective(600px) rotateX(0); transform-origin: center bottom; }
+}
+/* A ring leaving the point of contact. Purely feedback: the press already
+   registered, this is only the phone admitting it did. */
+@keyframes ripple {
+  0%   { opacity: 0.55; transform: scale(0.7); }
+  100% { opacity: 0; transform: scale(2.2); }
+}
+/* A bar of light crossing the stage. Marks a change of round without taking
+   the board away from anyone still reading it. */
+@keyframes streak {
+  from { opacity: 0; transform: translateX(-110%) skewX(-18deg); }
+  40%  { opacity: 1; }
+  to   { opacity: 0; transform: translateX(210%) skewX(-18deg); }
+}
+/* Arriving from above and settling, for a number that just changed. */
+@keyframes settle {
+  0%   { opacity: 0; transform: translateY(-38%) scale(1.18); }
+  70%  { transform: translateY(0) scale(0.97); }
+  100% { opacity: 1; transform: none; }
+}
 
 /**
  * All of this must live in `@layer base`.

@@ -446,6 +446,8 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
  */
 function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, offline = false, roomy = false, label = "BUZZ", watching = false }) {
   const lastFire = useRef(0)
+  /** Bumped per press; the count is the key that restarts the ring. */
+  const [ripple, setRipple] = useState(0)
 
   /**
    * Three ways in, whichever arrives first, and never `preventDefault`.
@@ -475,6 +477,9 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, o
     lastFire.current = now
     onEvent?.(`→ ${e.type}`)
     onPress()
+    // Strictly after the press. A ring leaving the thumb is worth having, but
+    // not one frame of it goes in front of sending the buzz.
+    setRipple((n) => n + 1)
   }
 
   if (watching) disabled = true
@@ -506,6 +511,18 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, o
       style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTapHighlightColor: "transparent" }}
     >
       {canBuzz && <span className="pointer-events-none absolute inset-0 rounded-full border-2 border-gold animate-pulse-ring" />}
+
+      {/*
+        A ring off the thumb on every press, armed or not.
+
+        Deliberately not conditional on the buzz being accepted: the phone
+        should confirm that it felt the press even when the press was early or
+        the player is already spent, because "did that register?" is the
+        question someone asks a second before pressing four more times.
+      */}
+      {ripple > 0 && (
+        <span key={ripple} className="pointer-events-none absolute inset-0 rounded-full border-2 border-gold animate-ripple" />
+      )}
 
       {/*
         Gloss, clipped to the face.
