@@ -119,8 +119,8 @@ What exists, and what is deliberately left for later.
   **public survey link** (`/survey`) handed to anyone: responses are tallied per
   question, folded by meaning, and turned into slots.
 - **A running order the engine owns** — rounds, then the final if the board has
-  one, then the survey if it has one, then a tie-break if the scores are still
-  level. `pending()` in `server/game.js` answers "what next" and every screen and
+  one, then a play-off if the cut for the survey is level, then the survey if
+  the board has one, then a play-off if *that* is level. `pending()` in `server/game.js` answers "what next" and every screen and
   guard reads it. It used to live nowhere: any of these could open at any time
   and the desk decided which button to show, which produced three wrong games —
   the final opened at the first intermission abandoned every round after it; the
@@ -134,6 +134,20 @@ What exists, and what is deliberately left for later.
   self-reinforcing: the only round that could have got them back was the one
   they were barred from. The nitro uses the same rule, with the round's top tile
   as an additional floor.
+- **Two play-offs, for two different things.** The survey is a two-hander, so
+  the final is also a cut — and a tie at the *boundary* has to be settled before
+  the round can start, because a two-handed round cannot begin until it knows
+  which two hands. That one wins a seat: no points, no winner, and the sides
+  stay exactly as level as they were. The other is the original, played at the
+  end, and wins the night. They share the sudden-death machinery and disagree
+  only about what taking it buys.
+- **The survey keeps its own scoreboard.** Survey points are not quiz points:
+  they never touch a total, and they decide one thing — which of the two
+  contenders wins. The quiz score is what got you into the round; these points
+  are what win it, which is what lets a side behind on the board still take the
+  night. It also means the big screen grows a second, two-sided scoreboard
+  during the round, because the bar along the bottom is no longer what is being
+  played for.
 - **Tie-break** — sudden death when the game ends level: the tied sides only,
   first correct answer wins, nothing scored. Optional clue written beside the
   final; the host can rerun it or award it by hand if nobody takes it.

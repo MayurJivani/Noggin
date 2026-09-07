@@ -392,14 +392,30 @@ function StagePanel({ state, send, now }) {
             )
           )}
 
-          {/* Level at the top with nothing left to play. The quiz has one
-              question to answer and this is the only thing that answers it. */}
+          {/*
+            Two different play-offs, and saying which is which matters: one
+            decides who plays a round, the other decides who won the night.
+            They can never be offered at the same time.
+          */}
+          {state.cut && (
+            <div className="mx-auto mt-3 max-w-sm rounded-xl border border-live/60 bg-live/10 px-4 py-3">
+              <div className="font-display text-live">Level for the last seat.</div>
+              <div className="mt-1 text-[12px] text-muted">
+                {state.cut.contested.map((id) => contenders.find((c) => c.id === id)?.name ?? "?").join(" and ")} are level, and
+                only {state.cut.seats === 1 ? "one" : state.cut.seats} can go through to the survey.
+              </div>
+              <button className="btn btn-gold mt-3 px-5 py-2 animate-pop" onClick={() => send("tiebreak:open")}>
+                Play off for the seat
+              </button>
+            </div>
+          )}
+
           {tied && (
             <div className="mx-auto mt-3 max-w-sm rounded-xl border border-live/60 bg-live/10 px-4 py-3">
               <div className="font-display text-live">It's a tie.</div>
               <div className="mt-1 text-[12px] text-muted">
-                {tied.map((id) => contenders.find((c) => c.id === id)?.name ?? "?").join(" and ")} are level on{" "}
-                <span className="font-value text-gold">{top?.score}</span>.
+                {tied.map((id) => contenders.find((c) => c.id === id)?.name ?? "?").join(" and ")} are level
+                {state.played?.survey ? " on survey points" : ""}.
               </div>
               <button className="btn btn-gold mt-3 px-5 py-2 animate-pop" onClick={() => send("tiebreak:open")}>
                 Play a tie-break
@@ -407,14 +423,15 @@ function StagePanel({ state, send, now }) {
             </div>
           )}
 
-          {/* Before the tie-break, not after: this round still moves scores,
-              and a tie settled ahead of it is a tie settled on the wrong
-              numbers. `tied` is withheld by the relay until this is done. */}
+          {/* Before the winner's tie-break, not after: this round decides the
+              night on its own points, so a tie settled ahead of it would be
+              settled on a scoreboard the survey does not use. */}
           {state.survey?.offered && (
             <div className="mx-auto mt-3 max-w-sm rounded-xl border border-gold-deep/60 bg-royal/30 px-4 py-3">
               <div className="font-display text-gold">One more round</div>
               <div className="mt-1 text-[12px] text-muted">
-                {state.survey.count} question{state.survey.count === 1 ? "" : "s"} to play
+                {state.survey.count} question{state.survey.count === 1 ? "" : "s"}, played by the top two — and scored on its
+                own points, not the quiz total.
               </div>
               <button className="btn btn-gold mt-3 px-5 py-2" onClick={() => send("survey:open")}>
                 Play the survey round

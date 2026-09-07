@@ -409,6 +409,15 @@ export function createRoom(code, settings = {}) {
      * game sits in `ended` both before the final and after it. See `pending`.
      */
     played: { final: false, survey: false },
+    /**
+     * Sides that have won a seat in the survey on a play-off.
+     *
+     * Kept apart from the scores because that is exactly what it is: a seat
+     * earned by answering, not by being ahead. Two sides level at the cut are
+     * still level after one of them wins the run-off, and the scoreboard must
+     * keep saying so.
+     */
+    qualified: [],
     /** Who actually won, once a tie has been settled. See `openTiebreak`. */
     winner: null,
     /** {catIndex, clueIndex} of the clue on screen, or null. */
@@ -911,7 +920,12 @@ export function buzz(room, playerId, now = Date.now()) {
     // Everyone else is watching. A buzzer that still worked for them would
     // decide the game by accident.
     if (!inTiebreak(room, playerId)) return []
-  } else if (room.phase !== PHASE.CLUE && room.phase !== PHASE.SURVEY) return []
+  } else if (room.phase === PHASE.SURVEY) {
+    // The survey is a two-hander. Same reasoning as the play-off: a phone that
+    // still worked for a knocked-out side would win points in a round it is
+    // not in.
+    if (!inSurvey(room, playerId)) return []
+  } else if (room.phase !== PHASE.CLUE) return []
   // A frozen room takes no presses. The clue is still on screen and the button
   // is still under a thumb, so this has to be refused here rather than trusted
   // to every client remembering to grey itself out.
@@ -1178,12 +1192,82 @@ function markPlayed(room) {
  */
 export function pending(room) {
   if (room.board.final?.enabled && !room.played?.final) return "final"
-  if (room.board.survey?.enabled && !room.played?.survey) return "survey"
+  if (room.board.survey?.enabled && !room.played?.survey) {
+    // A seat in the survey has to be settled before the survey can start.
+    return surveyCut(room).contested.length ? "tiebreak-cut" : "survey"
+  }
   return null
+}
+
+/** How many sides the survey round is played by. */
+export const SURVEY_SEATS = 2
+
+/**
+ * Who goes through to the survey, and who has to play for it.
+ *
+ * The survey is a two-hander, so the final is also a cut. That makes a tie at
+ * the *boundary* matter in a way a tie anywhere else does not: level at the top
+ * is a question for the end of the night, but level for the last seat has to be
+ * answered before the round can start at all.
+ *
+ * `contested` is the run-off field. It awards one seat at a time and is meant
+ * to be asked again — three sides level for two seats needs two play-offs, and
+ * looping here is simpler and more correct than trying to seat them all at once.
+ */
+export function surveyCut(room) {
+  const all = sides(room)
+  const none = { through: all.map((u) => u.id), contested: [], seats: 0 }
+  if (all.length <= SURVEY_SEATS) return none
+
+  // Seats already won in a run-off are not up for grabs again.
+  const won = room.qualified.filter((id) => all.some((u) => u.id === id))
+  const seats = SURVEY_SEATS - won.length
+  if (seats <= 0) return { through: won, contested: [], seats: 0 }
+
+  const rest = all.filter((u) => !won.includes(u.id)).sort((a, b) => b.score - a.score)
+  const cutScore = rest[seats - 1]?.score
+  const above = rest.filter((u) => u.score > cutScore).map((u) => u.id)
+  const atCut = rest.filter((u) => u.score === cutScore).map((u) => u.id)
+  const left = seats - above.length
+
+  if (atCut.length > left) return { through: [...won, ...above], contested: atCut, seats: left }
+  return { through: [...won, ...above, ...atCut], contested: [], seats: 0 }
+}
+
+/**
+ * The standing the game is decided on, which changes once a survey is played.
+ *
+ * Before it, the quiz score across every side. After it, the *survey* points of
+ * the two sides who played the survey — because that is what the round is for.
+ * Two things follow, and both are the point rather than side effects: a side
+ * knocked out at the cut cannot finish level with the winner of a round it
+ * never took part in, and a big quiz lead does not carry into a round designed
+ * to be winnable from behind.
+ */
+export function standing(room) {
+  const all = sides(room)
+  const seats = room.played?.survey ? room.survey?.contenders : null
+  if (!seats?.length) return all.map((u) => ({ unit: u, value: u.score }))
+  const points = room.survey?.points ?? {}
+  const kept = all.filter((u) => seats.includes(u.id))
+  const pool = kept.length ? kept : all
+  return pool.map((u) => ({ unit: u, value: points[u.id] ?? 0 }))
 }
 
 /** Whether there is another round of the board still to play. */
 const moreRounds = (room) => room.roundIndex < room.board.rounds.length - 1
+
+/**
+ * The board is finished, whatever the phase says.
+ *
+ * A game with an end-game round still owed sits in `intermission` rather than
+ * `ended` — deliberately, so the game-over cue does not fire over a room with
+ * the last clue to play. But that left everything gated on `ended` unreachable
+ * on a board whose only end-game round *is* the survey: the play-off for the
+ * cut refused to open and the survey was never offered, both because the game
+ * had correctly declined to call itself over.
+ */
+const boardDone = (room) => room.phase === PHASE.ENDED || (room.phase === PHASE.INTERMISSION && !moreRounds(room))
 
 /** Back to the grid. Rolls into the next round once the board is cleared. */
 export function closeClue(room) {
@@ -1344,6 +1428,7 @@ export function resetGame(room) {
   room.tiebreak = null
   room.winner = null
   room.played = { final: false, survey: false }
+  room.qualified = []
   room.phase = PHASE.LOBBY
   room.roundIndex = 0
   room.active = null
@@ -1625,8 +1710,25 @@ export function openSurvey(room) {
   room.wager = null
   room.revealed = false
   resetBuzzerState(room)
-  room.survey = { index: 0, revealed: [], awards: {}, strikes: [], said: null }
-  return [{ kind: "survey-open" }]
+  room.survey = {
+    index: 0,
+    revealed: [],
+    awards: {},
+    strikes: [],
+    said: null,
+    /** The two sides playing it. See `surveyCut`. */
+    contenders: surveyCut(room).through,
+    /**
+     * The survey's own scoreboard, kept apart from the game's.
+     *
+     * Survey points are not quiz points: they do not go on the board, they do
+     * not move anybody's total, and they decide one thing only — which of the
+     * two contenders wins the night. Adding them to `score` would have let a
+     * hundred-point answer rewrite a game somebody won over two rounds.
+     */
+    points: {},
+  }
+  return [{ kind: "survey-open", contenders: room.survey.contenders }]
 }
 
 /**
@@ -1665,13 +1767,17 @@ export function revealSurvey(room, index, target = room.buzzer.winner) {
   const unit = target ? scorer(room, target) : null
   if (unit) {
     room.survey.awards[index] = unit.id
-    unit.score += slot.points
-    record(unit, slot.points, "survey", slot.text)
+    // Survey points, not quiz points — a separate column that decides this
+    // round and nothing else. The scoreboard the room has been watching all
+    // night is left exactly where the final left it.
+    room.survey.points[unit.id] = (room.survey.points[unit.id] ?? 0) + slot.points
   }
   room.buzzer.winner = null
 
   const done = room.survey.revealed.length >= (currentQuestion(room)?.answers.length ?? 0)
-  const effects = [{ kind: "survey-hit", index, points: slot.points, unitId: unit?.id ?? null, score: unit?.score ?? null }]
+  const effects = [
+    { kind: "survey-hit", index, points: slot.points, unitId: unit?.id ?? null, score: unit ? room.survey.points[unit.id] : null },
+  ]
   if (done) effects.push({ kind: "survey-cleared" })
   return effects
 }
@@ -1704,7 +1810,15 @@ export function nextQuestion(room) {
   const last = (room.board.survey?.questions?.length ?? 0) - 1
   if (room.survey.index >= last) return []
 
-  room.survey = { index: room.survey.index + 1, revealed: [], awards: {}, strikes: [], said: null }
+  // The board resets; the points and the field carry across questions.
+  room.survey = {
+    ...room.survey,
+    index: room.survey.index + 1,
+    revealed: [],
+    awards: {},
+    strikes: [],
+    said: null,
+  }
   resetBuzzerState(room)
   room.timer = null
   return [{ kind: "survey-next", index: room.survey.index }]
@@ -1737,20 +1851,35 @@ export function closeSurvey(room) {
  * did not happen, and someone would notice.
  */
 export function leaders(room) {
-  const all = sides(room)
-  if (!all.length) return []
-  const top = Math.max(...all.map((u) => u.score))
-  return all.filter((u) => u.score === top)
+  // Whatever the game is currently decided on — see `standing`.
+  const table = standing(room)
+  if (!table.length) return []
+  const top = Math.max(...table.map((r) => r.value))
+  return table.filter((r) => r.value === top).map((r) => r.unit)
 }
 
 /** True when the game cannot be called on the scores alone. */
 export const isTied = (room) => leaders(room).length > 1
 
-export function openTiebreak(room) {
-  // Only from a finished game: a tie mid-round is just the current state of
+/**
+ * Sudden death, for one of two reasons.
+ *
+ * `"winner"` is the one this started as: level at the top with nothing left to
+ * play, and a quiz has to answer one question. `"cut"` is the other — level for
+ * the last seat in the survey, which has to be settled *before* that round
+ * rather than after, because the round cannot start two-handed until it knows
+ * which two hands.
+ *
+ * The two differ only in what winning buys. Neither moves a score: a play-off
+ * decides an order, not an amount.
+ */
+export function openTiebreak(room, purpose = null) {
+  // Only from a finished board: a tie mid-round is just the current state of
   // play, and playing it off would be deciding a race nobody has run yet.
-  if (room.phase !== PHASE.ENDED) return []
-  const contenders = leaders(room)
+  if (!boardDone(room)) return []
+  const cut = surveyCut(room)
+  const forCut = purpose === "cut" || (purpose == null && cut.contested.length > 0)
+  const contenders = forCut ? cut.contested : leaders(room)
   if (contenders.length < 2) return []
 
   room.phase = PHASE.TIEBREAK
@@ -1760,8 +1889,15 @@ export function openTiebreak(room) {
   room.active = null
   room.wager = null
   resetBuzzerState(room)
-  room.tiebreak = { contenders: contenders.map((u) => u.id), spent: [], round: 1 }
-  return [{ kind: "tiebreak-open", contenders: room.tiebreak.contenders }]
+  room.tiebreak = {
+    contenders: contenders.map((u) => (typeof u === "string" ? u : u.id)),
+    spent: [],
+    round: 1,
+    purpose: forCut ? "cut" : "winner",
+    /** How many seats this run-off is for. Only meaningful for a cut. */
+    seats: forCut ? cut.seats : 1,
+  }
+  return [{ kind: "tiebreak-open", contenders: room.tiebreak.contenders, purpose: room.tiebreak.purpose }]
 }
 
 /** Is this player's side in the play-off? Everyone else is a spectator. */
@@ -1787,11 +1923,9 @@ export function judgeTiebreak(room, correct, target = judgeTarget(room)) {
   room.buzzer.winner = null
 
   if (correct) {
-    room.winner = unit.id
     room.revealed = true
     room.phase = PHASE.ENDED
-    record(unit, 0, "tiebreak-win", "Tie-break")
-    return [{ kind: "tiebreak-won", unitId: unit.id }, { kind: "game-end" }]
+    return [...takeTiebreak(room, unit), { kind: "game-end" }]
   }
 
   if (!room.tiebreak.spent.includes(unit.id)) room.tiebreak.spent.push(unit.id)
@@ -1807,6 +1941,14 @@ export function judgeTiebreak(room, correct, target = judgeTarget(room)) {
 }
 
 /** Another go: same contenders, clean slate, because nobody got the last one. */
+/** Whether this phone's side is one of the two playing the survey. */
+export function inSurvey(room, playerId) {
+  const seats = room.survey?.contenders
+  if (!seats?.length) return true
+  const unit = scorer(room, playerId)
+  return !!unit && seats.includes(unit.id)
+}
+
 export function tiebreakAgain(room, now = Date.now()) {
   if (room.phase !== PHASE.TIEBREAK) return []
   room.tiebreak.spent = []
@@ -1830,10 +1972,29 @@ export function awardTiebreak(room, unitId) {
   if (room.phase !== PHASE.TIEBREAK) return []
   const unit = scorer(room, unitId)
   if (!unit || !room.tiebreak.contenders.includes(unit.id)) return []
-  room.winner = unit.id
   room.phase = PHASE.ENDED
   room.buzzer.armed = false
-  return [{ kind: "tiebreak-won", unitId: unit.id }, { kind: "game-end" }]
+  return [...takeTiebreak(room, unit), { kind: "game-end" }]
+}
+
+/**
+ * What taking a play-off actually buys, which is the only thing the two kinds
+ * disagree about.
+ *
+ * A seat, or the game. Neither pays anything: the scores are the scores, and a
+ * side that wins a run-off is still level with the side it beat — which is why
+ * the cut is recorded in `qualified` rather than by nudging a score, and why a
+ * winner is recorded in `winner` rather than by awarding a point.
+ */
+function takeTiebreak(room, unit) {
+  if (room.tiebreak.purpose === "cut") {
+    if (!room.qualified.includes(unit.id)) room.qualified.push(unit.id)
+    record(unit, 0, "tiebreak-through", "Play-off")
+    return [{ kind: "tiebreak-through", unitId: unit.id }]
+  }
+  room.winner = unit.id
+  record(unit, 0, "tiebreak-win", "Tie-break")
+  return [{ kind: "tiebreak-won", unitId: unit.id }]
 }
 
 // ── Save / resume ────────────────────────────────────────────────────────────
@@ -1863,6 +2024,7 @@ export function snapshotRoom(room) {
       again — and since the final pays out wagers, playing it twice pays twice.
     */
     played: { final: !!room.played?.final, survey: !!room.played?.survey },
+    qualified: [...(room.qualified ?? [])],
     // Collected before the game, often days before — losing them to a restart
     // would lose the round.
     responses: room.responses ?? [],
@@ -1897,6 +2059,7 @@ export function restoreRoom(code, snapshot) {
   room.board = normaliseBoard(snapshot.board)
   room.winner = typeof snapshot.winner === "string" ? snapshot.winner : null
   room.played = { final: !!snapshot.played?.final, survey: !!snapshot.played?.survey }
+  room.qualified = (Array.isArray(snapshot.qualified) ? snapshot.qualified : []).filter((id) => typeof id === "string")
   room.responses = (Array.isArray(snapshot.responses) ? snapshot.responses : [])
     .slice(0, MAX_RESPONSES)
     .map((r) => ({ q: typeof r?.q === "string" ? r.q : "", text: str(r?.text, 60), at: num(r?.at, 0) }))
@@ -2079,9 +2242,26 @@ export function projectState(room, role, viewerId = null) {
       survey is about to change — so the play-off is decided, and then the
       round after it moves somebody past the winner. `pending` gates it.
     */
-    tied: room.phase === PHASE.ENDED && !room.winner && !pending(room) && isTied(room) ? leaders(room).map((u) => u.id) : null,
-    /** What the running order says comes next: "final", "survey" or nothing. */
+    tied: boardDone(room) && !room.winner && !pending(room) && isTied(room) ? leaders(room).map((u) => u.id) : null,
+    /**
+     * What the running order says comes next: "final", "tiebreak-cut",
+     * "survey", or nothing.
+     */
     next: pending(room),
+    /** Which end-game rounds are spent, so a screen can word itself correctly. */
+    played: { final: !!room.played?.final, survey: !!room.played?.survey },
+    /**
+     * The run-off for a place in the survey, when the cut is level.
+     *
+     * Distinct from `tied`, which is the play-off for the game itself. They can
+     * never both be offered — one settles who plays a round, the other settles
+     * who won the night.
+     */
+    cut: (() => {
+      if (pending(room) !== "tiebreak-cut") return null
+      const { through, contested, seats } = surveyCut(room)
+      return { through, contested, seats }
+    })(),
     /** Set once a tie has been settled — the scores stay level, someone won. */
     winner: room.winner ?? null,
     final: projectFinal(room, privileged, viewerId),
@@ -2173,7 +2353,7 @@ function projectSurvey(room, privileged) {
 
   return {
     enabled: true,
-    offered: room.phase === PHASE.ENDED && pending(room) === "survey",
+    offered: boardDone(room) && pending(room) === "survey",
     live,
     collecting: !!survey.collecting,
     count: questions.length,
@@ -2183,6 +2363,15 @@ function projectSurvey(room, privileged) {
     prompt: live ? (q?.prompt ?? "") : "",
     strikes: room.survey?.strikes ?? [],
     said: room.survey?.said ?? null,
+    /** The two sides playing it, once it has started. */
+    contenders: room.survey?.contenders ?? null,
+    /**
+     * The survey's own scoreboard, which is not the game's.
+     *
+     * Sent as its own column so no screen is tempted to add it to a score. The
+     * quiz total is what got you into this round; these points are what win it.
+     */
+    points: room.survey?.points ?? {},
     slots: q?.answers.length ?? 0,
     cleared: !!q && room.survey.revealed.length >= q.answers.length,
     last: live && room.survey.index >= questions.length - 1,

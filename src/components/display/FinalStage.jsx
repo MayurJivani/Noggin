@@ -205,6 +205,42 @@ export function SurveyBoard({ state, rows = [] }) {
         {f.prompt}
       </p>
 
+      {/*
+        The round's own scoreboard.
+
+        The bar along the bottom of the screen is the quiz total, which this
+        round does not touch and is not played for — so without this the room
+        would be watching two people compete with no way to see who is winning.
+        Two sides only, because two is all there are.
+      */}
+      {f.contenders?.length > 0 && (
+        <div className="flex items-stretch gap-[1.5vmin]">
+          {f.contenders.map((id) => {
+            const points = f.points?.[id] ?? 0
+            const best = Math.max(...f.contenders.map((c) => f.points?.[c] ?? 0))
+            const leading = points === best && points > 0
+            return (
+              <div
+                key={id}
+                className={`rounded-[1vmin] border-[0.3vmin] px-[2.5vmin] py-[0.8vmin] text-center transition-colors ${
+                  leading ? "border-gold bg-royal/50" : "border-edge bg-black/30"
+                }`}
+              >
+                <div className="truncate font-display uppercase text-muted" style={{ fontSize: "max(10px, calc(var(--stage) * 1.4))" }}>
+                  {name(id)}
+                </div>
+                <div
+                  className={`font-value tabular-nums ${leading ? "text-gold brass-sm" : "text-ink"}`}
+                  style={{ fontSize: "max(18px, calc(var(--stage) * 3))" }}
+                >
+                  {points}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <div className="grid w-full max-w-[80vmin] gap-[1.2vmin]" style={{ gridTemplateColumns: slots.length > 5 ? "1fr 1fr" : "1fr" }}>
         {slots.map((a) => (
           <div

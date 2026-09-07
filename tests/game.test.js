@@ -1314,6 +1314,9 @@ function surveyed(n = 3) {
       { id: "q2", category: "HOLIDAYS", prompt: "Name something you always pack too many of", answers: [{ text: "Socks", points: 500 }] },
     ],
   }
+  // Distinct scores, so the cut is not in question — a contested one has its
+  // own tests. The top two go through; anyone below them is out of the round.
+  ;[...room.players.values()].forEach((p, i) => (p.score = 300 - i * 100))
   room.phase = G.PHASE.ENDED
   return room
 }
@@ -1356,7 +1359,9 @@ test("the buzzer races for it, and finding one pays", () => {
   assert.deepEqual(kinds(G.buzz(room, "p1", 10)), ["buzz-in"])
 
   assert.deepEqual(kinds(G.revealSurvey(room, 1)), ["survey-hit"])
-  assert.equal(room.players.get("p1").score, 300)
+  // Survey points, on their own board — the quiz score is untouched.
+  assert.equal(room.survey.points.p1, 300)
+  assert.equal(room.players.get("p1").score, 200, "the game score it came in with")
   assert.equal(room.survey.awards[1], "p1")
   assert.equal(room.buzzer.winner, null, "and the buzz is given back up")
 
@@ -1387,7 +1392,7 @@ test("a strike costs the buzz and nothing else", () => {
   G.buzz(room, "p0", 10)
 
   assert.deepEqual(kinds(G.strikeSurvey(room, undefined, 100)), ["survey-strike"])
-  assert.equal(room.players.get("p0").score, 0, "wrong on this board costs points from nobody")
+  assert.equal(room.survey.points.p0 ?? 0, 0, "wrong on this board costs points from nobody")
   assert.equal(room.buzzer.armed, true, "straight back out to the room")
   assert.deepEqual(room.buzzer.spent, [], "there are still slots to find")
   assert.deepEqual(kinds(G.buzz(room, "p0", 110)), ["buzz-in"], "including for whoever just missed")
@@ -1399,12 +1404,12 @@ test("the same slot cannot be claimed twice", () => {
   G.armBuzzer(room, 0)
   G.buzz(room, "p0", 10)
   G.revealSurvey(room, 0)
-  assert.equal(room.players.get("p0").score, 400)
+  assert.equal(room.survey.points.p0, 400)
 
   G.armBuzzer(room, 100)
   G.buzz(room, "p1", 110)
   assert.deepEqual(G.revealSurvey(room, 0), [], "already open")
-  assert.equal(room.players.get("p1").score, 0)
+  assert.equal(room.survey.points.p1 ?? 0, 0)
 })
 
 test("answers belong to a question, and the tallies stay apart", () => {
@@ -1431,7 +1436,7 @@ test("the round walks the questions, one board at a time", () => {
   G.armBuzzer(room, 0)
   G.buzz(room, "p0", 10)
   G.revealSurvey(room, 0)
-  assert.equal(room.players.get("p0").score, 400)
+  assert.equal(room.survey.points.p0, 400)
 
   assert.deepEqual(kinds(G.nextQuestion(room)), ["survey-next"])
   const second = G.projectState(room, "display").survey
@@ -1439,7 +1444,7 @@ test("the round walks the questions, one board at a time", () => {
   assert.equal(second.slots, 1, "a different board")
   assert.equal(second.last, true)
   assert.deepEqual(second.answers.map((a) => a.open), [false], "and a fresh one")
-  assert.equal(room.players.get("p0").score, 400, "but the points already won stay won")
+  assert.equal(room.survey.points.p0, 400, "but the points already won stay won")
 
   assert.deepEqual(G.nextQuestion(room), [], "there is no sixth question")
 })
@@ -1484,7 +1489,7 @@ test("the host can open a slot nobody got, and it pays nobody", () => {
   G.revealSurvey(room, 2, null)
   assert.equal(room.survey.awards[2], undefined)
   assert.equal(G.projectState(room, "display").survey.answers[2].text, "Batteries")
-  for (const p of room.players.values()) assert.equal(p.score, 0)
+  for (const p of room.players.values()) assert.equal(room.survey.points[p.id] ?? 0, 0)
 })
 
 test("a survey round can leave a tie, and the tie-break picks it up", () => {
@@ -1509,7 +1514,7 @@ test("teams take the points as a team", () => {
   G.buzz(room, one, 10)
   G.revealSurvey(room, 0)
 
-  assert.equal(a.score, 400)
+  assert.equal(room.survey.points[a.id], 400)
   assert.equal(room.survey.awards[0], a.id, "the side found it, not the phone")
 })
 
@@ -1748,4 +1753,115 @@ test("a nitro bet has the same floor as the final, and reads a deficit as size",
   assert.equal(room.phase, G.PHASE.WAGER)
   G.setWager(room, "p1", 99999)
   assert.equal(room.wager.amount, 2500)
+})
+
+/**
+ * Two play-offs, for two different things.
+ *
+ * One before the survey, to settle who plays it; one after, to settle who won.
+ * They share the sudden-death machinery and disagree only about what taking it
+ * buys.
+ */
+test("a level cut is played off before the survey, and wins a seat rather than the game", () => {
+  const room = surveyed(3)
+  // Second and third are level, so the last seat is in question.
+  room.players.get("p0").score = 500
+  room.players.get("p1").score = 200
+  room.players.get("p2").score = 200
+
+  assert.equal(G.pending(room), "tiebreak-cut", "the survey cannot start two-handed until it knows which two")
+  assert.deepEqual(G.openSurvey(room), [], "and it refuses to")
+
+  const cut = G.surveyCut(room)
+  assert.deepEqual(cut.through, ["p0"], "the leader is through outright")
+  assert.deepEqual(cut.contested.sort(), ["p1", "p2"])
+  assert.equal(cut.seats, 1)
+
+  assert.deepEqual(kinds(G.openTiebreak(room)), ["tiebreak-open"])
+  assert.equal(room.tiebreak.purpose, "cut")
+  assert.deepEqual(room.tiebreak.contenders.sort(), ["p1", "p2"], "the leader is not dragged into it")
+
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p2", 10)
+  assert.deepEqual(kinds(G.judgeTiebreak(room, true)), ["tiebreak-through", "game-end"])
+
+  assert.equal(room.winner, null, "a seat, not the game")
+  assert.equal(room.players.get("p2").score, 200, "and not a point either — they are still level")
+  assert.deepEqual(G.surveyCut(room).through.sort(), ["p0", "p2"])
+  assert.equal(G.pending(room), "survey")
+})
+
+test("only the two who made the cut can press during the survey", () => {
+  const room = surveyed(3) // 300 / 200 / 100
+  G.openSurvey(room)
+  assert.deepEqual(room.survey.contenders, ["p0", "p1"])
+
+  G.armBuzzer(room, 0)
+  assert.deepEqual(G.buzz(room, "p2", 10), [], "third place is watching")
+  assert.equal(room.buzzer.winner, null)
+  assert.deepEqual(kinds(G.buzz(room, "p1", 20)), ["buzz-in"])
+})
+
+test("survey points are their own scoreboard, and they decide the winner", () => {
+  const room = surveyed(3)
+  const before = [...room.players.values()].map((p) => p.score)
+  G.openSurvey(room)
+
+  // p1 is behind on the quiz and takes the round anyway — which is the point of
+  // a round with its own points.
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 10)
+  G.revealSurvey(room, 0) // 400
+
+  assert.deepEqual([...room.players.values()].map((p) => p.score), before, "the quiz score never moved")
+  assert.equal(room.survey.points.p1, 400)
+
+  G.closeSurvey(room)
+  assert.equal(G.pending(room), null)
+  assert.deepEqual(G.leaders(room).map((u) => u.id), ["p1"], "decided on survey points, not the quiz lead")
+  assert.equal(G.projectState(room, "host").tied, null, "a clear winner needs no play-off")
+})
+
+test("level on survey points is played off, and only one wins", () => {
+  const room = surveyed(3)
+  G.openSurvey(room)
+  // Neither finds anything: nil-all.
+  G.closeSurvey(room)
+
+  assert.equal(G.pending(room), null)
+  assert.deepEqual(G.projectState(room, "host").tied.sort(), ["p0", "p1"], "the two who played it, level")
+
+  assert.deepEqual(kinds(G.openTiebreak(room)), ["tiebreak-open"])
+  assert.equal(room.tiebreak.purpose, "winner", "this one is for the game")
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 10)
+  assert.deepEqual(kinds(G.judgeTiebreak(room, true)), ["tiebreak-won", "game-end"])
+  assert.equal(room.winner, "p1")
+})
+
+test("a side knocked out at the cut cannot finish level with the winner", () => {
+  const room = surveyed(3)
+  room.players.get("p0").score = 500
+  room.players.get("p1").score = 200
+  room.players.get("p2").score = 200
+
+  G.openTiebreak(room)
+  G.awardTiebreak(room, "p1") // p1 takes the seat; p2 is out, still on 200
+  G.openSurvey(room)
+  G.closeSurvey(room) // nobody scores; p0 and p1 are level on nil
+
+  const tied = G.projectState(room, "host").tied
+  assert.deepEqual(tied.sort(), ["p0", "p1"], "p2 is level on the quiz but was not in the round")
+})
+
+test("a seat won in a play-off survives a save", () => {
+  const room = surveyed(3)
+  room.players.get("p1").score = 200
+  room.players.get("p2").score = 200
+  G.openTiebreak(room)
+  G.awardTiebreak(room, "p2")
+
+  const back = G.restoreRoom("TEST", G.snapshotRoom(room))
+  assert.deepEqual(back.qualified, ["p2"])
+  assert.equal(G.pending(back), "survey", "the cut is settled and stays settled")
 })

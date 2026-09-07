@@ -1547,9 +1547,115 @@ test("the running order holds over the wire, end to end", async (t) => {
     host.send("survey:close")
     await settle()
 
-    assert.equal(host.state.next, null, "nothing left that scores")
-    assert.deepEqual(host.state.tied?.length, 2, "now the tie is worth breaking")
+    assert.equal(host.state.next, null, "nothing left to play")
+    assert.deepEqual(host.state.tied?.length, 2, "level on survey points — nil each")
+  })
+
+  await t.test("and the play-off after it decides the night", async () => {
+    host.send("tiebreak:open")
+    await settle()
+    assert.equal(host.state.phase, "tiebreak")
+    host.send("tiebreak:award", { unitId: host.state.tiebreak.contenders[0] })
+    await settle()
+    assert.equal(host.state.phase, "ended")
+    assert.ok(host.state.winner, "one winner, as the running order promised")
   })
 
   for (const c of [ann, ben]) c.ws.close()
+})
+
+test("the cut is played off before the survey, over the wire", async (t) => {
+  const host = client("host")
+  await host.ready
+  t.after(() => host.ws.close())
+
+  const board = JSON.parse(JSON.stringify(BOARD))
+  board.survey = {
+    enabled: true,
+    collecting: false,
+    questions: [{ id: "q1", category: "SURVEY", prompt: "Name a rock", answers: [{ text: "Granite", points: 100 }] }],
+  }
+  host.send("board:set", { board })
+  await settle()
+
+  const ann = client("player", { code: host.state.code, name: "Ann" })
+  const ben = client("player", { code: host.state.code, name: "Ben" })
+  const cal = client("player", { code: host.state.code, name: "Cal" })
+  await Promise.all([ann.ready, ben.ready, cal.ready])
+  host.send("game:start")
+  await settle()
+
+  const id = (c) => c.identity.playerId
+  // Ann clear on top; Ben and Cal level for the one remaining seat.
+  host.send("score:adjust", { playerId: id(ann), delta: 500 })
+  host.send("score:adjust", { playerId: id(ben), delta: 200 })
+  host.send("score:adjust", { playerId: id(cal), delta: 200 })
+  await settle()
+
+  // Finish the board so the game is over and the cut is live.
+  const round = host.state.board.round
+  for (let ci = 0; ci < round.categories.length; ci++) {
+    for (let qi = 0; qi < round.categories[ci].clues.length; qi++) {
+      host.send("clue:select", { catIndex: ci, clueIndex: qi })
+      host.send("clue:close")
+    }
+  }
+  await settle(250)
+
+  await t.test("the survey will not start until the seat is settled", async () => {
+    // The board is done but the game is not, so it waits in `intermission`
+    // rather than declaring itself over with a round still owed.
+    assert.equal(host.state.phase, "intermission")
+    assert.equal(host.state.next, "tiebreak-cut")
+    assert.equal(host.state.survey.offered, false)
+    assert.equal(host.state.tied, null, "this is not the play-off for the game")
+    assert.deepEqual(host.state.cut.contested.sort(), [id(ben), id(cal)].sort())
+
+    host.send("survey:open")
+    await settle()
+    assert.equal(host.state.phase, "intermission", "refused")
+  })
+
+  await t.test("winning it buys a seat, not the game and not a point", async () => {
+    host.send("tiebreak:open")
+    await settle()
+    assert.equal(host.state.phase, "tiebreak")
+    host.send("tiebreak:award", { unitId: id(cal) })
+    await settle()
+
+    assert.equal(host.state.winner, null, "nobody has won anything yet")
+    const scores = Object.fromEntries(host.state.players.map((p) => [p.name, p.score]))
+    assert.deepEqual(scores, { Ann: 500, Ben: 200, Cal: 200 }, "still level — a seat is not a point")
+    assert.equal(host.state.next, "survey")
+  })
+
+  await t.test("and only the two who made it can press", async () => {
+    host.send("survey:open")
+    await settle()
+    assert.deepEqual(host.state.survey.contenders.sort(), [id(ann), id(cal)].sort())
+
+    host.send("buzzer:arm")
+    await settle()
+    ben.send("buzz")
+    await settle()
+    assert.equal(host.state.buzzer.winner, null, "Ben lost the seat and the buzzer with it")
+    cal.send("buzz")
+    await settle()
+    assert.equal(host.state.buzzer.winner, id(cal))
+  })
+
+  await t.test("survey points are their own column", async () => {
+    host.send("survey:reveal", { index: 0 })
+    await settle()
+    assert.equal(host.state.survey.points[id(cal)], 100)
+    const scores = Object.fromEntries(host.state.players.map((p) => [p.name, p.score]))
+    assert.deepEqual(scores, { Ann: 500, Ben: 200, Cal: 200 }, "the quiz board never moved")
+
+    host.send("survey:close")
+    await settle()
+    assert.equal(host.state.winner, null)
+    assert.equal(host.state.tied, null, "Cal is ahead on survey points")
+  })
+
+  for (const c of [ann, ben, cal]) c.ws.close()
 })
