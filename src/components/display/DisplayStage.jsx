@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRoom } from "../../lib/useRoom"
 import { playForEffect, unlock, isUnlocked, music } from "../../lib/sfx"
+import { broadcast } from "../../lib/knock/knock"
 import { nameOf, rows as sideRows } from "../../lib/sides"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
@@ -37,6 +38,19 @@ export function DisplayStage({ code: initialCode }) {
   }, [])
   const [origin, setOrigin] = useState(null)
 
+  const txRef = useRef(null)
+
+  const onMessage = useCallback(async (msg) => {
+    if (msg?.type === "knock:nonce" && Array.isArray(msg.payload)) {
+      try {
+        if (txRef.current) txRef.current.stop()
+        txRef.current = await broadcast(new Uint8Array(msg.payload), { volume: 0.15 })
+      } catch (err) {
+        console.warn("[knock] broadcast failed:", err)
+      }
+    }
+  }, [])
+
   const onEffects = useCallback((effects, next) => {
     for (const fx of effects) {
       playForEffect(fx)
@@ -63,8 +77,32 @@ export function DisplayStage({ code: initialCode }) {
     }
   }, [])
 
-  const { state, connected, send } = useRoom({ role: "display", code, onEffects, onError: setError })
-  void send
+  const { state, connected, send } = useRoom({ role: "display", code, onEffects, onError: setError, onMessage })
+
+  // Broadcast room + nonce over sound while in lobby phase (requires user gesture)
+  useEffect(() => {
+    const isLobby = state?.phase === "lobby"
+    if (!connected || !audioOn || !isLobby) {
+      if (txRef.current) {
+        txRef.current.stop()
+        txRef.current = null
+      }
+      return
+    }
+
+    send({ type: "knock:issue" })
+    const interval = setInterval(() => {
+      send({ type: "knock:issue" })
+    }, 6000)
+
+    return () => {
+      clearInterval(interval)
+      if (txRef.current) {
+        txRef.current.stop()
+        txRef.current = null
+      }
+    }
+  }, [connected, audioOn, state?.phase, send])
 
   // A projector that sleeps mid-round is the worst failure mode there is.
   useWakeLock()

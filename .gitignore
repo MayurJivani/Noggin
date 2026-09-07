@@ -28,3 +28,7 @@ pnpm-debug.log*
 uploads/
 # saved boards + game archive
 data/
+
+# codegraph
+.codegraph/
+

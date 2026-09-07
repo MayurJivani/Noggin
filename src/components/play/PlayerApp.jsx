@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
-import { resolveMediaUrl } from "../../lib/mediaUrl"
+import { getRelayOrigin, resolveMediaUrl } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
+import { listen } from "../../lib/knock/knock"
 import { readJson, removeStore, writeJson } from "../../lib/storage"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
@@ -118,6 +119,68 @@ const buzz = (pattern) => navigator.vibrate?.(pattern)
 
 function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
   const ready = code.trim().length >= 3 && name.trim().length > 0
+  const [listening, setListening] = useState(false)
+  const [soundMsg, setSoundMsg] = useState(null)
+  const rxRef = useRef(null)
+
+  const isSecure = typeof window !== "undefined" && (window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1")
+
+  const stopListening = () => {
+    if (rxRef.current) {
+      rxRef.current.stop()
+      rxRef.current = null
+    }
+    setListening(false)
+  }
+
+  const startListening = async () => {
+    setSoundMsg(null)
+    setListening(true)
+    try {
+      const rx = await listen(async (bytes) => {
+        try {
+          const res = await fetch(`${getRelayOrigin()}/api/knock`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bytes: Array.from(bytes) }),
+          }).then((r) => r.json())
+
+          if (res.code) {
+            setCode(res.code)
+            setSoundMsg(`Room ${res.code} found!`)
+            if (rxRef.current) {
+              rxRef.current.stop()
+              rxRef.current = null
+            }
+            setListening(false)
+          } else if (res.error) {
+            setSoundMsg(res.error)
+          }
+        } catch {
+          setSoundMsg("Could not verify room. Type code instead.")
+        }
+      })
+
+      if (!rx.usable) {
+        rx.stop()
+        setListening(false)
+        setSoundMsg("Microphone sample rate is too low for sound join.")
+        return
+      }
+      rxRef.current = rx
+    } catch (err) {
+      console.warn("[knock] listen failed:", err)
+      setListening(false)
+      setSoundMsg("Microphone access denied or unavailable.")
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (rxRef.current) rxRef.current.stop()
+    }
+  }, [])
+
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-center gap-6 px-6">
       <Backdrop veins={5} glow={3} />
@@ -144,6 +207,34 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
             onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
           />
         </div>
+
+        {isSecure && (
+          <div>
+            {listening ? (
+              <button
+                type="button"
+                onClick={stopListening}
+                className="btn border-gold-dim bg-gold/10 text-gold w-full py-2 text-xs flex items-center justify-center gap-2 animate-pulse"
+              >
+                <span className="h-2 w-2 rounded-full bg-gold animate-ping" />
+                Listening for TV sound… (tap to cancel)
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startListening}
+                className="btn w-full py-2 text-xs flex items-center justify-center gap-2 text-muted hover:text-gold"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 00-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+                Join by sound
+              </button>
+            )}
+            {soundMsg && <div className="text-center text-[11px] text-gold mt-1.5">{soundMsg}</div>}
+          </div>
+        )}
+
         <div>
           <div className="label mb-1">Your name</div>
           <input

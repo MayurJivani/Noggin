@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url"
 import { WebSocketServer } from "ws"
 
 import * as G from "./game.js"
+import { Nonces, parse as parseKnock } from "./knock.js"
 import { getStore, initStore, safeKey } from "./store/index.js"
 import {
   SESSION_COOKIE,
@@ -498,6 +499,48 @@ async function handleRequest(req, res) {
     }
   }
 
+  /*
+    Redeem what a phone heard.
+
+    The big screen plays the room code and a nonce as a tone nobody can hear;
+    a phone in the room decodes it and posts it here. If the nonce is one we
+    issued in the last few seconds and has not been spent, the phone is told the
+    code and joins without anyone typing anything.
+
+    **This is not a gate, and must not be mistaken for one.** Joining a Noggin
+    room has never needed more than the code, and that is deliberate — see the
+    known limits in PLAN.md. What the nonce actually buys is narrower and worth
+    stating: a *recording* of the room cannot join. Without it, anyone who films
+    the television and later plays that clip back near a phone would have it
+    walk into the game, which is a real nuisance for a room streaming to a
+    projector or posting clips afterwards. Freshness fixes exactly that and
+    claims nothing more.
+  */
+  if (url.pathname === "/api/knock" && req.method === "POST") {
+    let body
+    try {
+      body = JSON.parse(await readBody(req, 1024))
+    } catch {
+      return json(res, 400, { error: "Bad request." })
+    }
+
+    // Bytes off the air are anonymous, attacker-controlled input, and CRC
+    // detects accidents rather than adversaries. `parseKnock` is the validator:
+    // it rejects anything that is not four printable ASCII bytes and a nonce.
+    const heard = Array.isArray(body?.bytes) ? parseKnock(Uint8Array.from(body.bytes.map((n) => Number(n) & 0xff))) : null
+    if (!heard) return json(res, 400, { error: "That doesn't look like a room." })
+
+    const code = heard.room.toUpperCase()
+    // Redeem before looking the room up, so a wrong guess is charged against
+    // the attempt limiter whether or not the room happens to exist.
+    const ok = knock.redeem(code, heard.nonce)
+    if (!ok) return json(res, 403, { error: "That was heard too long ago. Type the code instead." })
+
+    const room = rooms.get(code)
+    if (!room) return json(res, 404, { error: "That room has closed." })
+    return json(res, 200, { code, title: room.board?.title ?? null })
+  }
+
   if (req.method === "GET" && url.pathname.startsWith("/files/")) {
     let raw
     try {
@@ -671,8 +714,29 @@ async function handleAuth(req, res, url, me) {
 /** @type {Map<string, ReturnType<typeof G.createRoom> & { sockets: Map<any, any> }>} */
 const rooms = new Map()
 
-/** Unambiguous on a phone keypad and on a projector: no I, O, 0, 1. */
+/**
+ * Unambiguous on a phone keypad and on a projector: no I, O, 0, 1.
+ *
+ * Four characters from this set is also, by luck rather than design, exactly
+ * what Knock's payload format wants — four printable ASCII bytes. Changing the
+ * length or admitting a non-ASCII character here breaks joining by sound, so
+ * `tests/knock.test.js` asserts the whole alphabet survives the round trip.
+ */
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+/**
+ * Nonces for joining by sound.
+ *
+ * The TTL is long relative to how often the screen rotates, on purpose. One
+ * frame takes about a second to play and repeats every 1.4, so a phone that
+ * starts listening at the wrong moment needs several seconds to catch a whole
+ * one — and a nonce that expires while it is still being transmitted is a phone
+ * that hears the room perfectly and is turned away. Rotating every six seconds
+ * against a fifteen-second life leaves two or three valid at once, which is the
+ * overlap that makes the seam invisible.
+ */
+const knock = new Nonces({ ttlMs: 15_000 })
+const KNOCK_ROTATE_MS = 6_000
 
 function newCode() {
   for (let i = 0; i < 50; i++) {
@@ -1264,6 +1328,16 @@ function handleHostMessage(room, meta, ws, msg) {
       send(ws, { type: "deleted", code: doomed })
       closeLiveRoom(doomed)
       return
+    }
+
+    case "knock:issue": {
+      const { payload } = knock.issue(room.code)
+      return send(ws, {
+        type: "knock:nonce",
+        payload: Array.from(payload),
+        ttlMs: 15_000,
+        rotateMs: KNOCK_ROTATE_MS,
+      })
     }
 
     case "room:forget": {
