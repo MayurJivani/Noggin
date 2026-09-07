@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { controllerUrl, cardsUrl } from "../../lib/net"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
+import { broadcast } from "../../lib/knock/knock"
 import { nameOf, rows as sideRows } from "../../lib/sides"
 import { QrBlock } from "../ui/QrBlock"
 import { PlayerRoster } from "./PlayerRoster"
@@ -14,9 +15,47 @@ import { PlayerRoster } from "./PlayerRoster"
  * under pressure, while talking. The one thing it does own is the answer,
  * which nobody else in the building can see.
  */
-export function GameControl({ state, send, now, requests, code, savedAt, controllerKey }) {
+export function GameControl({ state, send, now, requests, code, savedAt, controllerKey, addMessageListener }) {
   const { phase, board, clue, players, buzzer, timer, lifeline } = state
   const round = board.round
+
+  const [soundBroadcasting, setSoundBroadcasting] = useState(false)
+  const txRef = useRef(null)
+
+  useEffect(() => {
+    if (!soundBroadcasting) {
+      if (txRef.current) {
+        txRef.current.stop()
+        txRef.current = null
+      }
+      return
+    }
+
+    send("knock:issue")
+    const interval = setInterval(() => {
+      send("knock:issue")
+    }, 6000)
+
+    const unsubscribe = addMessageListener?.(async (msg) => {
+      if (msg.type === "knock:nonce" && Array.isArray(msg.payload)) {
+        try {
+          if (txRef.current) txRef.current.stop()
+          txRef.current = await broadcast(new Uint8Array(msg.payload), { volume: 0.15 })
+        } catch (err) {
+          console.warn("[knock] host broadcast failed:", err)
+        }
+      }
+    })
+
+    return () => {
+      clearInterval(interval)
+      unsubscribe?.()
+      if (txRef.current) {
+        txRef.current.stop()
+        txRef.current = null
+      }
+    }
+  }, [soundBroadcasting, send, addMessageListener])
 
   // Space to arm/lock, Y/N to judge, Enter to move on. Hosts end up driving
   // this with one hand while holding a microphone with the other.
@@ -82,6 +121,31 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
             <button className="btn hover:border-bad hover:text-bad" onClick={() => confirm("Reset scores and reopen every clue?") && send("game:reset")}>
               Reset game
             </button>
+          </div>
+
+          <div className="mt-3">
+            <div className="label mb-1.5">Sound Join Broadcast</div>
+            {soundBroadcasting ? (
+              <button
+                type="button"
+                onClick={() => setSoundBroadcasting(false)}
+                className="btn btn-gold w-full py-1.5 text-[11px] flex items-center justify-center gap-2 animate-pulse"
+              >
+                <span className="h-2 w-2 rounded-full bg-[#17110a] animate-ping" />
+                🔊 Playing Join Sound (Stop)
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSoundBroadcasting(true)}
+                className="btn w-full py-1.5 text-[11px] flex items-center justify-center gap-2 text-muted hover:text-gold"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                </svg>
+                Play Join Sound from Host
+              </button>
+            )}
           </div>
           {/*
             The same setting as the builder's, put where the host actually is on

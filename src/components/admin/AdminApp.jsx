@@ -79,6 +79,12 @@ function HostDesk({ auth }) {
     }
   }, [])
 
+  const messageListeners = useRef(new Set())
+  const addMessageListener = useCallback((fn) => {
+    messageListeners.current.add(fn)
+    return () => messageListeners.current.delete(fn)
+  }, [])
+
   const { state, connected, identity, send } = useRoom({
     role: "host",
     surface: "desk",
@@ -96,6 +102,9 @@ function HostDesk({ auth }) {
         // game you were running, so the next choice is yours to make.
         removeStore(STORAGE + ".code")
         location.href = "/"
+      }
+      for (const listener of messageListeners.current) {
+        listener(msg)
       }
     }, []),
   })
@@ -279,6 +288,7 @@ function HostDesk({ auth }) {
             code={state.code}
             savedAt={savedAt}
             controllerKey={controllerKey}
+            addMessageListener={addMessageListener}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center text-[13px] text-faint">Opening the room…</div>
