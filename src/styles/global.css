@@ -364,6 +364,18 @@
   .vein-flow-slow { animation-duration: 12s; }
   .vein-flow-fast { animation-duration: 4.5s; }
 
+  /*
+    The desk's drawers draw their own arrow, so the browser's must go.
+
+    `list-style: none` is enough in Chrome and current Safari, but WebKit before
+    15.4 draws `::-webkit-details-marker` and ignores it — which would put a
+    second, differently-styled triangle next to ours. One line, and it costs
+    nothing on engines that never had the pseudo-element.
+  */
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
   /* Sweeping highlight for anything that should look lit rather than painted. */
   .sheen {
     background-image: linear-gradient(100deg, transparent 20%, rgba(253, 240, 200, 0.2) 45%, transparent 70%);

@@ -102,104 +102,155 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
           stake={state.stake}
           code={code}
         />
-        <div className="panel p-3">
-          <div className="label mb-2">Room</div>
-          <div className="flex items-center justify-between text-[12px] text-muted">
-            <span>Code</span>
-            <span className="font-display brass-sm text-lg tracking-[0.2em]">{code}</span>
+        {/*
+          Ordered by how often a host reaches for it, not by topic.
+
+          This panel had eleven controls stacked at equal weight and came out
+          688px tall in a 654px viewport — so the one thing below the fold was
+          the *clock*, pushed there by six things you touch once before the
+          doors open. Setup is now behind a disclosure and the everyday
+          controls are the panel.
+        */}
+        {/*
+          Capped, and scrolls itself.
+
+          Both panels share this column under `min-h-0`, so a growing one takes
+          its space from the other — and opening all three drawers squeezed the
+          player roster to two pixels, which is the panel you judge people in.
+          Better for the drawer to scroll than for the roster to vanish.
+        */}
+        <div className="panel max-h-[58%] shrink-0 overflow-y-auto p-3">
+          <div className="flex items-baseline justify-between">
+            <div className="label">Room</div>
+            <span className="font-display brass-sm text-lg leading-none tracking-[0.2em]">{code}</span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[12px] text-muted">
-            <span>Round</span>
-            <span>
-              {round?.name} · {state.roundIndex + 1}/{board.roundCount}
+          <div className="mt-1.5 flex items-baseline justify-between text-[11px] text-faint">
+            <span className="truncate">{round?.name}</span>
+            <span className="shrink-0 tabular-nums">
+              {state.roundIndex + 1}/{board.roundCount}
             </span>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button className="btn" disabled={phase !== "intermission" && phase !== "ended"} onClick={() => send("round:next")}>
-              Next round
-            </button>
-            <button className="btn hover:border-bad hover:text-bad" onClick={() => confirm("Reset scores and reopen every clue?") && send("game:reset")}>
+
+          <button
+            className="btn mt-2.5 w-full py-1.5 text-[11px]"
+            disabled={phase !== "intermission" && phase !== "ended"}
+            onClick={() => send("round:next")}
+          >
+            Next round
+          </button>
+
+          <TimerControls send={send} timer={timer} now={now} />
+
+          <Drawer title="Joining">
+            <SoundJoin on={soundBroadcasting} setOn={setSoundBroadcasting} />
+            {/*
+              Streamer mode sits with the sound because they are one decision.
+              Hiding the code with no other way in means reading it aloud to
+              every latecomer; the tone with the code still on screen is a
+              convenience nobody asked for.
+            */}
+            <Toggle
+              className="mt-2"
+              on={!!state.settings.streamer}
+              onClick={() => send("settings:set", { settings: { streamer: !state.settings.streamer } })}
+              label={state.settings.streamer ? "Streamer mode on" : "Streamer mode off"}
+              hint={
+                state.settings.streamer
+                  ? "Code and QR withheld from the big screen, scoreboard and podiums."
+                  : "Code and QR are on the big screen, where a camera can read them."
+              }
+            />
+            <ControllerInvite send={send} controllerKey={controllerKey} code={code} />
+          </Drawer>
+
+          {/*
+            Mirroring is the one setting here that genuinely comes up mid-game
+            — a clue with a picture the room should look at together, or a
+            suspicion that phones are being read instead of the screen — so it
+            gets its own drawer rather than being buried under "Joining".
+          */}
+          <Drawer title="Players' phones">
+            <Toggle
+              on={state.settings.mirrorClue !== false}
+              onClick={() => send("settings:set", { settings: { mirrorClue: state.settings.mirrorClue === false } })}
+              label={state.settings.mirrorClue !== false ? "Clue is on phones" : "Clue is hidden"}
+              hint={
+                state.settings.mirrorClue !== false
+                  ? "Anyone who can't see the TV can read along."
+                  : "Never sent to them — and their buzzer is bigger for it."
+              }
+            />
+          </Drawer>
+
+          <Drawer title="This game">
+            <SaveControls send={send} savedAt={savedAt} code={code} />
+            <button
+              className="btn mt-2 w-full py-1.5 text-[11px] hover:border-bad hover:text-bad"
+              onClick={() => confirm("Reset scores and reopen every clue?") && send("game:reset")}
+            >
               Reset game
             </button>
-          </div>
-
-          <div className="mt-3">
-            <div className="label mb-1.5">Sound Join Broadcast</div>
-            {soundBroadcasting ? (
-              <button
-                type="button"
-                onClick={() => setSoundBroadcasting(false)}
-                className="btn btn-gold w-full py-1.5 text-[11px] flex items-center justify-center gap-2 animate-pulse"
-              >
-                <span className="h-2 w-2 rounded-full bg-[#17110a] animate-ping" />
-                🔊 Playing Join Sound (Stop)
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setSoundBroadcasting(true)}
-                className="btn w-full py-1.5 text-[11px] flex items-center justify-center gap-2 text-muted hover:text-gold"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                </svg>
-                Play Join Sound from Host
-              </button>
-            )}
-          </div>
-          {/*
-            The same setting as the builder's, put where the host actually is on
-            the night. It comes up mid-game — a clue with a picture the room
-            should be looking at together, or a suspicion that phones are being
-            read instead of the screen.
-          */}
-          <div className="mt-3">
-            <div className="label mb-1.5">Players' phones</div>
-            <button
-              className={`btn w-full py-1.5 text-[11px] ${state.settings.mirrorClue !== false ? "btn-gold" : ""}`}
-              onClick={() => send("settings:set", { settings: { mirrorClue: state.settings.mirrorClue === false } })}
-              title="Whether the clue is mirrored onto players' phones. Off means it is never sent to them."
-            >
-              {state.settings.mirrorClue !== false ? "Clue is on phones" : "Clue is hidden"}
-            </button>
-            <div className="mt-1 text-[10px] leading-snug text-faint">
-              {state.settings.mirrorClue !== false
-                ? "Anyone who can't see the TV can read along."
-                : "Not sent to phones at all — and their buzzer is bigger for it."}
-            </div>
-          </div>
-
-          {/*
-            Streamer mode.
-
-            Sits directly under the sound broadcast on purpose: turning the code
-            off is what makes the tone worth having, and having the tone is what
-            makes turning the code off survivable. Either alone is a worse deal
-            — the code hidden with no other way in means reading it aloud on
-            every latecomer, and the tone with the code still on screen is a
-            convenience nobody needed.
-          */}
-          <div className="mt-3">
-            <div className="label mb-1.5">On camera</div>
-            <button
-              className={`btn w-full py-1.5 text-[11px] ${state.settings.streamer ? "btn-gold" : ""}`}
-              onClick={() => send("settings:set", { settings: { streamer: !state.settings.streamer } })}
-              title="Keep the room code and join QR off the big screen, the scoreboard and the podiums."
-            >
-              {state.settings.streamer ? "Streamer mode on" : "Streamer mode off"}
-            </button>
-            <div className="mt-1 text-[10px] leading-snug text-faint">
-              {state.settings.streamer
-                ? "The code is not sent to the big screen at all. You and the cue cards still have it."
-                : "The code and QR are on the big screen, where a camera can read them."}
-            </div>
-          </div>
-
-          <ControllerInvite send={send} controllerKey={controllerKey} code={code} />
-          <SaveControls send={send} savedAt={savedAt} code={code} />
-          <DeleteRoom send={send} code={code} players={players.length} />
-          <TimerControls send={send} timer={timer} now={now} />
+            <DeleteRoom send={send} code={code} players={players.length} />
+          </Drawer>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A section that stays shut until it is wanted.
+ *
+ * `<details>` rather than a `useState` toggle: open and closed without a
+ * re-render, keyboard-reachable and announced to a screen reader for free, and
+ * it keeps working inside a column that scrolls. The alternative was another
+ * piece of state on a component that already has plenty.
+ *
+ * Closed by default, all of them. A host opens one of these before the doors
+ * open or when something has gone wrong, and on both occasions they are
+ * looking for it rather than glancing at it.
+ */
+function Drawer({ title, children }) {
+  return (
+    <details className="group mt-2.5 border-t border-edge/60 pt-2">
+      <summary className="label flex cursor-pointer list-none select-none items-center gap-1.5 transition-colors hover:text-ink">
+        <span className="text-[8px] leading-none transition-transform group-open:rotate-90">▶</span>
+        {title}
+      </summary>
+      <div className="mt-2">{children}</div>
+    </details>
+  )
+}
+
+/** A setting that is on or off, with the consequence written under it. */
+function Toggle({ on, onClick, label, hint, className = "" }) {
+  return (
+    <div className={className}>
+      <button className={`btn w-full py-1.5 text-[11px] ${on ? "btn-gold" : ""}`} onClick={onClick} title={hint}>
+        {label}
+      </button>
+      <div className="mt-1 text-[10px] leading-snug text-faint">{hint}</div>
+    </div>
+  )
+}
+
+/**
+ * The host's own speakers playing the join tone.
+ *
+ * Worth having beside the big screen's, because the two are in different
+ * places: a laptop on the desk reaches the people queuing at it, and the
+ * projector reaches the room. Neither is reliably the right one.
+ */
+function SoundJoin({ on, setOn }) {
+  return (
+    <div>
+      <button className={`btn w-full py-1.5 text-[11px] ${on ? "btn-gold" : ""}`} onClick={() => setOn(!on)}>
+        {on ? "Playing the join tone" : "Play the join tone here"}
+      </button>
+      <div className="mt-1 text-[10px] leading-snug text-faint">
+        {on
+          ? "This machine's speakers are carrying the code. The big screen does it too, in the lobby."
+          : "Phones on the player page can hear the room code. Needs HTTPS on their side."}
       </div>
     </div>
   )
@@ -913,7 +964,7 @@ function ControllerInvite({ send, controllerKey, code }) {
   }, [controllerKey, code])
 
   return (
-    <div className="mt-3">
+    <div className="mt-2.5">
       <div className="flex items-baseline justify-between">
         <span className="label">Remote host</span>
         {controllerKey && (
@@ -979,7 +1030,7 @@ function SaveControls({ send, savedAt, code }) {
   }, [savedAt])
 
   return (
-    <div className="mt-3">
+    <div>
       <div className="flex items-baseline justify-between">
         <span className="label">Save for later</span>
         {savedAt && <span className={`text-[10px] ${flash ? "text-good" : "text-faint"}`}>{flash ? "saved ✓" : `saved ${ago(savedAt)}`}</span>}
@@ -1010,7 +1061,7 @@ function SaveControls({ send, savedAt, code }) {
  */
 function DeleteRoom({ send, code, players }) {
   return (
-    <div className="mt-3 border-t border-edge pt-3">
+    <div className="mt-2">
       <button
         className="btn w-full py-1.5 text-[11px] hover:border-bad hover:text-bad"
         onClick={() => {
@@ -1037,7 +1088,7 @@ function ago(ts) {
 function TimerControls({ send, timer, now }) {
   const left = useCountdown(timer && timer.kind !== "answer" ? timer.endsAt : null, now)
   return (
-    <div className="mt-3">
+    <div className="mt-2.5 border-t border-edge/60 pt-2.5">
       <div className="label mb-1.5">Clock</div>
       <div className="flex items-center gap-1.5">
         {[15, 30, 60].map((s) => (

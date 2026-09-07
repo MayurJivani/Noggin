@@ -238,9 +238,7 @@ function HostDesk({ auth }) {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
-          <ScreenLink code={state?.code} />
-          <ScreenLink code={state?.code} kind="podiums" />
-          <ScreenLink code={state?.code} kind="scores" />
+          <ScreenLinks code={state?.code} />
           <RoomSwitcher
             code={state?.code}
             refreshKey={roomsVersion}
@@ -316,19 +314,46 @@ const TabButton = ({ on, onClick, children }) => (
 )
 
 /**
- * One-click open of a viewer screen, on the LAN address the machine showing it
- * can actually reach — a projector or a spare monitor is rarely this laptop.
+ * The viewer screens, as one control rather than three.
+ *
+ * Each was its own bordered button reading "Open big screen ↗", "Podiums ↗",
+ * "Scoreboard ↗" — 360px of header for three links to the same kind of thing,
+ * each repeating a word the group can say once. Sharing one label and one
+ * border brings that to 161px, which is the room the switcher and the operator
+ * list needed on a laptop.
+ *
+ * Still real links, not a menu. They open in a new tab, they can be dragged to
+ * a second monitor, and middle-click still works — all of which a button with
+ * an onClick would have quietly taken away.
  */
-function ScreenLink({ code, kind = "display" }) {
-  const [url, setUrl] = useState("")
+function ScreenLinks({ code }) {
+  const [urls, setUrls] = useState(null)
   useEffect(() => {
-    if (!code) return
-    ;({ scores: scoresUrl, podiums: podiumsUrl, display: displayUrl }[kind] ?? displayUrl)(code).then(setUrl)
-  }, [code, kind])
-  if (!url) return null
+    if (!code) return setUrls(null)
+    Promise.all([displayUrl(code), podiumsUrl(code), scoresUrl(code)]).then(([display, podiums, scores]) =>
+      setUrls({ display, podiums, scores }),
+    )
+  }, [code])
+  if (!urls) return null
+
   return (
-    <a className="btn text-[11px]" href={url} target="_blank" rel="noreferrer">
-      {{ scores: "Scoreboard ↗", podiums: "Podiums ↗" }[kind] ?? "Open big screen ↗"}
-    </a>
+    <div className="flex items-center gap-1.5 rounded-lg border border-edge px-2 py-1">
+      <span className="label leading-none">Open</span>
+      {[
+        ["display", "TV"],
+        ["podiums", "Podiums"],
+        ["scores", "Scores"],
+      ].map(([kind, label]) => (
+        <a
+          key={kind}
+          className="text-[11px] text-muted transition-colors hover:text-gold"
+          href={urls[kind]}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {label}
+        </a>
+      ))}
+    </div>
   )
 }
