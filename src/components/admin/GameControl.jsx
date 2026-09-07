@@ -407,8 +407,10 @@ function StagePanel({ state, send, now }) {
             </div>
           )}
 
-          {/* Last of all, once the final and any tie-break are settled. */}
-          {state.survey?.offered && !tied && (
+          {/* Before the tie-break, not after: this round still moves scores,
+              and a tie settled ahead of it is a tie settled on the wrong
+              numbers. `tied` is withheld by the relay until this is done. */}
+          {state.survey?.offered && (
             <div className="mx-auto mt-3 max-w-sm rounded-xl border border-gold-deep/60 bg-royal/30 px-4 py-3">
               <div className="font-display text-gold">One more round</div>
               <div className="mt-1 text-[12px] text-muted">
@@ -420,14 +422,22 @@ function StagePanel({ state, send, now }) {
             </div>
           )}
 
+          {/*
+            One call to action, chosen by the relay's running order rather than
+            by this screen. Both buttons used to render together at an
+            intermission, so "Play the final" sat next to "Start next round"
+            with three rounds still on the board — and after the last round
+            neither appeared, which made a compulsory final unreachable from
+            the desk.
+          */}
           <div className="mt-4 flex justify-center gap-2">
-            {phase === "intermission" && (
+            {phase === "intermission" && state.roundIndex < state.board.roundCount - 1 && (
               <button className="btn btn-gold px-6 py-2.5" onClick={() => send("round:next")}>
                 Start next round
               </button>
             )}
-            {state.final?.enabled && phase === "intermission" && (
-              <button className="btn btn-gold px-6 py-2.5" onClick={() => send("final:open")}>
+            {state.next === "final" && (
+              <button className="btn btn-gold px-6 py-2.5 animate-pop" onClick={() => send("final:open")}>
                 ✦ Play the final
               </button>
             )}
@@ -451,7 +461,16 @@ function StagePanel({ state, send, now }) {
   }
 
   if (phase === "wager") {
-    const max = Math.max(contenders.find((c) => c.id === wagerPlayer)?.score ?? 0, ...(state.board.round?.values ?? [0]))
+    /*
+      Kept in step with `maxWager` on the relay, which is what actually enforces
+      it — this only decides what the box offers. A thousand for anyone, the
+      round's top tile if that is bigger, and above both the size of your score
+      whichever side of zero it sits: a side on -2500 is exactly who a nitro is
+      for, and capping them at the floor left the catch-up mechanic unable to
+      catch anyone up.
+    */
+    const score = contenders.find((c) => c.id === wagerPlayer)?.score ?? 0
+    const max = Math.max(1000, Math.abs(score), ...(state.board.round?.values ?? [0]))
     return (
       <div className="panel flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
         <div className="font-display text-2xl text-live animate-glow">NOGGIN&rsquo; NITRO</div>
@@ -672,6 +691,13 @@ function BuzzerCheck({ state, send }) {
   const hit = (id) => !!check?.hits?.[id]
   const heard = players.filter((p) => hit(p.id)).length
 
+  // The relay ranks them, because it is the thing that knows each phone's lag
+  // and the thing that will rank the real race. Doing it here would be a second
+  // implementation of the same rule, free to disagree with the first.
+  const byId = new Map(players.map((p) => [p.id, p]))
+  const ranked = (check?.order ?? []).flatMap((r) => (byId.has(r.id) ? [{ ...r, p: byId.get(r.id) }] : []))
+  const waiting = players.filter((p) => !hit(p.id))
+
   if (!players.length) {
     return (
       <div className="mt-4">
@@ -702,12 +728,36 @@ function BuzzerCheck({ state, send }) {
         {check.complete ? `All ${players.length} buzzers working` : `${heard} of ${players.length} — tell them to press it`}
       </div>
 
+      {/*
+        Pressers first, in the order they got there; everyone still waiting
+        underneath. The list answers two questions and they want opposite
+        sorts — "whose buzzer is dead" wants the roster, "who was quickest"
+        wants the race — so it does both, in that order.
+      */}
       <div className="mx-auto mt-3 max-w-sm space-y-1 text-left">
-        {players.map((p) => (
+        {ranked.map(({ p, place, behind }) => (
           <div
             key={p.id}
-            className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
-              hit(p.id) ? "border-good/60 bg-good/10" : p.connected ? "border-edge" : "border-bad/50 bg-bad/5"
+            className="flex items-center gap-2 rounded-lg border border-good/60 bg-good/10 px-2.5 py-1.5 text-[12px]"
+          >
+            <span
+              className={`w-4 shrink-0 text-center font-value tabular-nums ${place === 1 ? "text-gold" : "text-faint"}`}
+            >
+              {place}
+            </span>
+            <span className="min-w-0 flex-1 truncate">{p.name}</span>
+            <Latency ms={p.lag ?? p.rtt} />
+            <span className="w-16 shrink-0 text-right tabular-nums text-good">
+              {place === 1 ? "first" : `+${behind}ms`}
+            </span>
+          </div>
+        ))}
+
+        {waiting.map((p) => (
+          <div
+            key={p.id}
+            className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] ${
+              p.connected ? "border-edge" : "border-bad/50 bg-bad/5"
             }`}
           >
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.connected ? "bg-good" : "bg-bad"}`} />
@@ -716,12 +766,17 @@ function BuzzerCheck({ state, send }) {
                 ping correction runs on. The phone's own figure fills in until
                 the first pong comes back. */}
             <Latency ms={p.lag ?? p.rtt} />
-            <span className={`w-16 shrink-0 text-right ${hit(p.id) ? "text-good" : "text-faint"}`}>
-              {hit(p.id) ? "✓ heard" : p.connected ? "waiting…" : "away"}
-            </span>
+            <span className="w-16 shrink-0 text-right text-faint">{p.connected ? "waiting…" : "away"}</span>
           </div>
         ))}
       </div>
+
+      {ranked.length > 1 && (
+        <div className="mt-2 text-[10px] text-faint">
+          Ranked the way a real race would be
+          {state.settings.pingCorrection ? ", with each phone's lag credited back" : " — on arrival, uncorrected"}.
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
         <button className="btn px-4 py-2" onClick={() => send("buzzer:check-stop")}>

@@ -990,9 +990,24 @@ export const V4 = {
     ;[131, 196, 262].forEach((f) => stab(f, 0.9, 1, { gain: 0.12, type: "triangle", air: null }))
     thud(0.9, { gain: 0.16, freq: 62 })
   },
+  /**
+   * A new round arriving.
+   *
+   * This used to be `boardOpen` with the numbers nudged — the same slow low
+   * riser onto the same triad, a third of a second shorter. Two different
+   * moments cannot share a gesture and stay legible: the board going up is the
+   * night beginning and wants to be the biggest sound in the game, whereas a
+   * new round is a page turning and happens two or three times.
+   *
+   * So this one goes *up* and resolves. The riser is half the length and twice
+   * as bright, and instead of settling onto a low chord it lands on three
+   * ascending notes — a turn rather than a curtain. It is also over in about a
+   * second, because the host is usually already talking over it.
+   */
   roundStart: () => {
-    noise(0, 0.75, 0.085, { filter: { type: "bandpass", freq: 220 }, q: 2.2, sweep: 2200 })
-    ;[196, 262, 392].forEach((f) => stab(f, 0.6, 0.75, { gain: 0.11, type: "triangle", air: null }))
+    noise(0, 0.42, 0.085, { filter: { type: "bandpass", freq: 300 }, q: 2.4, sweep: 3000 })
+    ;[392, 523, 784].forEach((f, i) => stab(f, 0.3 + i * 0.1, 0.42, { gain: 0.12, type: "triangle", air: i ? null : 2600 }))
+    thud(0.3, { gain: 0.12, freq: 74 })
   },
   finalOpen: () => {
     thud(0, { gain: 0.32, freq: 48 })

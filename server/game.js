@@ -103,6 +103,15 @@ export const DEFAULTS = {
  */
 export const TEAM_PALETTE = ["#f2c96b", "#7ad1a8", "#8fb8ff", "#e08ac0", "#f09a5a", "#a86ce0", "#6fd6e0", "#d6d36a"]
 
+/**
+ * The floor under any bet, whatever the scoreboard says.
+ *
+ * Both wagers in the game use it. Without a floor the two mechanics meant to
+ * let somebody catch up — the nitro and the final — were smallest exactly when
+ * a player most needed them, and a side on nothing could not use either at all.
+ */
+const WAGER_FLOOR = 1000
+
 /** How many score changes to remember per player. */
 const HISTORY_LIMIT = 30
 
@@ -393,6 +402,13 @@ export function createRoom(code, settings = {}) {
     responses: [],
     /** { contenders, spent } while a tie is being played off. */
     tiebreak: null,
+    /**
+     * Which of the end-game rounds have been played.
+     *
+     * Needed because "has it happened yet" is not answerable from the phase: a
+     * game sits in `ended` both before the final and after it. See `pending`.
+     */
+    played: { final: false, survey: false },
     /** Who actually won, once a tie has been settled. See `openTiebreak`. */
     winner: null,
     /** {catIndex, clueIndex} of the clue on screen, or null. */
@@ -491,12 +507,26 @@ export function stake(room) {
   return clue.value
 }
 
-/** Biggest wager a side may make: its score, or the round's top tile if broke. */
+/**
+ * Biggest wager a side may make on a nitro.
+ *
+ * The same shape as the final's: a floor everybody gets, and above it the
+ * *magnitude* of your score. Two things changed from the old rule, and both
+ * were the same oversight.
+ *
+ * The old floor was the round's top tile, which on a board of 200s left a
+ * player on nothing risking 200 on the one clue designed to swing a game —
+ * technically a bet, practically a formality. And the old cap was `score`
+ * rather than `|score|`, so being in the red gave you the floor and no more:
+ * the further behind you fell, the less the catch-up mechanic could catch you
+ * up. The board's top tile is still the floor when it is the bigger number, so
+ * a high-value round is unaffected.
+ */
 export function maxWager(room, id) {
   const round = currentRound(room)
-  const top = Math.max(...round.values, 0)
+  const top = Math.max(...(round?.values ?? []), 0)
   const score = scorer(room, id)?.score ?? 0
-  return Math.max(score, top)
+  return Math.max(WAGER_FLOOR, top, Math.abs(score))
 }
 
 // ── Teams ────────────────────────────────────────────────────────────────────
@@ -695,6 +725,32 @@ export function stopCheck(room) {
   if (!room.check) return []
   room.check = null
   return [{ kind: "check-stop" }]
+}
+
+/**
+ * Who got there first in the sound check, and by how much.
+ *
+ * Ranked exactly as a real race would be — including the lag credit when ping
+ * correction is on — because a check that ranked on raw arrival would tell the
+ * host the opposite of what the game is about to do, and they would find that
+ * out on the first clue that mattered. `ms` is what the relay saw, `adjusted`
+ * is what it would judge on, and `behind` is the gap to the winner, which is
+ * the only number anyone actually reads.
+ *
+ * A press is not a race entry and scores nothing. This is the same ordering
+ * applied to a rehearsal, so the rehearsal is worth something.
+ */
+export function checkOrder(room) {
+  if (!room.check) return []
+  const pressed = Object.entries(room.check.hits).map(([id, hit]) => ({
+    id,
+    ms: hit.at - room.check.openedAt,
+    adjusted: hit.at - room.check.openedAt - lagOf(room, id),
+    count: hit.count,
+  }))
+  pressed.sort(byCorrected)
+  const first = pressed[0]?.adjusted ?? 0
+  return pressed.map((p, i) => ({ ...p, place: i + 1, behind: Math.max(0, Math.round(p.adjusted - first)) }))
 }
 
 export function checkBuzz(room, playerId, now = Date.now()) {
@@ -1096,6 +1152,39 @@ function markPlayed(room) {
   if (clue) clue.status = CLUE_STATUS.PLAYED
 }
 
+/**
+ * What is still owed, in the order it is owed.
+ *
+ * The running order is a rule, and it used to live nowhere: the engine let any
+ * of these open at any time and the *desk* decided which button to show, so
+ * the order was whatever two screens happened to agree on. That produced three
+ * wrong games. The final could be opened at the first intermission, skipping
+ * every round after it. Once the last round finished the phase went straight to
+ * `ended`, where the desk's "Play the final" button was not rendered at all —
+ * so the compulsory round became unreachable from the host's own screen. And a
+ * tie-break was offered before the survey, which settles a tie using scores the
+ * survey is about to change.
+ *
+ * One function now answers "what next", and every screen and guard reads it.
+ *
+ *   rounds → final (if enabled) → survey (if enabled) → tie-break (if level)
+ *
+ * The final is compulsory when the board has one: it does not matter that the
+ * leader is out of reach on paper, because the show plays it anyway and a
+ * player on a negative score is still owed the chance to be turned over.
+ * `null` here means nothing is owed and the game may end — which is the only
+ * moment a tie is worth breaking, because it is the only moment the scores are
+ * final.
+ */
+export function pending(room) {
+  if (room.board.final?.enabled && !room.played?.final) return "final"
+  if (room.board.survey?.enabled && !room.played?.survey) return "survey"
+  return null
+}
+
+/** Whether there is another round of the board still to play. */
+const moreRounds = (room) => room.roundIndex < room.board.rounds.length - 1
+
 /** Back to the grid. Rolls into the next round once the board is cleared. */
 export function closeClue(room) {
   if (room.phase !== PHASE.CLUE && room.phase !== PHASE.REVEAL && room.phase !== PHASE.WAGER) return []
@@ -1108,9 +1197,15 @@ export function closeClue(room) {
   resetBuzzerState(room)
 
   if (roundComplete(currentRound(room))) {
-    const last = room.roundIndex >= room.board.rounds.length - 1
-    room.phase = last ? PHASE.ENDED : PHASE.INTERMISSION
-    return [{ kind: last ? "game-end" : "round-complete", roundIndex: room.roundIndex }]
+    /*
+      The board being finished is not the game being over — not while a final
+      or a survey is still owed. Going to `ended` here fired the game-over
+      cue over a room that still had the last clue to play, and left the desk
+      showing a winner it was about to change its mind about.
+    */
+    const done = !moreRounds(room) && !pending(room)
+    room.phase = done ? PHASE.ENDED : PHASE.INTERMISSION
+    return [{ kind: done ? "game-end" : "round-complete", roundIndex: room.roundIndex }]
   }
 
   room.phase = PHASE.BOARD
@@ -1118,7 +1213,10 @@ export function closeClue(room) {
 }
 
 export function nextRound(room) {
-  if (room.roundIndex >= room.board.rounds.length - 1) {
+  if (!moreRounds(room)) {
+    // Out of board, but not necessarily out of game. Refusing rather than
+    // ending is what stops "next round" being a way to skip the final.
+    if (pending(room)) return []
     room.phase = PHASE.ENDED
     return [{ kind: "game-end" }]
   }
@@ -1245,6 +1343,7 @@ export function resetGame(room) {
   room.survey = null
   room.tiebreak = null
   room.winner = null
+  room.played = { final: false, survey: false }
   room.phase = PHASE.LOBBY
   room.roundIndex = 0
   room.active = null
@@ -1273,16 +1372,42 @@ export function resetGame(room) {
  */
 
 /**
- * Nobody plays the final on a non-positive score — there is nothing to stake.
+/**
+ * The largest bet a side may place.
+ *
+ * A floor of a thousand, and above that your own score. The floor is the whole
+ * point: a player on nothing — or on minus four hundred after a bad round —
+ * previously had nothing to stake and so was not in the final at all, which
+ * ends their night one round early while everyone else plays. Giving them a
+ * thousand to bet keeps them in it and keeps them able to win it, which is what
+ * a last round is for.
+ *
+ * The magnitude is what matters, not the sign: a side on -2500 may stake up to
+ * 2500. They are already behind, and a cautious cap would only make being
+ * behind permanent.
+ */
+export const maxFinalWager = (score) => Math.max(WAGER_FLOOR, Math.abs(score))
+
+/**
+ * Everyone plays the final. Nobody is left out.
+ *
+ * This used to be `score > 0`, on the reasoning that a broke player has nothing
+ * to stake — true under the old rule and no longer, now that `maxWager` gives
+ * everyone at least a thousand. The exclusion was also self-reinforcing: the
+ * only round that could have got them back was the one they were barred from.
  *
  * A side, not a seat: in team mode the team bets once, writes once and is
  * turned over once, whichever member does the typing.
  */
-export const finalEligible = (room) => sides(room).filter((u) => u.score > 0)
+export const finalEligible = (room) => sides(room)
 
 export function openFinal(room) {
   if (room.phase === PHASE.CLUE || room.phase === PHASE.WAGER) return []
   if (!room.board.final?.enabled) return []
+  // Once only, and not before the board is done with. Opening it at the first
+  // intermission used to abandon every round after it.
+  if (room.played?.final) return []
+  if (moreRounds(room)) return []
   room.phase = PHASE.FINAL
   room.active = null
   room.timer = null
@@ -1303,8 +1428,8 @@ export function openFinal(room) {
 export function setFinalWager(room, playerId, amount) {
   if (room.phase !== PHASE.FINAL || room.final?.stage !== "wager") return []
   const unit = scorer(room, playerId)
-  if (!unit || unit.score <= 0) return []
-  const capped = Math.max(0, Math.min(num(amount, 0), unit.score))
+  if (!unit) return []
+  const capped = Math.max(0, Math.min(num(amount, 0), maxFinalWager(unit.score)))
   room.final.wagers[unit.id] = capped
   return [{ kind: "final-wager", playerId, unitId: unit.id }]
 }
@@ -1369,7 +1494,10 @@ export function judgeFinal(room, correct) {
   const effects = [{ kind: correct ? "final-correct" : "final-wrong", playerId: unitId, unitId, wager, score: unit.score }]
 
   if (room.final.revealIndex >= room.final.order.length - 1) {
+    room.played.final = true
     room.phase = PHASE.ENDED
+    // Still `game-end` even with a survey to come: it is the end of the final,
+    // the room reacts to it, and the survey announces itself.
     effects.push({ kind: "game-end" })
   } else {
     room.final.revealIndex += 1
@@ -1486,10 +1614,10 @@ export function tallyResponses(room, questionId) {
 }
 
 export function openSurvey(room) {
-  // Last, after the final and after any tie-break has settled it. A survey
-  // round played before them would just be another round.
+  // Last of the scoring rounds, and after the final — a survey played before it
+  // would just be another round, and one played twice would pay twice.
   if (room.phase !== PHASE.ENDED && room.phase !== PHASE.INTERMISSION) return []
-  if (!room.board.survey?.enabled) return []
+  if (pending(room) !== "survey") return []
 
   room.phase = PHASE.SURVEY
   room.timer = null
@@ -1585,6 +1713,7 @@ export function nextQuestion(room) {
 /** That's the round. Straight to the end, where a tie may still be waiting. */
 export function closeSurvey(room) {
   if (room.phase !== PHASE.SURVEY) return []
+  room.played.survey = true
   room.phase = PHASE.ENDED
   resetBuzzerState(room)
   room.timer = null
@@ -1727,6 +1856,13 @@ export function snapshotRoom(room) {
     settings: room.settings,
     phase: room.phase === PHASE.CLUE || room.phase === PHASE.WAGER || room.phase === PHASE.REVEAL ? PHASE.BOARD : room.phase,
     winner: room.winner ?? null,
+    /*
+      Which end-game rounds are spent.
+
+      Without this a resumed game forgets it has played its final and offers it
+      again — and since the final pays out wagers, playing it twice pays twice.
+    */
+    played: { final: !!room.played?.final, survey: !!room.played?.survey },
     // Collected before the game, often days before — losing them to a restart
     // would lose the round.
     responses: room.responses ?? [],
@@ -1760,6 +1896,7 @@ export function restoreRoom(code, snapshot) {
 
   room.board = normaliseBoard(snapshot.board)
   room.winner = typeof snapshot.winner === "string" ? snapshot.winner : null
+  room.played = { final: !!snapshot.played?.final, survey: !!snapshot.played?.survey }
   room.responses = (Array.isArray(snapshot.responses) ? snapshot.responses : [])
     .slice(0, MAX_RESPONSES)
     .map((r) => ({ q: typeof r?.q === "string" ? r.q : "", text: str(r?.text, 60), at: num(r?.at, 0) }))
@@ -1927,13 +2064,24 @@ export function projectState(room, role, viewerId = null) {
     // The buzzer sound-check. Everyone sees it: a player needs to know their
     // press landed, and the big screen showing "testing" beats it showing a
     // lobby while the host is plainly doing something.
-    check: room.check ? { since: room.check.openedAt, hits: room.check.hits, complete: checkComplete(room) } : null,
+    check: room.check
+      ? { since: room.check.openedAt, hits: room.check.hits, complete: checkComplete(room), order: checkOrder(room) }
+      : null,
     /*
       The play-off. `tied` is offered whenever the game is over and level, so
       the desk can propose one without every screen recomputing the leaders.
     */
     tiebreak: room.tiebreak && room.phase === PHASE.TIEBREAK ? { ...room.tiebreak, hasClue: !!room.board.tiebreak?.prompt } : null,
-    tied: room.phase === PHASE.ENDED && !room.winner && isTied(room) ? leaders(room).map((u) => u.id) : null,
+    /*
+      A tie is only worth breaking once the scores are final.
+
+      Offered before the survey, a tie-break settles the game on numbers the
+      survey is about to change — so the play-off is decided, and then the
+      round after it moves somebody past the winner. `pending` gates it.
+    */
+    tied: room.phase === PHASE.ENDED && !room.winner && !pending(room) && isTied(room) ? leaders(room).map((u) => u.id) : null,
+    /** What the running order says comes next: "final", "survey" or nothing. */
+    next: pending(room),
     /** Set once a tie has been settled — the scores stay level, someone won. */
     winner: room.winner ?? null,
     final: projectFinal(room, privileged, viewerId),
@@ -2025,7 +2173,7 @@ function projectSurvey(room, privileged) {
 
   return {
     enabled: true,
-    offered: room.phase === PHASE.ENDED && !room.survey,
+    offered: room.phase === PHASE.ENDED && pending(room) === "survey",
     live,
     collecting: !!survey.collecting,
     count: questions.length,
@@ -2102,8 +2250,9 @@ function projectFinal(room, privileged, viewerId) {
     current: room.final.order[room.final.revealIndex] ?? null,
     // Sides, not seats — see `finalEligible`. A teammate counts as "mine", so
     // everyone on a team can see the bet and the answer being written for them.
+    // Everyone, now that everyone plays — see `finalEligible`. The old filter
+    // dropped anyone on nothing, which is exactly who the floor exists for.
     players: sides(room)
-      .filter((u) => u.score > 0 || room.final.wagers[u.id] != null)
       .map((u) => {
         const mine = u.id === (viewerId ? (scorer(room, viewerId)?.id ?? viewerId) : null)
         const open = privileged || isUp(u.id)

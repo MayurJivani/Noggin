@@ -369,6 +369,10 @@ test("only privileged roles are told an undo is available", () => {
 /** A room parked at the end of the board, with an enabled final and scores. */
 function atFinal(scores = [1200, 800, -200]) {
   const room = setup(scores.length)
+  // The final comes after the board, so put the room on its last round. The
+  // default board has two, and a room sitting on round one is a room with a
+  // round still to play — which `openFinal` now refuses, deliberately.
+  room.roundIndex = room.board.rounds.length - 1
   room.board.final = {
     category: "STONE",
     prompt: "Black, veined with gold",
@@ -398,8 +402,10 @@ test("the final is wagered blind, then written, then turned over", () => {
   G.setFinalAnswer(room, "p1", "granite")
 
   assert.deepEqual(kinds(G.revealFinal(room)), ["final-reveal"])
-  // Poorest first, so the leader's result does not spoil the rest.
-  assert.deepEqual(room.final.order, ["p1", "p0"])
+  // Poorest first, so the leader's result does not spoil the rest — and p2, on
+  // -200, is in the running now that nobody is left out.
+  assert.deepEqual(room.final.order, ["p2", "p1", "p0"])
+  G.judgeFinal(room, false) // p2, who never bet, staked at nothing
 
   assert.deepEqual(kinds(G.judgeFinal(room, false)), ["final-wrong", "final-reveal"])
   assert.equal(room.players.get("p1").score, 0, "800 staked and lost")
@@ -409,20 +415,30 @@ test("the final is wagered blind, then written, then turned over", () => {
   assert.equal(room.phase, G.PHASE.ENDED)
 })
 
-test("you cannot stake more than you have, and a broke player sits it out", () => {
-  const room = atFinal([600, 0, -100])
+test("everyone plays the final, with a thousand under every bet", () => {
+  const room = atFinal([600, 0, -2500])
   G.openFinal(room)
 
-  G.setFinalWager(room, "p0", 99999)
-  assert.equal(room.final.wagers.p0, 600, "capped at the score")
+  // The floor, for anyone whose score is smaller than it.
+  assert.equal(G.maxFinalWager(600), 1000)
+  assert.equal(G.maxFinalWager(0), 1000)
+  // Above the floor it is your own score — and the sign is not the point, so
+  // being deep in the red buys the same room to climb out of it.
+  assert.equal(G.maxFinalWager(4000), 4000)
+  assert.equal(G.maxFinalWager(-2500), 2500)
 
-  assert.equal(G.setFinalWager(room, "p1", 100).length, 0, "nothing to stake on zero")
-  assert.equal(G.setFinalWager(room, "p2", 100).length, 0, "nor in the red")
-  assert.deepEqual(G.finalEligible(room).map((p) => p.id), ["p0"])
+  G.setFinalWager(room, "p0", 99999)
+  assert.equal(room.final.wagers.p0, 1000, "600 on the board, but the floor is a thousand")
+  assert.equal(G.setFinalWager(room, "p1", 900).length, 1, "a player on nothing is still in it")
+  assert.equal(room.final.wagers.p1, 900)
+  G.setFinalWager(room, "p2", 99999)
+  assert.equal(room.final.wagers.p2, 2500, "and one in the red bets their whole deficit")
+
+  assert.deepEqual(G.finalEligible(room).map((p) => p.id), ["p0", "p1", "p2"], "nobody is left out")
 
   G.startFinal(room)
   G.revealFinal(room)
-  assert.deepEqual(room.final.order, ["p0"], "only the eligible are turned over")
+  assert.deepEqual(room.final.order, ["p2", "p1", "p0"], "still poorest first")
 })
 
 test("a player who never bets is staked at nothing rather than holding the room up", () => {
@@ -789,6 +805,7 @@ test("the final is played by sides, not seats", () => {
   const { room, a, b } = teamed(4)
   a.score = 1000
   b.score = 600
+  room.roundIndex = room.board.rounds.length - 1
   room.board.final = { ...G.makeFinal(), enabled: true, prompt: "?", answer: "!" }
   G.openFinal(room)
 
@@ -813,6 +830,7 @@ test("a team's own screen sees its bet, and nobody else's", () => {
   const { room, a, b } = teamed(4)
   a.score = 1000
   b.score = 600
+  room.roundIndex = room.board.rounds.length - 1
   room.board.final = { ...G.makeFinal(), enabled: true, prompt: "?", answer: "!" }
   G.openFinal(room)
   const mine = G.membersOf(room, a.id).map((p) => p.id)
@@ -935,6 +953,7 @@ test("mirroring off withholds the answer from phones on the reveal too", () => {
 
 test("the final is exempt — it is played on the phones", () => {
   const room = setup(2, { mirrorClue: false })
+  room.roundIndex = room.board.rounds.length - 1
   room.board.final = { ...G.makeFinal(), enabled: true, category: "LAST", prompt: "the final clue", answer: "!" }
   room.players.get("p0").score = 500
   G.openFinal(room)
@@ -1559,6 +1578,7 @@ test("a survey round in flight is never resumed into", () => {
 
 test("the written final is untouched by any of this", () => {
   const room = setup(2)
+  room.roundIndex = room.board.rounds.length - 1
   room.board.final = { ...G.makeFinal(), enabled: true, prompt: "?", answer: "!" }
   room.players.get("p0").score = 500
   G.openFinal(room)
@@ -1566,4 +1586,166 @@ test("the written final is untouched by any of this", () => {
   assert.equal(room.final.stage, "wager", "still the blind bet")
   assert.deepEqual(G.revealSurvey(room, 0), [], "and the survey moves do nothing to it")
   assert.deepEqual(G.strikeSurvey(room), [])
+})
+
+/**
+ * The running order.
+ *
+ * Rounds, then the final if there is one, then the survey if there is one,
+ * then a tie-break if the scores are still level — in that order, decided by
+ * the engine rather than by which button a screen happens to render.
+ */
+test("the final waits for the board and then cannot be skipped", () => {
+  const room = atFinal([500, 300])
+  room.roundIndex = 0 // back to round one of two
+
+  assert.equal(G.pending(room), "final", "owed from the start")
+  assert.deepEqual(G.openFinal(room), [], "but not while a round is unplayed")
+
+  // Clearing round one goes to the next round, not to the final and not to the end.
+  clearRound(room)
+  assert.equal(room.phase, G.PHASE.INTERMISSION)
+  G.nextRound(room)
+  assert.equal(room.roundIndex, 1)
+
+  // Clearing the last round must not end the game while the final is owed.
+  clearRound(room)
+  assert.equal(room.phase, G.PHASE.INTERMISSION, "the board is done; the game is not")
+  assert.deepEqual(G.nextRound(room), [], "and 'next round' is not a way past the final")
+  assert.equal(room.phase, G.PHASE.INTERMISSION)
+
+  assert.deepEqual(kinds(G.openFinal(room)), ["final-open"], "now it opens")
+})
+
+test("the survey comes after the final, and the tie-break after both", () => {
+  const room = atFinal([500, 500])
+  clearRound(room)
+  room.board.survey = { ...room.board.survey, enabled: true }
+  room.board.survey.questions[0].prompt = "Something you forget"
+  room.board.survey.questions[0].answers = [{ text: "Milk", points: 100 }]
+
+  assert.equal(G.pending(room), "final")
+  assert.deepEqual(G.openSurvey(room), [], "the survey does not jump the final")
+
+  G.openFinal(room)
+  G.setFinalWager(room, "p0", 0)
+  G.setFinalWager(room, "p1", 0)
+  G.startFinal(room)
+  G.lockFinal(room)
+  G.revealFinal(room)
+  G.judgeFinal(room, false)
+  G.judgeFinal(room, false)
+
+  assert.equal(room.phase, G.PHASE.ENDED)
+  assert.equal(G.pending(room), "survey", "the final is spent, the survey is owed")
+
+  // Level on 500 apiece — but a tie settled now would be settled on numbers the
+  // survey is about to change, so it is not offered.
+  assert.equal(G.projectState(room, "host").tied, null, "no play-off while a scoring round is owed")
+  assert.equal(G.projectState(room, "host").survey.offered, true)
+
+  G.openSurvey(room)
+  G.closeSurvey(room)
+  assert.equal(G.pending(room), null, "nothing left that scores")
+  assert.deepEqual(G.projectState(room, "host").tied, ["p0", "p1"], "now the tie is worth breaking")
+})
+
+test("a spent final is not offered again after a resume", () => {
+  const room = atFinal([500, 300])
+  clearRound(room)
+  G.openFinal(room)
+  G.setFinalWager(room, "p0", 100)
+  G.startFinal(room)
+  G.lockFinal(room)
+  G.revealFinal(room)
+  // Both are eligible — a player who never bet is still turned over, staked at
+  // nothing — so the final is not spent until the last one is judged.
+  assert.equal(room.final.order.length, 2)
+  G.judgeFinal(room, true)
+  assert.equal(G.pending(room), "final", "still owed with one left to turn over")
+  G.judgeFinal(room, true)
+
+  assert.equal(G.pending(room), null)
+  // Paying a wager twice is the failure this guards against.
+  const back = G.restoreRoom("TEST", G.snapshotRoom(room))
+  assert.equal(G.pending(back), null, "a resumed game remembers its final is spent")
+  assert.deepEqual(G.openFinal(back), [])
+})
+
+/** Play out every clue on the current round. */
+function clearRound(room) {
+  const round = room.board.rounds[room.roundIndex]
+  round.categories.forEach((cat, ci) =>
+    cat.clues.forEach((_, qi) => {
+      G.selectClue(room, ci, qi)
+      G.closeClue(room)
+    }),
+  )
+}
+
+test("the buzzer check ranks the room the way a real race would", () => {
+  const room = setup(3, { pingCorrection: true })
+  room.players.get("p0").lag = 300 // hotel wifi
+  room.players.get("p1").lag = 20 // plugged into the router
+  room.players.get("p2").lag = 20
+
+  G.startCheck(room, 1000)
+  // p0 reacted fastest but their press takes longest to arrive.
+  G.checkBuzz(room, "p1", 1150)
+  G.checkBuzz(room, "p0", 1200)
+  G.checkBuzz(room, "p2", 1400)
+
+  const order = G.checkOrder(room)
+  assert.deepEqual(
+    order.map((r) => r.id),
+    ["p0", "p1", "p2"],
+    "the slow connection reacted first and must be ranked first",
+  )
+  assert.deepEqual(order.map((r) => r.place), [1, 2, 3])
+  assert.equal(order[0].behind, 0)
+  // p0 arrived at 200ms and is credited its whole 300ms of lag, so it is judged
+  // at -100; p1 arrived at 150 and is credited 20, so 130. The gap the host
+  // reads is 230ms — and on arrival alone p1 looked 50ms faster.
+  assert.equal(order[1].behind, 230)
+
+  // The same presses without correction rank on arrival, and the check must
+  // say so rather than quietly showing a different answer to the game's.
+  room.settings.pingCorrection = false
+  assert.deepEqual(
+    G.checkOrder(room).map((r) => r.id),
+    ["p1", "p0", "p2"],
+  )
+})
+
+test("a check press is a rehearsal, not a race entry", () => {
+  const room = setup(2)
+  G.startCheck(room, 1000)
+  G.checkBuzz(room, "p0", 1100)
+  assert.equal(G.checkOrder(room).length, 1)
+  assert.equal(room.players.get("p0").score, 0, "nothing is scored")
+  assert.equal(room.buzzer.winner, null, "and nobody is holding the buzzer")
+})
+
+test("a nitro bet has the same floor as the final, and reads a deficit as size", () => {
+  const room = setup(3)
+  const top = Math.max(...room.board.rounds[0].values)
+
+  // A side on nothing can still swing the game.
+  assert.equal(G.maxWager(room, "p0"), Math.max(1000, top))
+
+  // Deep in the red is exactly who the mechanic is for: the magnitude counts,
+  // where the old rule gave them the floor and no more.
+  room.players.get("p1").score = -2500
+  assert.equal(G.maxWager(room, "p1"), 2500)
+
+  // Above the floor it is simply your score.
+  room.players.get("p2").score = 4000
+  assert.equal(G.maxWager(room, "p2"), 4000)
+
+  // And the cap is enforced, not merely advertised.
+  G.currentRound(room).categories[0].clues[0].nitro = true
+  G.selectClue(room, 0, 0)
+  assert.equal(room.phase, G.PHASE.WAGER)
+  G.setWager(room, "p1", 99999)
+  assert.equal(room.wager.amount, 2500)
 })

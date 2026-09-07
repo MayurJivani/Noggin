@@ -20,7 +20,7 @@ export function FinalStage({ state, now }) {
 }
 
 function Wagering({ final }) {
-  const inCents = final.players ?? []
+  const entrants = final.players ?? []
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[5vmin] text-center">
       <div className="label" style={{ letterSpacing: "0.45em" }}>
@@ -35,7 +35,7 @@ function Wagering({ final }) {
       </div>
 
       <div className="flex max-w-[80vw] flex-wrap justify-center gap-[1.2vmin]">
-        {inCents.map((p) => (
+        {entrants.map((p) => (
           <div
             key={p.id}
             className={`rounded-full border px-[2.4vmin] py-[0.9vmin] font-display transition-colors ${
@@ -47,7 +47,7 @@ function Wagering({ final }) {
             {p.wagered ? " ✓" : " …"}
           </div>
         ))}
-        {inCents.length === 0 && <div className="text-sm text-faint">Nobody is in the black — there is nothing to bet.</div>}
+        {entrants.length === 0 && <div className="text-sm text-faint">Nobody has taken a seat for the final.</div>}
       </div>
     </div>
   )

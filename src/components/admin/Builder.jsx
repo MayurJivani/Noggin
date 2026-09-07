@@ -596,8 +596,8 @@ function FinalEditor({ board, setBoard }) {
       </label>
 
       <p className="mt-1 text-[11px] leading-relaxed text-faint">
-        Everyone still in the black bets part of their score before seeing it, writes an answer on their phone, and is turned over one at a
-        time — poorest first.
+        Everyone bets before seeing it, writes an answer on their phone, and is turned over one at a time — poorest first.
+        The bet is capped at their score or 1000, whichever is larger, so nobody is shut out of the last round.
       </p>
 
       <div className={`mt-4 space-y-3 ${final.enabled ? "" : "pointer-events-none opacity-40"}`}>

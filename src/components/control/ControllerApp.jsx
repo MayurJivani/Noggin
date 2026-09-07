@@ -210,7 +210,9 @@ function Console({ state, send, connected, auth, viaKey }) {
             >
               Next round
             </button>
-            {state.final?.enabled && phase !== "final" && (
+            {/* Same running order as the desk — the relay decides, both screens
+                agree, and neither can offer the final a round early. */}
+            {state.next === "final" && (
               <button className="btn col-span-2 py-2 text-xs" onClick={() => send("final:open")}>
                 ✦ Play the final clue
               </button>

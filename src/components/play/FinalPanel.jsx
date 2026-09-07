@@ -25,25 +25,36 @@ export function FinalPanel({ state, me, send }) {
 
   if (!f) return null
 
-  // Out of the running: nothing to stake, so nothing to do but watch.
+  // Everybody plays the final now, so the only way to be missing from it is to
+  // have joined after it started.
   if (!mine) {
     return (
       <Card>
-        <div className="text-center text-sm text-muted">
-          The final is for players in the black. Sit this one out — you're still in the game.
-        </div>
+        <div className="text-center text-sm text-muted">The final is already under way. Sit this one out.</div>
       </Card>
     )
   }
 
   if (f.stage === "wager") {
-    const max = mine.score
+    /*
+      A thousand, or your own score if it is bigger — and the sign does not
+      matter, so somebody on -2500 may stake 2500. Kept in step with
+      `maxFinalWager` on the relay, which is the one that actually enforces it;
+      this only decides what the box will let you type.
+    */
+    const max = Math.max(1000, Math.abs(mine.score))
     const value = Math.max(0, Math.min(Number(wager) || 0, max))
     return (
       <Card>
         <div className="label">{f.category || "Final"}</div>
         <p className="mt-1 text-xs text-muted">
           Bet anything up to <span className="font-value text-gold">{max}</span>. You cannot see the clue yet.
+          {mine.score < max && (
+            <>
+              {" "}
+              Everyone gets at least <span className="text-muted">1000</span> to play with, whatever the scoreboard says.
+            </>
+          )}
         </p>
         <div className="mt-3 flex gap-2">
           <input

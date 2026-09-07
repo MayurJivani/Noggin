@@ -1451,3 +1451,105 @@ test("streamer mode keeps the code off the screens a camera can see", async (t) 
 
   for (const c of [host, screen, phone]) c.ws.close()
 })
+
+test("the running order holds over the wire, end to end", async (t) => {
+  const host = client("host")
+  await host.ready
+  t.after(() => host.ws.close())
+
+  // Two rounds, a final and a survey — the full sequence.
+  const board = JSON.parse(JSON.stringify(BOARD))
+  // BOARD has one round; the order only means something with two.
+  board.rounds.push({ ...JSON.parse(JSON.stringify(BOARD.rounds[0])), name: "Round 2" })
+  board.final = { category: "STONE", prompt: "Black, veined with gold", answer: "marble", seconds: 5, enabled: true, media: null, answerMedia: null }
+  board.survey = {
+    enabled: true,
+    collecting: false,
+    questions: [{ id: "q1", category: "SURVEY", prompt: "Name a rock", answers: [{ text: "Granite", points: 100 }] }],
+  }
+  host.send("board:set", { board })
+  await settle()
+
+  const ann = client("player", { code: host.state.code, name: "Ann" })
+  const ben = client("player", { code: host.state.code, name: "Ben" })
+  await Promise.all([ann.ready, ben.ready])
+  host.send("game:start")
+  await settle()
+
+  const clearBoard = async () => {
+    const round = host.state.board.round
+    for (let ci = 0; ci < round.categories.length; ci++) {
+      for (let qi = 0; qi < round.categories[ci].clues.length; qi++) {
+        host.send("clue:select", { catIndex: ci, clueIndex: qi })
+        host.send("clue:close")
+      }
+    }
+    await settle(200)
+  }
+
+  await t.test("the final cannot be opened while a round is unplayed", async () => {
+    assert.equal(host.state.next, "final")
+    host.send("final:open")
+    await settle()
+    assert.notEqual(host.state.phase, "final", "round two is still on the board")
+  })
+
+  await t.test("and 'next round' is not a way past it", async () => {
+    await clearBoard()
+    assert.equal(host.state.phase, "intermission")
+    host.send("round:next")
+    await settle()
+    assert.equal(host.state.roundIndex, 1, "that was a real next round")
+
+    await clearBoard()
+    assert.equal(host.state.phase, "intermission", "board done, game not")
+    host.send("round:next")
+    await settle()
+    assert.equal(host.state.phase, "intermission", "refused — the final is owed")
+    assert.equal(host.state.next, "final")
+  })
+
+  await t.test("everyone plays it, including whoever is on nothing", async () => {
+    host.send("final:open")
+    await settle()
+    assert.equal(host.state.phase, "final")
+    const names = host.state.final.players.map((p) => p.name).sort()
+    assert.deepEqual(names, ["Ann", "Ben"], "nobody is filtered out for being broke")
+
+    // Both are on zero, and the floor lets them bet anyway.
+    // Equal bets, so that losing both leaves them level and the tie-break has
+    // something to break.
+    ann.send("final:wager", { amount: 99999 })
+    ben.send("final:wager", { amount: 1000 })
+    await settle()
+    const mine = ann.state.final.players.find((p) => p.name === "Ann")
+    assert.equal(mine.wager, 1000, "capped at the thousand floor, not at a zero score")
+  })
+
+  await t.test("the survey follows the final, and the tie-break follows the survey", async () => {
+    host.send("final:start")
+    await settle()
+    host.send("final:lock")
+    host.send("final:reveal")
+    await settle()
+    host.send("final:judge", { correct: false })
+    host.send("final:judge", { correct: false })
+    await settle()
+
+    assert.equal(host.state.phase, "ended")
+    assert.equal(host.state.next, "survey", "the survey is owed")
+    assert.equal(host.state.tied, null, "so no play-off yet, whatever the scores say")
+    assert.equal(host.state.survey.offered, true)
+
+    host.send("survey:open")
+    await settle()
+    assert.equal(host.state.phase, "survey")
+    host.send("survey:close")
+    await settle()
+
+    assert.equal(host.state.next, null, "nothing left that scores")
+    assert.deepEqual(host.state.tied?.length, 2, "now the tie is worth breaking")
+  })
+
+  for (const c of [ann, ben]) c.ws.close()
+})

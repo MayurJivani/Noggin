@@ -16,8 +16,12 @@ What exists, and what is deliberately left for later.
   capped at 500ms, and holds the race open briefly so the corrected winner can
   actually win it.
 - **Buzzer sound-check** — prove every phone's button reaches the relay before
-  the first clue, with each phone's round-trip beside it. A test press scores
-  nothing and is not a race entry.
+  the first clue, with each phone's round-trip beside it, and see who got there
+  first. The order is computed by the relay with the same rule that will judge
+  the real race, lag credit included — a check that ranked on raw arrival would
+  tell the host the opposite of what the game is about to do, and they would
+  find out on the first clue that mattered. A test press scores nothing and is
+  not a race entry.
 - **Join by being in the room** — the big screen plays the room code and a
   rotating nonce as a tone nobody can hear, and a phone with the player page
   open decodes it and joins. The modem is [Knock](../Knock), vendored into
@@ -108,11 +112,28 @@ What exists, and what is deliberately left for later.
 - **Undo the last ruling** — one deep, restoring score, spent player, buzzer and
   tile together.
 - **Survey round** — an optional "we asked a hundred people" round played last,
-  after the final and any tie-break. Up to five questions, each its own board of
+  after the final and *before* any tie-break — it still moves scores, so a tie
+  settled ahead of it would be settled on the wrong numbers. Up to five questions, each its own board of
   hidden answers with points, a buzzer race per slot, strikes, and the buzzed
   player types their answer for the host to match. Boards can be built from a
   **public survey link** (`/survey`) handed to anyone: responses are tallied per
   question, folded by meaning, and turned into slots.
+- **A running order the engine owns** — rounds, then the final if the board has
+  one, then the survey if it has one, then a tie-break if the scores are still
+  level. `pending()` in `server/game.js` answers "what next" and every screen and
+  guard reads it. It used to live nowhere: any of these could open at any time
+  and the desk decided which button to show, which produced three wrong games —
+  the final opened at the first intermission abandoned every round after it; the
+  last round going straight to `ended` left the compulsory final unreachable
+  from the host's own screen; and a tie-break offered before the survey settled
+  the game on scores the survey was about to change.
+- **Everyone plays the final, and every bet has a floor.** A side may stake
+  1000, or the size of its own score when that is larger — the *size*, so a team
+  on -2500 may stake 2500. Nobody is excluded for being broke. The old rule shut
+  out anyone on nothing, which ended their night a round early and was
+  self-reinforcing: the only round that could have got them back was the one
+  they were barred from. The nitro uses the same rule, with the round's top tile
+  as an additional floor.
 - **Tie-break** — sudden death when the game ends level: the tied sides only,
   first correct answer wins, nothing scored. Optional clue written beside the
   final; the host can rerun it or award it by hand if nobody takes it.
