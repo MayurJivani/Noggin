@@ -18,6 +18,36 @@ What exists, and what is deliberately left for later.
 - **Buzzer sound-check** — prove every phone's button reaches the relay before
   the first clue, with each phone's round-trip beside it. A test press scores
   nothing and is not a race entry.
+- **Join by being in the room** — the big screen plays the room code and a
+  rotating nonce as a tone nobody can hear, and a phone with the player page
+  open decodes it and joins. The modem is [Knock](../Knock), vendored into
+  `src/lib/knock/` and `server/knock.js`: `knock-audio` is not on npm and the
+  Docker build context cannot reach a sibling directory, so it is a copy with a
+  commit on it. **Fix bugs upstream first, then re-copy.**
+
+  The nonce is not a gate and is not sold as one — joining a Noggin room has
+  never needed more than the code. What it buys is narrower: a *recording* of
+  the room cannot join. Without it, filming the television and playing the clip
+  back near a phone would walk that phone into the game.
+
+  Microphone access needs a secure context, so **this does not work over a bare
+  LAN address** — the button is not offered on `http://192.168.x.x` at all, only
+  over HTTPS or localhost. Every path falls back to typing the code, including
+  browsers that resample the microphone below the band and can never hear it.
+- **Streamer mode** — a room setting that keeps the code and the join QR off
+  every screen a camera can see: the big screen, the scoreboard, the podiums and
+  the players' own phones. The host desk, the cue cards and the controller keep
+  it, because the people driving still need it.
+
+  The code is withheld in `projectState` rather than hidden in CSS. An overlay
+  is not a redaction: a broadcaster capturing a browser source can inspect it, a
+  screenshot tool reads what is merely transparent, and the next component to
+  render `state.code` leaks it again. The QR goes too — a QR on a stream is
+  *easier* to use than one in the room, because a viewer can pause the video.
+
+  It pairs with joining by sound, and that pairing is the point: the tone is the
+  way in that a hidden code leaves open. It does not survive a stream nearly as
+  well as a QR does, and it expires in seconds regardless.
 - **Six takes of every game cue, and a chosen mix.** Four takes are one family,
   differing in production rather than material: `current` is the original, plain
   and legible; `v2` is the original made properly — an onset, a body of two
@@ -192,7 +222,14 @@ holding, so it avoids things that are absent or hostile on real devices:
   for a living room, not for a hosted service.
 - Players are still unauthenticated by design: anyone on the wifi who knows a
   room code can take a seat under any name. That is the right trade for a party.
-  Hosting, resuming and controlling are all gated; joining is not.
+  Hosting, resuming and controlling are all gated; joining is not. Streamer mode
+  and the ultrasonic join narrow *how the code spreads*; neither turns joining
+  into something that checks who you are, and treating them as if they did would
+  be the mistake this note exists to prevent.
+- Ultrasonic join is proximity by convenience, not attestation. Sound goes
+  through doors and walls, a phone in the next room can hear the tone, and
+  anything with a speaker can transmit a payload that passes CRC — which is why
+  `/api/knock` validates what it is handed rather than trusting it.
 - No rate limiting on the login route, and now `/auth/forgot` is a second one
   with the same property. On a LAN that is fine; on a public URL a patient
   attacker can grind both. scrypt makes each attempt expensive, and a recovery

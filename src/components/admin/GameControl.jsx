@@ -169,6 +169,32 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
             </div>
           </div>
 
+          {/*
+            Streamer mode.
+
+            Sits directly under the sound broadcast on purpose: turning the code
+            off is what makes the tone worth having, and having the tone is what
+            makes turning the code off survivable. Either alone is a worse deal
+            — the code hidden with no other way in means reading it aloud on
+            every latecomer, and the tone with the code still on screen is a
+            convenience nobody needed.
+          */}
+          <div className="mt-3">
+            <div className="label mb-1.5">On camera</div>
+            <button
+              className={`btn w-full py-1.5 text-[11px] ${state.settings.streamer ? "btn-gold" : ""}`}
+              onClick={() => send("settings:set", { settings: { streamer: !state.settings.streamer } })}
+              title="Keep the room code and join QR off the big screen, the scoreboard and the podiums."
+            >
+              {state.settings.streamer ? "Streamer mode on" : "Streamer mode off"}
+            </button>
+            <div className="mt-1 text-[10px] leading-snug text-faint">
+              {state.settings.streamer
+                ? "The code is not sent to the big screen at all. You and the cue cards still have it."
+                : "The code and QR are on the big screen, where a camera can read them."}
+            </div>
+          </div>
+
           <ControllerInvite send={send} controllerKey={controllerKey} code={code} />
           <SaveControls send={send} savedAt={savedAt} code={code} />
           <DeleteRoom send={send} code={code} players={players.length} />

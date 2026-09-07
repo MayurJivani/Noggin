@@ -49,7 +49,8 @@ export function ScoreboardApp() {
         <div className="text-right">
           <div className="label leading-none">Room</div>
           <div className="font-display brass-sm leading-none tracking-[0.2em]" style={{ fontSize: "max(14px, calc(var(--stage) * 2))" }}>
-            {state.code}
+            {/* This screen is as pointable-at as the big one. */}
+            {state.codeHidden ? "••••" : state.code}
           </div>
         </div>
         {!connected && <span className="ml-2 h-2 w-2 rounded-full bg-bad animate-glow" title="reconnecting" />}

@@ -147,13 +147,13 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
 
           if (res.code) {
             setCode(res.code)
-            setSoundMsg(`Room ${res.code} found!`)
-            if (rxRef.current) {
-              rxRef.current.stop()
-              rxRef.current = null
-            }
-            setListening(false)
+            setSoundMsg(`Room ${res.code} found — put your name in.`)
+            stopListening()
           } else if (res.error) {
+            // A stale nonce is the expected failure, not a broken one: the
+            // screen rotates every few seconds and a frame caught across a
+            // rotation can arrive just too late. Keep listening — the next one
+            // is already on its way.
             setSoundMsg(res.error)
           }
         } catch {
@@ -161,13 +161,20 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
         }
       })
 
-      if (!rx.usable) {
-        rx.stop()
-        setListening(false)
-        setSoundMsg("Microphone sample rate is too low for sound join.")
-        return
-      }
+      // Held before the usable check, so a frame that decodes in the meantime
+      // has something to stop. `stopListening` is the only path that clears it.
       rxRef.current = rx
+
+      /*
+        Some browsers resample the microphone below the band and throw it away
+        before we ever see it — Firefox at 32kHz is the common one. Nothing will
+        ever arrive, so say so rather than leaving a spinner running forever
+        next to a perfectly good text field.
+      */
+      if (!rx.usable) {
+        stopListening()
+        setSoundMsg("This browser can't hear the room. Type the code instead.")
+      }
     } catch (err) {
       console.warn("[knock] listen failed:", err)
       setListening(false)
@@ -513,7 +520,9 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
         </button>
 
         <div className="flex items-center justify-between text-[10px] text-faint">
-          <span>room {state.code}</span>
+          {/* A player's own phone can be on camera too, and they have no use
+              for the code once they are in. */}
+          <span>{state.codeHidden ? "in the room" : `room ${state.code}`}</span>
           <button className="hover:text-muted" onClick={onLeave}>
             leave
           </button>

@@ -15,6 +15,14 @@ import { ScoreBar } from "./ScoreBar"
 import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, TimerRing } from "./Overlays"
 
 /**
+ * How often the screen asks for a new payload. Shorter than the nonce's life,
+ * so there is always an overlap rather than a gap. The relay is the authority
+ * on both numbers; this is the fallback for the first request, before the
+ * relay's `rotateMs` has arrived.
+ */
+const KNOCK_ROTATE_MS = 6_000
+
+/**
  * The big screen. Read-only by design: it holds no game state of its own and
  * takes no input, so it can be reloaded at any point in the night and land
  * exactly where the room is.
@@ -39,15 +47,26 @@ export function DisplayStage({ code: initialCode }) {
   const [origin, setOrigin] = useState(null)
 
   const txRef = useRef(null)
+  /** Whether a tone is actually going out, as opposed to merely intended. */
+  const [broadcasting, setBroadcasting] = useState(false)
 
   const onMessage = useCallback(async (msg) => {
-    if (msg?.type === "knock:nonce" && Array.isArray(msg.payload)) {
-      try {
-        if (txRef.current) txRef.current.stop()
-        txRef.current = await broadcast(new Uint8Array(msg.payload), { volume: 0.15 })
-      } catch (err) {
-        console.warn("[knock] broadcast failed:", err)
-      }
+    if (msg?.type !== "knock:nonce") return
+    // A null payload means the room is holding its cap of live nonces. Keep
+    // playing the one already going rather than falling silent — it is still
+    // valid for a few more seconds, and the next rotation will succeed.
+    if (!Array.isArray(msg.payload)) return
+    try {
+      const tx = await broadcast(new Uint8Array(msg.payload), { volume: 0.15 })
+      // Swap only once the new one is running. Stopping first leaves a gap on
+      // every rotation, and a phone that starts listening in that gap waits
+      // another six seconds for something to hear.
+      txRef.current?.stop()
+      txRef.current = tx
+      setBroadcasting(true)
+    } catch (err) {
+      console.warn("[knock] broadcast failed:", err)
+      setBroadcasting(false)
     }
   }, [])
 
@@ -87,13 +106,16 @@ export function DisplayStage({ code: initialCode }) {
         txRef.current.stop()
         txRef.current = null
       }
+      setBroadcasting(false)
       return
     }
 
-    send({ type: "knock:issue" })
-    const interval = setInterval(() => {
-      send({ type: "knock:issue" })
-    }, 6000)
+    // `send` is send(type, payload) — passing an object as the type produced a
+    // message shaped { type: { type: "knock:issue" } }, which matched nothing
+    // and was silently dropped. Nothing errored; the screen simply never made
+    // a sound.
+    send("knock:issue")
+    const interval = setInterval(() => send("knock:issue"), KNOCK_ROTATE_MS)
 
     return () => {
       clearInterval(interval)
@@ -101,6 +123,7 @@ export function DisplayStage({ code: initialCode }) {
         txRef.current.stop()
         txRef.current = null
       }
+      setBroadcasting(false)
     }
   }, [connected, audioOn, state?.phase, send])
 
@@ -129,6 +152,7 @@ export function DisplayStage({ code: initialCode }) {
       connected={connected}
       error={error}
       audioOn={audioOn}
+      broadcasting={broadcasting}
       flash={flash}
       splash={splash}
       origin={origin}
@@ -141,7 +165,7 @@ export function DisplayStage({ code: initialCode }) {
  * Split out so the music effect below can hang off `state` without the early
  * returns above making it a conditional hook.
  */
-function Stage({ code, state, connected, error, audioOn, flash, splash, origin, cellRef }) {
+function Stage({ code, state, connected, error, audioOn, broadcasting, flash, splash, origin, cellRef }) {
   /*
     The bed follows the room rather than this screen.
 
@@ -186,7 +210,10 @@ function Stage({ code, state, connected, error, audioOn, flash, splash, origin, 
         <div className="text-right">
           <div className="label leading-none">Room</div>
           <div className="font-display brass-sm leading-none tracking-[0.2em]" style={{ fontSize: "max(14px, calc(var(--stage) * 2))" }}>
-            {state.code}
+            {/* Dots rather than nothing: the header keeps its shape, and the
+                room can see the code is being withheld on purpose rather than
+                wonder whether the screen has lost the connection. */}
+            {state.codeHidden ? "••••" : state.code}
           </div>
         </div>
         {!connected && <span className="ml-2 h-2 w-2 rounded-full bg-bad animate-glow" title="reconnecting" />}
@@ -209,7 +236,17 @@ function Stage({ code, state, connected, error, audioOn, flash, splash, origin, 
           className="pointer-events-none absolute inset-y-0 left-0 z-20 w-[28%] bg-gradient-to-r from-transparent via-gold/25 to-transparent opacity-0 animate-streak"
         />
 
-        {phase === "lobby" && <Lobby code={state.code} players={players} teams={state.teams} title={board.title} check={state.check} />}
+        {phase === "lobby" && (
+          <Lobby
+            code={state.code}
+            codeHidden={state.codeHidden}
+            broadcasting={broadcasting}
+            players={players}
+            teams={state.teams}
+            title={board.title}
+            check={state.check}
+          />
+        )}
         {phase === "final" && <FinalStage state={state} now={() => Date.now()} />}
         {phase === "intermission" && <Interlude title="Round cleared" rows={rows} sub={board.round?.name} />}
         {phase === "ended" && <Interlude title="Final scores" rows={rows} final winner={state.winner} tied={state.tied} />}
@@ -277,7 +314,42 @@ function PausedCard() {
   )
 }
 
-function Lobby({ code, players, teams, title, check }) {
+/**
+ * What the lobby says instead of the code, in streamer mode.
+ *
+ * The QR goes too, and that is the part worth being explicit about: a QR on a
+ * stream is *easier* to use than one in the room, because a viewer can pause
+ * the video and take as long as they like over it. Hiding four characters while
+ * leaving a scannable square beside them would be a costume rather than a
+ * change.
+ *
+ * So this has to leave the room a way in, and it names the two that survive a
+ * camera: the sound, if it is actually playing, and the host's own mouth.
+ */
+function HiddenJoin({ broadcasting }) {
+  return (
+    <div className="rounded-[1.4vmin] border-[0.3vmin] border-gold-dim/60 bg-royal/25 px-[4vmin] py-[2.4vmin] text-center">
+      <div className="label" style={{ letterSpacing: "0.3em" }}>
+        Room code
+      </div>
+      <div className="font-display brass leading-none tracking-[0.3em]" style={{ fontSize: "max(28px, calc(var(--stage) * 5))" }}>
+        ••••
+      </div>
+      <div className="mt-[1.2vmin] max-w-[46ch] text-muted" style={{ fontSize: "max(11px, calc(var(--stage) * 1.5))" }}>
+        {broadcasting ? (
+          <>
+            Hidden for the stream. Open the player page and tap <b className="text-ink">Join by sound</b> — this screen is
+            playing the code as a tone.
+          </>
+        ) : (
+          <>Hidden for the stream. Ask the host for the code.</>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Lobby({ code, codeHidden, broadcasting, players, teams, title, check }) {
   const heard = check ? players.filter((p) => check.hits?.[p.id]).length : 0
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[4vmin]">
@@ -304,7 +376,11 @@ function Lobby({ code, players, teams, title, check }) {
         </div>
       )}
 
-      <JoinCard code={code} size={Math.round(Math.min(260, Math.max(150, window.innerWidth / 7)))} />
+      {codeHidden ? (
+        <HiddenJoin broadcasting={broadcasting} />
+      ) : (
+        <JoinCard code={code} size={Math.round(Math.min(260, Math.max(150, window.innerWidth / 7)))} />
+      )}
 
       {/* On team night the lobby is where people find out who they are with, so
           the sides are the thing on screen rather than one long list of names. */}

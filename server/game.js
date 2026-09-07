@@ -71,6 +71,27 @@ export const DEFAULTS = {
    * nobody asked for it would silently merge everyone's scores.
    */
   teams: false,
+  /**
+   * Streamer mode: keep the room code off the screens a camera can see.
+   *
+   * A game on a stream has a join code readable by everybody watching, and a QR
+   * that is *more* scannable on a stream than in the room — a viewer can pause
+   * the video and take their time over it. Both come off the big screen, the
+   * scoreboard and the podiums; the host desk, the cue cards and the controller
+   * keep showing the code, because the people driving still need it.
+   *
+   * The code is withheld in `projectState` rather than hidden in CSS. An
+   * overlay is not a redaction: a broadcaster capturing a browser source can
+   * inspect it, a screenshot tool can read what is merely transparent, and the
+   * next component to render `state.code` would leak it again. Not sending it
+   * is the only version that stays true.
+   *
+   * What it does not do is stop someone already in the room reading it over a
+   * shoulder, and it cannot: the display's own URL still carries the code, and
+   * so it must, or the page could not have joined. This hides the code from the
+   * *stream*, which is the threat it is named for.
+   */
+  streamer: false,
 }
 
 /**
@@ -1869,8 +1890,19 @@ export function projectState(room, role, viewerId = null) {
   */
   const unitId = viewerId ? (scorer(room, viewerId)?.id ?? viewerId) : null
 
+  /*
+    Streamer mode, enforced here.
+
+    `hidden` rather than an empty string, so a screen can tell "I am not allowed
+    this" from "it has not arrived yet" and say something useful instead of
+    rendering a blank where a code should be. Operators are exempt — they are
+    the ones reading it out.
+  */
+  const showCode = privileged || !room.settings.streamer
+
   return {
-    code: room.code,
+    code: showCode ? room.code : null,
+    codeHidden: !showCode,
     serverNow: Date.now(),
     paused: !!room.paused,
     music: !!room.music,

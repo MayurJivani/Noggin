@@ -735,8 +735,34 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
  * against a fifteen-second life leaves two or three valid at once, which is the
  * overlap that makes the seam invisible.
  */
-const knock = new Nonces({ ttlMs: 15_000 })
+const KNOCK_TTL_MS = 15_000
 const KNOCK_ROTATE_MS = 6_000
+const knock = new Nonces({ ttlMs: KNOCK_TTL_MS })
+
+/** Screens that may mint a nonce: the ones that could plausibly have speakers. */
+const KNOCK_BROADCASTERS = new Set(["display", "host", "controller", "cards"])
+
+/**
+ * Hand a screen a fresh payload to play.
+ *
+ * `issue` returns null rather than throwing when a room is already holding its
+ * cap of live nonces, and the caller has to mean it: destructuring the null was
+ * an uncaught TypeError in the socket handler, and because a rotating screen
+ * asks again every six seconds it was not a one-off — the room's broadcast
+ * simply stopped and threw once per rotation from then on. Running out is a
+ * normal condition, so it gets a normal answer.
+ */
+function issueKnock(room, meta, ws) {
+  if (!KNOCK_BROADCASTERS.has(meta.role)) return
+  const issued = knock.issue(room.code)
+  if (!issued) return send(ws, { type: "knock:nonce", payload: null, retryMs: KNOCK_ROTATE_MS })
+  return send(ws, {
+    type: "knock:nonce",
+    payload: Array.from(issued.payload),
+    ttlMs: KNOCK_TTL_MS,
+    rotateMs: KNOCK_ROTATE_MS,
+  })
+}
 
 function newCode() {
   for (let i = 0; i < 50; i++) {
@@ -1051,6 +1077,20 @@ wss.on("connection", (ws, req) => {
     const room = meta.code ? rooms.get(meta.code) : null
     if (!room) return
 
+    /*
+      Minting a nonce to broadcast, which cuts across the usual split.
+
+      It cannot live in the host handler, because the screen that should be
+      making the sound is the one wired to the room's speakers — the projector,
+      not the laptop next to the host — and `display` is not a privileged role.
+      It cannot live in the player handler either: a phone has no business
+      minting these, and a joined player spamming them would exhaust
+      `maxPerRoom` and take the feature down for the screen that needs it.
+
+      So it sits here, above the split, with its own guest list.
+    */
+    if (msg.type === "knock:issue") return issueKnock(room, meta, ws)
+
     // Host and controller share one command surface — the remote controller in
     // phase 2 is a second privileged client, not a second protocol.
     const privileged = meta.role === "host" || meta.role === "controller"
@@ -1328,16 +1368,6 @@ function handleHostMessage(room, meta, ws, msg) {
       send(ws, { type: "deleted", code: doomed })
       closeLiveRoom(doomed)
       return
-    }
-
-    case "knock:issue": {
-      const { payload } = knock.issue(room.code)
-      return send(ws, {
-        type: "knock:nonce",
-        payload: Array.from(payload),
-        ttlMs: 15_000,
-        rotateMs: KNOCK_ROTATE_MS,
-      })
     }
 
     case "room:forget": {

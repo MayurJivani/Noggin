@@ -89,7 +89,7 @@ const settle = (ms = 120) => sleep(ms)
 function client(role, joinExtra = {}, jar = cookie) {
   const privileged = role === "host" || role === "controller"
   const ws = new WebSocket(URL, privileged ? { headers: { Cookie: jar } } : undefined)
-  const c = { ws, state: null, effects: [], identity: null, errors: [] }
+  const c = { ws, state: null, effects: [], identity: null, errors: [], nonces: [] }
   c.ready = new Promise((resolve) => {
     ws.on("open", () => ws.send(JSON.stringify({ type: "join", role, ...joinExtra })))
     ws.on("message", (raw) => {
@@ -99,6 +99,7 @@ function client(role, joinExtra = {}, jar = cookie) {
         c.effects.push(...(m.effects ?? []))
         resolve(c)
       } else if (m.type === "joined") c.identity = m
+      else if (m.type === "knock:nonce") c.nonces.push(m)
       else if (m.type === "error") {
         c.errors.push(m)
         resolve(c)
@@ -1313,4 +1314,140 @@ test("a mistyped link gets the 404 page, and a 404 status with it", async (t) =>
   // And a real page is still a real page.
   const real = await fetch(`http://127.0.0.1:${PORT}/play`, { headers: { Accept: "text/html" } })
   assert.equal(real.status, 200)
+})
+
+/**
+ * Joining by sound, over the wire.
+ *
+ * `knock.test.js` already proves the modem and the nonce store in isolation,
+ * and both were correct. Every bug this feature actually had was in the seam
+ * between them and the relay — the screen that needs a nonce could not ask for
+ * one, the message it sent was the wrong shape, and running out of nonces threw
+ * inside the socket handler. A unit test can hold all three at once and stay
+ * green, which is why these go over a real connection.
+ */
+test("a room can be joined by sound", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.state.code
+  const screen = client("display", { code })
+  await screen.ready
+
+  await t.test("the screen with the speakers can mint a nonce", async () => {
+    // The display is not a privileged role, so this does not travel the host's
+    // command path. It failed silently for exactly that reason.
+    screen.send("knock:issue")
+    await settle()
+    assert.equal(screen.nonces.length, 1, "the big screen could not get a payload to play")
+    assert.equal(screen.nonces[0].payload.length, 8, "four bytes of room, four of nonce")
+  })
+
+  await t.test("a phone cannot", async () => {
+    const phone = client("player", { code, name: "Ann" })
+    await phone.ready
+    phone.send("knock:issue")
+    await settle()
+    assert.equal(phone.nonces.length, 0, "a player minting nonces could exhaust the room's cap")
+    phone.ws.close()
+  })
+
+  await t.test("the payload heard is redeemed once and never again", async () => {
+    screen.send("knock:issue")
+    await settle()
+    const bytes = screen.nonces.at(-1).payload
+
+    const first = await fetch(`http://127.0.0.1:${PORT}/api/knock`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bytes }),
+    })
+    assert.equal(first.status, 200)
+    assert.equal((await first.json()).code, code, "the phone is told which room it heard")
+
+    // A recording of the same tone, played back later. This is the whole point.
+    const again = await fetch(`http://127.0.0.1:${PORT}/api/knock`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bytes }),
+    })
+    assert.equal(again.status, 403, "a replayed capture must not open the room")
+  })
+
+  await t.test("noise off the air is refused rather than parsed", async () => {
+    // Anyone with a speaker can transmit anything, and CRC catches accidents
+    // rather than adversaries — so this endpoint is a trust boundary.
+    for (const bytes of [[0, 0, 0, 0, 1, 2, 3, 4], [65, 66], [], [300, -1, 0, 0, 0, 0, 0, 0]]) {
+      const res = await fetch(`http://127.0.0.1:${PORT}/api/knock`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bytes }),
+      })
+      assert.ok(res.status === 400 || res.status === 403, `${JSON.stringify(bytes)} got ${res.status}`)
+    }
+  })
+
+  await t.test("running out of nonces is answered, not thrown", async () => {
+    // The cap is 32 per room. Asking past it used to destructure null inside
+    // the socket handler — and since a screen re-asks every few seconds, that
+    // was once per rotation for the rest of the night.
+    for (let i = 0; i < 40; i++) screen.send("knock:issue")
+    await settle(400)
+    assert.ok(
+      screen.nonces.some((m) => m.payload === null),
+      "past the cap the screen should be told to try again, not left waiting",
+    )
+    // And the relay is still answering.
+    assert.ok((await fetch(`http://127.0.0.1:${PORT}/net`)).ok, "the relay fell over")
+  })
+
+  for (const c of [host, screen]) c.ws.close()
+})
+
+test("streamer mode keeps the code off the screens a camera can see", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.state.code
+  const screen = client("display", { code })
+  const phone = client("player", { code, name: "Ann" })
+  await Promise.all([screen.ready, phone.ready])
+
+  assert.equal(screen.state.code, code, "off by default")
+  assert.equal(screen.state.codeHidden, false)
+
+  host.send("settings:set", { settings: { streamer: true } })
+  await settle()
+
+  await t.test("the big screen is not sent the code at all", () => {
+    // Withheld rather than hidden: an overlay is inspectable in a browser
+    // source and readable by a screenshot tool, and the next component to
+    // render state.code would leak it again.
+    assert.equal(screen.state.code, null)
+    assert.equal(screen.state.codeHidden, true)
+    assert.ok(!JSON.stringify(screen.state).includes(code), "the code is somewhere else in the projection")
+  })
+
+  await t.test("nor is a player's phone, which can also be on camera", () => {
+    assert.equal(phone.state.code, null)
+    assert.equal(phone.state.codeHidden, true)
+  })
+
+  await t.test("but the people driving still have it", () => {
+    assert.equal(host.state.code, code)
+    assert.equal(host.state.codeHidden, false)
+  })
+
+  await t.test("and a phone that already joined keeps working", () => {
+    // Identity comes from the `joined` message, not the projection, so hiding
+    // the code must not cost a player their seat on reconnect.
+    assert.equal(phone.identity.code, code)
+  })
+
+  await t.test("turning it off puts the code back", async () => {
+    host.send("settings:set", { settings: { streamer: false } })
+    await settle()
+    assert.equal(screen.state.code, code)
+    assert.equal(screen.state.codeHidden, false)
+  })
+
+  for (const c of [host, screen, phone]) c.ws.close()
 })

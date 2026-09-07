@@ -80,7 +80,7 @@ export function PodiumApp() {
 
       <footer className="relative z-10 flex shrink-0 items-center justify-center gap-[2vmin] pb-[1.2vmin] opacity-70">
         <BrandMark className="text-[max(11px,calc(var(--stage)*1.5))]" />
-        <span className="label">{state.code}</span>
+        <span className="label">{state.codeHidden ? "••••" : state.code}</span>
         {!connected && <span className="h-[1vmin] w-[1vmin] rounded-full bg-bad animate-glow" title="reconnecting" />}
         {only && (
           <a className="text-[0.7rem] text-faint/70 transition-colors hover:text-muted" href={`/podium?code=${code}`}>
