@@ -50,11 +50,15 @@ export const UI_SFX_ENABLED = false
 /**
  * Which take of the game's own cues to play.
  *
- * `"current"` is what has always shipped: square waves and filtered noise,
- * plain and legible. `"gold"` is the same cues rebuilt out of struck bells and
- * brass to match the black-and-gold the rest of the app is made of. Both are
- * synthesised, both are latency-free, and they are A/B'd side by side on
- * `/sounds` — this constant is the whole switch.
+ * - `"current"` — what has always shipped: square waves and filtered noise,
+ *   plain and legible.
+ * - `"gold"` — the same cues rebuilt from struck bells and brass, to match the
+ *   black-and-gold the rest of the app is made of.
+ * - `"arcade"` — a chip blip with a gold tail on it. Arcade attack, expensive
+ *   decay.
+ *
+ * All three are synthesised, so all three are latency-free, and they are A/B'd
+ * against each other on `/sounds` — this constant is the whole switch.
  */
 export const CUE_TAKE = "current"
 
@@ -299,6 +303,46 @@ function brass(freq, start = 0, dur = 0.5, { gain = 0.18, bus = null, open = 6 }
   osc.connect(lp).connect(env).connect(bus ?? cueBus)
   osc.start(t0)
   osc.stop(t0 + dur + 0.05)
+}
+
+/**
+ * A chip blip: square wave, no filter, and an envelope with corners on it.
+ *
+ * The abruptness *is* the sound. A 1980s sound chip had no envelope generator
+ * worth the name — a channel was on at full or off at nothing — so the gentle
+ * 12ms exponential swell that makes `tone()` pleasant is exactly the thing that
+ * stops this being arcade. Linear ramps of two milliseconds, and a hard gate at
+ * the end.
+ */
+function blip(freq, start = 0, dur = 0.08, { gain = 0.14, type = "square", bus = null, to = null } = {}) {
+  if (!ctx) return
+  const t0 = ctx.currentTime + start
+  const osc = ctx.createOscillator()
+  const env = ctx.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(freq, t0)
+  if (to) osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), t0 + dur)
+
+  env.gain.setValueAtTime(0.0001, t0)
+  env.gain.linearRampToValueAtTime(gain, t0 + 0.002)
+  env.gain.setValueAtTime(gain, t0 + Math.max(0.004, dur - 0.006))
+  env.gain.linearRampToValueAtTime(0.0001, t0 + dur)
+
+  osc.connect(env).connect(bus ?? cueBus)
+  osc.start(t0)
+  osc.stop(t0 + dur + 0.02)
+}
+
+/**
+ * Notes one after another, fast.
+ *
+ * A chip could only sound one note per channel, so a chord had to be played as
+ * a sprint through its notes — and that limitation became the sound of getting
+ * something right. Kept genuinely fast: past about 60ms a step it stops being
+ * an arpeggio and starts being a tune.
+ */
+function arp(notes, start = 0, step = 0.045, { gain = 0.13, type = "square", bus = null, hold = 1.4 } = {}) {
+  notes.forEach((f, i) => blip(f, start + i * step, step * hold, { gain, type, bus }))
 }
 
 /** Weight under a cue. Felt through a PA more than heard through a laptop. */
@@ -561,6 +605,121 @@ export const ALT = {
 }
 
 /**
+ * The third take: an arcade cabinet that cost a great deal of money.
+ *
+ * One idea, applied everywhere — **arcade attack, gold tail**. Every cue fires
+ * as a chip blip, square-edged and instant, and then decays into a struck bell.
+ * The blip is the part you react to; the ring is the part that makes it sound
+ * expensive rather than cheap, and it arrives late enough never to blunt the
+ * attack.
+ *
+ * Two rules keep it from becoming a novelty:
+ *
+ * - **Nothing the room is punished by gets a tail.** A wrong answer and an
+ *   early buzz end flat and dead, because a ring is a reward and rewarding a
+ *   mistake is how a game show starts feeling sarcastic.
+ * - **Frequencies are shared with the gold take**, so the two are the same game
+ *   in different clothes rather than two different games — a room that switches
+ *   between them should notice the material, not the tune.
+ */
+export const ARCADE = {
+  select: () => {
+    blip(880, 0, 0.045, { gain: 0.12 })
+    bell(1760, 0.05, 0.3, { gain: 0.06 })
+  },
+  /** The one that matters: a hard descending pair, then gold. */
+  buzz: () => {
+    thud(0, { gain: 0.26, freq: 80 })
+    blip(523, 0, 0.05, { gain: 0.17 })
+    blip(392, 0.05, 0.07, { gain: 0.17 })
+    bell(880, 0.09, 0.8, { gain: 0.12 })
+  },
+  /** Flat, ugly, no tail. Jumping the gun is not an achievement. */
+  reject: () => {
+    blip(200, 0, 0.13, { gain: 0.14, type: "sawtooth", to: 60 })
+    thud(0.02, { gain: 0.12, freq: 110 })
+  },
+  arm: () => {
+    blip(1318, 0, 0.035, { gain: 0.1 })
+    blip(1760, 0.04, 0.05, { gain: 0.1 })
+    bell(2093, 0.08, 0.35, { gain: 0.06 })
+  },
+  /** Fires five times in a row, so it stays a tick and never grows a tail. */
+  tick: () => blip(2093, 0, 0.022, { gain: 0.07 }),
+  clueClose: () => blip(660, 0, 0.09, { gain: 0.09, to: 330 }),
+  undo: () => blip(784, 0, 0.09, { gain: 0.09, to: 440 }),
+  /** A coin dropping. Two notes, and everyone under fifty knows what it means. */
+  join: () => {
+    blip(988, 0, 0.04, { gain: 0.1 })
+    blip(1319, 0.04, 0.12, { gain: 0.1 })
+    bell(1976, 0.1, 0.4, { gain: 0.05 })
+  },
+  reveal: () => {
+    arp([523, 659, 784], 0, 0.05, { gain: 0.11 })
+    bell(1046, 0.16, 0.9, { gain: 0.12 })
+  },
+  /** The power-up: a run up the chord, and gold left hanging over the top. */
+  correct: () => {
+    arp([523, 659, 784, 1046], 0, 0.05, { gain: 0.13 })
+    bell(2093, 0.21, 1.1, { gain: 0.13 })
+  },
+  /** Down, not up, and it ends where it lands. */
+  wrong: () => {
+    thud(0, { gain: 0.26, freq: 70 })
+    arp([330, 247, 185], 0, 0.075, { gain: 0.14, type: "sawtooth", hold: 1.6 })
+  },
+  timeUp: () => {
+    blip(440, 0, 0.11, { gain: 0.16 })
+    blip(440, 0.16, 0.11, { gain: 0.16 })
+    blip(330, 0.32, 0.2, { gain: 0.16 })
+    bell(330, 0.36, 1.4, { gain: 0.13 })
+  },
+  lifeline: () => {
+    arp([880, 660, 880, 1318], 0, 0.06, { gain: 0.11 })
+    bell(1318, 0.26, 0.9, { gain: 0.1 })
+  },
+  wagerLock: () => {
+    blip(392, 0, 0.06, { gain: 0.13 })
+    blip(523, 0.07, 0.1, { gain: 0.13 })
+    bell(1046, 0.13, 0.5, { gain: 0.07 })
+  },
+  pause: () => {
+    blip(523, 0, 0.06, { gain: 0.11 })
+    blip(392, 0.07, 0.11, { gain: 0.11 })
+  },
+  resume: () => {
+    blip(392, 0, 0.06, { gain: 0.11 })
+    blip(523, 0.07, 0.11, { gain: 0.11 })
+  },
+  /** The 1-up: the longest run here, and the only one that earns it. */
+  nitro: () => {
+    arp([392, 523, 659, 784, 1046, 1318], 0, 0.055, { gain: 0.14 })
+    brass(784, 0.33, 0.4, { gain: 0.13 })
+    bell(1568, 0.38, 1.8, { gain: 0.15 })
+  },
+  boardOpen: () => {
+    arp([262, 330, 392, 523], 0, 0.06, { gain: 0.12 })
+    bell(1046, 0.26, 1.5, { gain: 0.13 })
+  },
+  roundStart: () => {
+    arp([330, 440, 659], 0, 0.055, { gain: 0.11 })
+    bell(1318, 0.18, 1.1, { gain: 0.11 })
+  },
+  /**
+   * Into the final. The one cue that inverts the rule.
+   *
+   * Everything else is a bright blip over a gold tail; this is a low square
+   * drone *under* a struck bell, because the final is the moment the cabinet
+   * stops being fun and the room goes quiet.
+   */
+  finalOpen: () => {
+    thud(0, { gain: 0.3, freq: 60 })
+    blip(110, 0, 0.5, { gain: 0.1, type: "sawtooth", to: 82 })
+    bell(110, 0.06, 3.2, { gain: 0.19 })
+  },
+}
+
+/**
  * The interface's noises.
  *
  * Deliberately tiny — a fifth the gain of a game cue, and none of them longer
@@ -628,9 +787,26 @@ export function playUi(id) {
  */
 export const PLAIN = { ...sfx }
 
+/** Every take, by the name `CUE_TAKE` uses. `current` needs no table. */
+export const TAKES = { current: PLAIN, gold: ALT, arcade: ARCADE }
+
+/**
+ * The two cues no take may claim.
+ *
+ * A round ending and a game ending are a *crowd*, and a crowd is the one sound
+ * on this list that synthesis genuinely cannot do — filtered noise is static
+ * with ambitions, and it will still be static after it has been gilded or
+ * bit-crushed. So these stay on the sample layer whichever take is chosen: when
+ * real applause is finally dropped into `public/sfx/`, every take gets it.
+ *
+ * Everything else is fair game. A "ta-da" or a wrong-answer buzzer is a
+ * *sound*, not a room full of people, and a take is entitled to its own.
+ */
+export const CROWD = ["roundEnd", "gameOver"]
+
 // One assignment rather than a branch at every call site: pick the take once
 // and every `sfx.buzz()` in the app follows it.
-if (CUE_TAKE === "gold") Object.assign(sfx, ALT)
+Object.assign(sfx, TAKES[CUE_TAKE] ?? PLAIN)
 
 // ── The music bed ────────────────────────────────────────────────────────────
 

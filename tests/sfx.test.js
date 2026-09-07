@@ -2,14 +2,14 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 
-import { ALT, PLAIN, sfx, ui, playForEffect, playUi, board, BOARD_CUES } from "../src/lib/sfx.js"
+import { CROWD, PLAIN, TAKES, ui, playForEffect, playUi, board, BOARD_CUES } from "../src/lib/sfx.js"
 
 /**
  * Sound cannot be reviewed by reading a diff, so these do not try — they check
  * the two things about it that *are* checkable, and both have already been
  * wrong at some point in a codebase like this one:
  *
- * 1. The cue tables agree with each other. `ALT` is folded over `sfx` with
+ * 1. The cue tables agree with each other. A take is folded over `sfx` with
  *    `Object.assign`, which silently *adds* a key rather than complaining when
  *    the name is misspelt — so a typo there is a cue that is never heard and
  *    never errors.
@@ -21,16 +21,31 @@ import { ALT, PLAIN, sfx, ui, playForEffect, playUi, board, BOARD_CUES } from ".
 
 const cueName = (fn) => (typeof fn === "function" ? fn : null)
 
-test("every alternative take replaces a cue that exists", () => {
-  for (const id of Object.keys(ALT)) {
-    assert.ok(PLAIN[id], `ALT.${id} matches no cue in sfx — Object.assign would add a phantom nobody plays`)
+test("every take covers the same cues, and invents none", () => {
+  for (const [take, table] of Object.entries(TAKES)) {
+    for (const id of Object.keys(table)) {
+      assert.ok(PLAIN[id], `${take}.${id} matches no cue in sfx — Object.assign would add a phantom nobody plays`)
+    }
+    // The other half of the same worry: a take that is *missing* a cue leaves
+    // that one moment sounding like the take nobody chose. The crowd cues are
+    // exempt by design — see CROWD — and a take that grabs one of those is the
+    // more interesting failure, because it would quietly outrank real applause
+    // the day someone drops it in.
+    for (const id of Object.keys(PLAIN)) {
+      if (CROWD.includes(id)) {
+        assert.ok(!table[id] || table === PLAIN, `${take} overrides ${id}, which must stay on the sample layer`)
+        continue
+      }
+      assert.ok(table[id], `${take} has no ${id}, so switching to it would leave that cue on the old take`)
+    }
   }
 })
 
-test("both takes are callable before anything is unlocked", () => {
+test("every take is callable before anything is unlocked", () => {
   // No AudioContext here at all. Each of these should do nothing, quietly.
-  for (const [id, fn] of Object.entries(PLAIN)) assert.doesNotThrow(() => cueName(fn)?.(), `sfx.${id}`)
-  for (const [id, fn] of Object.entries(ALT)) assert.doesNotThrow(() => cueName(fn)?.(), `ALT.${id}`)
+  for (const [take, table] of Object.entries(TAKES)) {
+    for (const [id, fn] of Object.entries(table)) assert.doesNotThrow(() => cueName(fn)?.(), `${take}.${id}`)
+  }
   for (const [id, fn] of Object.entries(ui)) assert.doesNotThrow(() => cueName(fn)?.(), `ui.${id}`)
   for (const [id, fn] of Object.entries(board)) assert.doesNotThrow(() => cueName(fn)?.(), `board.${id}`)
 })

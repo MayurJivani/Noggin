@@ -295,7 +295,7 @@ function resolveStatic(pathname) {
   return null
 }
 
-function serveStatic(req, res, file) {
+function serveStatic(req, res, file, status = 200) {
   const type = MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream"
   // Astro fingerprints everything under _astro/, so those can be cached hard.
   // HTML must not be, or a deploy leaves stale pages pinned in browsers.
@@ -307,7 +307,7 @@ function serveStatic(req, res, file) {
     res.writeHead(404, CORS).end("not found")
     return
   }
-  res.writeHead(200, {
+  res.writeHead(status, {
     "Content-Type": type,
     "Content-Length": size,
     "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
@@ -519,6 +519,15 @@ async function handleRequest(req, res) {
   if (req.method === "GET" || req.method === "HEAD") {
     const page = resolveStatic(url.pathname)
     if (page) return serveStatic(req, res, page)
+
+    // A person who mistyped a room link gets the page; still with a 404 status,
+    // so a crawler or a health check is not told the URL was fine. Only for
+    // navigations — an API call or a missing image wants the terse reply, and
+    // handing a stylesheet request a lump of HTML is how you get a page that
+    // looks broken instead of a request that failed.
+    const wantsHtml = (req.headers.accept ?? "").includes("text/html")
+    const notFound = wantsHtml && resolveStatic("/404.html")
+    if (notFound) return serveStatic(req, res, notFound, 404)
   }
 
   res.writeHead(404, CORS).end("not found")

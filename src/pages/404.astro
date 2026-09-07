@@ -1,0 +1,50 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { Backdrop } from "../components/ui/Backdrop"
+import { Brand } from "../components/ui/Brand"
+import { VeinLine } from "../components/ui/Vein"
+import "../styles/global.css"
+
+/**
+ * Nothing here.
+ *
+ * Rendered at build time with no island, on purpose: every other page in this
+ * app is `client:only` because it needs a socket or a wake lock, but a 404
+ * needs neither and is the one page most likely to be met by a browser having
+ * a bad day. It works with JavaScript switched off entirely.
+ *
+ * Two ways in rather than a back button, because the two people who land here
+ * want opposite things: a player whose link is wrong or whose room has ended,
+ * and a host who bookmarked something that moved.
+ */
+---
+
+<Layout title="NOGGIN’ — nothing here">
+  <div class="relative flex min-h-dvh items-center justify-center px-6 py-12">
+    <Backdrop veins={6} glow={3} />
+
+    <div class="relative z-10 w-full max-w-md text-center">
+      <Brand size="clamp(2.25rem, 7vw, 3.5rem)" />
+      <VeinLine className="mx-auto mt-2 w-48" height={16} />
+
+      <!-- The number is the point. Large, gold, and the only thing anyone
+           needs to read to know what happened. -->
+      <div class="mt-8 font-value leading-none brass" style="font-size: clamp(5rem, 22vw, 9rem);">404</div>
+
+      <p class="mt-2 font-display text-lg text-ink">There's no clue behind this tile.</p>
+      <p class="mt-2 text-[13px] leading-relaxed text-muted">
+        The link may be mistyped, or the game it pointed at has finished — rooms don't outlive the night they were
+        played.
+      </p>
+
+      <div class="mt-7 flex flex-col gap-2 sm:flex-row sm:justify-center">
+        <a class="btn btn-gold px-5 py-2.5 text-[13px]" href="/">Join a game</a>
+        <a class="btn px-5 py-2.5 text-[13px]" href="/host">Host one</a>
+      </div>
+
+      <p class="mt-6 text-[11px] text-faint">
+        Joining takes a room code from whoever is hosting. Nothing else — no account, no app.
+      </p>
+    </div>
+  </div>
+</Layout>

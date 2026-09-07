@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { ALT, CUE_TAKE, PLAIN, UI_SFX_ENABLED, ui, unlock, setVolume } from "../../lib/sfx"
+import { CUE_TAKE, TAKES, UI_SFX_ENABLED, ui, unlock, setVolume } from "../../lib/sfx"
+import { readJson, writeJson } from "../../lib/storage"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
@@ -16,6 +17,21 @@ import { VeinLine } from "../ui/Vein"
  * Nothing here touches a room. No relay connection, no code, no state: it makes
  * noises and that is all it can do, which is why it is safe to leave public.
  */
+
+/**
+ * The takes, in the order the buttons sit.
+ *
+ * Ordered plainest first, so pressing left to right walks from what the room
+ * hears today to the furthest thing from it — which is the comparison anyone
+ * choosing between them is actually making.
+ */
+const TAKES_UI = [
+  ["current", "Current", ""],
+  ["gold", "Gold", "btn-gold"],
+  ["arcade", "Arcade", "border-amethyst/70 text-amethyst"],
+]
+
+const TAKE_LABEL = { current: "Current", gold: "Gold", arcade: "Arcade" }
 
 /** The game's own cues, with the moment each one fires. */
 const GAME = [
@@ -54,10 +70,21 @@ const UI = [
   ["nav", "Somewhere new", "A room opened, a screen switched."],
 ]
 
+/** Where the verdicts live between visits. */
+const STORE = "noggin.sound-verdicts"
+
 export function SoundsApp() {
   const [ready, setReady] = useState(false)
   const [vol, setVol] = useState(0.5)
   const [last, setLast] = useState(null)
+  /** `{ [cueId]: { pick, note } }` — see the summary at the foot of the page. */
+  const [verdicts, setVerdicts] = useState(() => readJson(STORE, {}) ?? {})
+
+  // Kept across visits, because nobody decides twenty cues in one sitting and
+  // losing the first fifteen to a refresh is how a review gets abandoned.
+  useEffect(() => {
+    writeJson(STORE, verdicts)
+  }, [verdicts])
 
   // Browsers will not make a sound until the page has been touched, so the
   // whole page is dead until the first click — say so rather than letting
@@ -81,6 +108,9 @@ export function SoundsApp() {
     setLast(label)
     fn?.()
   }
+
+  const set = (id, patch) => setVerdicts((v) => ({ ...v, [id]: { ...v[id], ...patch } }))
+  const decided = Object.values(verdicts).filter((v) => v?.pick).length
 
   return (
     <div className="relative min-h-dvh px-5 py-10">
@@ -115,29 +145,45 @@ export function SoundsApp() {
           title="The game"
           note={
             <>
-              Two takes of each. <b className="text-ink">Current</b> is what ships today — square waves and filtered noise,
-              plain and legible. <b className="text-gold">Gold</b> is the same cue built from struck bells and brass, to match
-              what the app looks like. Both are synthesised, so both land the instant they fire.
-              {" "}Live now: <b className="text-ink">{CUE_TAKE === "gold" ? "Gold" : "Current"}</b>.
+              Three takes of each, all synthesised, so all three land the instant they fire.
+              <br />
+              <b className="text-ink">Current</b> is what ships today — square waves and filtered noise, plain and legible.
+              {" "}
+              <b className="text-gold">Gold</b> rebuilds each cue from struck bells and brass, to match what the app looks
+              like. <b className="text-amethyst">Arcade</b> fires a chip blip and lets it decay into that same gold: arcade
+              attack, expensive tail.
+              {" "}Live now: <b className="text-ink">{TAKE_LABEL[CUE_TAKE] ?? "Current"}</b>.
             </>
           }
         >
           {GAME.map(([id, label, when]) => (
-            <li key={id} className="flex items-center gap-3 border-b border-edge/60 py-2 last:border-0">
-              <div className="min-w-0 flex-1">
+            <li key={id} className="flex flex-wrap items-center gap-2 border-b border-edge/60 py-2 last:border-0">
+              <div className="min-w-0 flex-1 basis-full sm:basis-auto">
                 <div className="truncate font-display text-[14px] text-ink">{label}</div>
                 {when && <div className="truncate text-[11px] text-faint">{when}</div>}
               </div>
-              <button className="btn shrink-0 px-3 py-1.5 text-[12px]" onClick={() => play(`${label} · current`, PLAIN[id])}>
-                Current
-              </button>
-              <button
-                className="btn btn-gold shrink-0 px-3 py-1.5 text-[12px] disabled:opacity-30"
-                disabled={!ALT[id]}
-                onClick={() => play(`${label} · gold`, ALT[id])}
-              >
-                Gold
-              </button>
+              {TAKES_UI.map(([take, name, cls]) => (
+                <button
+                  key={take}
+                  className={`btn shrink-0 px-3 py-1.5 text-[12px] disabled:opacity-30 ${cls} ${
+                    verdicts[id]?.pick === take ? "ring-2 ring-good ring-offset-1 ring-offset-panel" : ""
+                  }`}
+                  disabled={!TAKES[take]?.[id]}
+                  onClick={() => play(`${label} · ${name.toLowerCase()}`, TAKES[take][id])}
+                >
+                  {name}
+                </button>
+              ))}
+              <Verdict
+                id={id}
+                value={verdicts[id]}
+                onChange={(patch) => set(id, patch)}
+                options={[
+                  ["current", "✓ Current"],
+                  ["gold", "✓ Gold"],
+                  ["arcade", "✓ Arcade"],
+                ]}
+              />
             </li>
           ))}
         </Section>
@@ -164,9 +210,17 @@ export function SoundsApp() {
               <button className="btn shrink-0 px-3 py-1.5 text-[12px]" onClick={() => play(label, ui[id])}>
                 Play
               </button>
+              <Verdict
+                id={`ui:${id}`}
+                value={verdicts[`ui:${id}`]}
+                onChange={(patch) => set(`ui:${id}`, patch)}
+                options={[["keep", "✓ Keep"]]}
+              />
             </li>
           ))}
         </Section>
+
+        <Summary verdicts={verdicts} onClear={() => setVerdicts({})} decided={decided} />
 
         <div className="panel mt-6 p-5 text-[12px] leading-relaxed text-muted">
           <div className="label mb-2">What is still missing</div>
@@ -189,6 +243,131 @@ export function SoundsApp() {
         </p>
       </div>
     </div>
+  )
+}
+
+/**
+ * One row's verdict: which take, or send it back.
+ *
+ * A native `<select>` on purpose. It holds five mutually exclusive states in
+ * the width of a word, it is reachable by keyboard and screen reader without
+ * my writing any of that, and on a phone — which is where a lot of this will
+ * be reviewed, because that is where the buzzer lives — it opens the platform's
+ * own picker instead of a custom menu I would have had to make work on iOS.
+ */
+function Verdict({ id, value, onChange, options }) {
+  const pick = value?.pick ?? ""
+  return (
+    <>
+      <select
+        className="field shrink-0 !w-auto !py-1 text-[12px]"
+        value={pick}
+        aria-label={`Verdict for ${id}`}
+        onChange={(e) => onChange({ pick: e.target.value || undefined })}
+      >
+        <option value="">— undecided</option>
+        {options.map(([v, label]) => (
+          <option key={v} value={v}>
+            {label}
+          </option>
+        ))}
+        <option value="rework">✎ Rework</option>
+      </select>
+
+      {/* Only for a rework, and optional even then. "This one's wrong" is
+          already useful; being made to explain why is what stops people
+          saying it. */}
+      {pick === "rework" && (
+        <input
+          className="field basis-full text-[12px]"
+          placeholder="What's wrong with it? (optional)"
+          value={value?.note ?? ""}
+          aria-label={`Note for ${id}`}
+          onChange={(e) => onChange({ note: e.target.value })}
+        />
+      )}
+    </>
+  )
+}
+
+/** Every label on the page, by cue id, for the summary to read back. */
+const LABELS = {
+  ...Object.fromEntries(GAME.map(([id, label]) => [id, label])),
+  ...Object.fromEntries(UI.map(([id, label]) => [`ui:${id}`, `${label} (interface)`])),
+}
+
+/**
+ * The verdicts, as something you can hand back.
+ *
+ * The page has no relay connection by design, so there is nowhere for it to
+ * *send* anything — which leaves copy and paste, and that turns out to be the
+ * honest answer anyway: the person deciding this is talking to whoever changes
+ * the code, and a block of text is what that conversation takes.
+ *
+ * The textarea is the primary path rather than a fallback. This page gets
+ * opened on a phone at `http://192.168.…`, which is not a secure context, and
+ * `navigator.clipboard` simply does not exist there — a Copy button alone would
+ * be dead exactly where it is most needed.
+ */
+function Summary({ verdicts, onClear, decided }) {
+  const [copied, setCopied] = useState(false)
+
+  const lines = Object.entries(verdicts)
+    .filter(([, v]) => v?.pick)
+    .map(([id, v]) => {
+      const label = LABELS[id] ?? id
+      const note = v.pick === "rework" && v.note?.trim() ? ` — ${v.note.trim()}` : ""
+      return `- ${label} [${id}] → ${v.pick}${note}`
+    })
+
+  const text = lines.length ? `NOGGIN' sound review\n\n${lines.join("\n")}\n` : ""
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // No clipboard here. The textarea below is already the answer.
+      setCopied(false)
+    }
+  }
+
+  return (
+    <section className="panel mt-6 p-5">
+      <div className="flex items-baseline gap-3">
+        <h2 className="font-display text-lg text-gold brass-sm">Your verdicts</h2>
+        <span className="text-[11px] text-faint">{decided} decided</span>
+        {decided > 0 && (
+          <button className="ml-auto text-[11px] text-faint transition-colors hover:text-bad" onClick={onClear}>
+            clear all
+          </button>
+        )}
+      </div>
+
+      {!decided ? (
+        <p className="mt-2 text-[12px] leading-relaxed text-muted">
+          Nothing decided yet. Set a verdict on any row above — pick the take you want kept, or mark it for rework and say
+          what's wrong. Choices are remembered on this device, so you can do it in more than one sitting.
+        </p>
+      ) : (
+        <>
+          <p className="mt-2 text-[12px] leading-relaxed text-muted">
+            Copy this and paste it back. Anything you left undecided is left out rather than guessed at.
+          </p>
+          <textarea
+            className="field mt-3 h-40 w-full resize-y font-mono text-[11px] leading-relaxed"
+            readOnly
+            value={text}
+            aria-label="Your verdicts, as text"
+            onFocus={(e) => e.target.select()}
+          />
+          <button className="btn btn-gold mt-2 px-4 py-1.5 text-[12px]" onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </>
+      )}
+    </section>
   )
 }
 

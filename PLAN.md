@@ -19,14 +19,22 @@ What exists, and what is deliberately left for later.
   the first clue, with each phone's round-trip beside it. A test press scores
   nothing and is not a race entry.
 - **The listening room** (`/sounds`) — every noise the game can make, on a page,
-  with the moment each one fires. Sound cannot be reviewed by reading a diff, so
-  it gets a surface: the game's cues are there in two takes side by side, and the
-  interface layer is there in full before any of it is switched on. No relay
-  connection, no room, no state — it makes noises and nothing else.
-- **A second take of every game cue** — the same twenty cues rebuilt out of
-  struck bells and brass rather than square waves, so the game sounds like what
-  it looks like. Still synthesised, so a buzz-in still lands *with* the press.
-  Not live: `CUE_TAKE` in `src/lib/sfx.js` is the whole switch.
+  with the moment each one fires and three takes of each side by side. Sound
+  cannot be reviewed by reading a diff, so it gets a surface. Each row takes a
+  verdict — keep this take, or send it back with a note — which is remembered
+  per device and read back as a block of text to hand over. No relay
+  connection, no room, no state: it makes noises and nothing else.
+- **Three takes of every game cue.** `current` is the original: square waves and
+  filtered noise. `gold` rebuilds each cue from struck bells and brass, to match
+  what the app looks like. `arcade` fires a chip blip and lets it decay into
+  that same gold — arcade attack, expensive tail — except where the room is
+  being punished, which ends flat and dead, because a ring is a reward. All
+  synthesised, so a buzz-in still lands *with* the press. `CUE_TAKE` in
+  `src/lib/sfx.js` is the whole switch.
+- **A 404 page** — the one page rendered at build time with no island at all, so
+  it survives a browser having a bad day. Two ways out rather than a back
+  button: the people who land here are a player whose link is wrong and a host
+  whose bookmark moved, and they want opposite things.
 - **Interface sounds** — a tap, a tab, a toggle, a panel, a save, a refusal.
   Built, auditionable and **off**, on their own bus so they can be silenced
   without touching the game. Not yet wired to any button, deliberately: they

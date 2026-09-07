@@ -1,7 +1,7 @@
 import test, { after, before } from "node:test"
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -1286,4 +1286,31 @@ test("a tie after the final is played off, over the wire", async (t) => {
   })
 
   for (const c of [host, screen, ann, ben, cal]) c.ws.close()
+})
+
+test("a mistyped link gets the 404 page, and a 404 status with it", async (t) => {
+  // Only meaningful against a build. A clean checkout has no dist/, and the
+  // relay then serves no static files at all by design.
+  if (!existsSync(path.join(ROOT, "dist", "404.html"))) {
+    t.skip("no dist/ — run `npm run build` first")
+    return
+  }
+
+  const page = await fetch(`http://127.0.0.1:${PORT}/no-such-thing`, { headers: { Accept: "text/html" } })
+  assert.equal(page.status, 404, "the status must stay 404 — a crawler is not to be told the URL was fine")
+  assert.match(page.headers.get("content-type") ?? "", /text\/html/)
+  const body = await page.text()
+  assert.match(body, /404/)
+  assert.match(body, /Join a game/, "a way out, not just an apology")
+
+  // Anything that is not a navigation still gets the terse reply. Handing a
+  // stylesheet or an API call a lump of HTML is how a page ends up looking
+  // broken instead of a request simply having failed.
+  const asset = await fetch(`http://127.0.0.1:${PORT}/nope.css`)
+  assert.equal(asset.status, 404)
+  assert.equal(await asset.text(), "not found")
+
+  // And a real page is still a real page.
+  const real = await fetch(`http://127.0.0.1:${PORT}/sounds`, { headers: { Accept: "text/html" } })
+  assert.equal(real.status, 200)
 })
