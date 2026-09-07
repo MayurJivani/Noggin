@@ -702,8 +702,12 @@ export function setTeamMode(room, on) {
 
 export function startGame(room) {
   if (room.phase !== PHASE.LOBBY && room.phase !== PHASE.INTERMISSION) return []
+  // Read the phase before overwriting it. The other order made the test always
+  // false, so opening the board from an intermission silently sent the room
+  // back to round one with every tile still marked played.
+  const resuming = room.phase === PHASE.INTERMISSION
   room.phase = PHASE.BOARD
-  room.roundIndex = room.phase === PHASE.INTERMISSION ? room.roundIndex : 0
+  room.roundIndex = resuming ? room.roundIndex : 0
   // Whatever the host was testing, they are done testing it.
   room.check = null
   return [{ kind: "game-start" }]
@@ -825,6 +829,30 @@ export function selectClue(room, catIndex, clueIndex) {
  * clue belongs to the side rather than to whichever member happened to pick the
  * tile — the team confers and one of them says it.
  */
+/**
+ * Name who found the nitro, before they have decided what to risk.
+ *
+ * Split out from `setWager` because the two happen minutes apart in the room
+ * and only seconds apart in the code. Until this existed the big screen had no
+ * way of knowing whose tile it was — `wager.playerId` was set by the same call
+ * that locked the bet and ended the phase — so it spent the whole wager asking
+ * "who found it?" of a room that had known for some time.
+ *
+ * Sets no amount, so nothing is committed and the host can change their mind.
+ */
+export function setWagerWho(room, id) {
+  if (room.phase !== PHASE.WAGER || !room.wager) return []
+  const unit = scorer(room, id)
+  if (!unit) return []
+  const isTeam = room.settings.teams && room.teams.has(unit.id)
+  room.wager = {
+    ...room.wager,
+    playerId: isTeam ? null : unit.id,
+    teamId: isTeam ? unit.id : (teamOf(room, unit.id)?.id ?? null),
+  }
+  return [{ kind: "wager-who", unitId: unit.id }]
+}
+
 export function setWager(room, id, amount) {
   if (room.phase !== PHASE.WAGER) return []
   const unit = scorer(room, id)
@@ -2264,6 +2292,15 @@ export function projectState(room, role, viewerId = null) {
     })(),
     /** Set once a tie has been settled — the scores stay level, someone won. */
     winner: room.winner ?? null,
+    /*
+      The one side that has actually won, once nothing is left to play.
+
+      `winner` alone was not enough: it is only ever set by a play-off, so a
+      game decided cleanly — including by a survey, which is decided on points
+      the scoreboard does not show — finished with nobody marked as having won
+      it. Null while the game is level, which is what `tied` is for.
+    */
+    champion: boardDone(room) && !pending(room) ? (room.winner ?? (leaders(room).length === 1 ? leaders(room)[0].id : null)) : null,
     final: projectFinal(room, privileged, viewerId),
     survey: room.board.survey?.enabled ? projectSurvey(room, privileged) : null,
     wager: room.wager,

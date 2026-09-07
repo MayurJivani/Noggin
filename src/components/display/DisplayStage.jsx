@@ -249,14 +249,31 @@ function Stage({ code, state, connected, error, audioOn, broadcasting, flash, sp
         )}
         {phase === "final" && <FinalStage state={state} now={() => Date.now()} />}
         {phase === "intermission" && <Interlude title="Round cleared" rows={rows} sub={board.round?.name} />}
-        {phase === "ended" && <Interlude title="Final scores" rows={rows} final winner={state.winner} tied={state.tied} />}
+        {phase === "ended" && (
+          <Interlude
+            title="Final scores"
+            rows={rows}
+            final
+            champion={state.champion}
+            tied={state.tied}
+            survey={state.played?.survey ? state.survey : null}
+          />
+        )}
         {phase === "tiebreak" && <Tiebreak state={state} rows={rows} />}
         {phase === "survey" && <SurveyBoard state={state} rows={rows} />}
 
         {(phase === "board" || phase === "clue" || phase === "wager" || phase === "reveal") && (
           <div className="relative h-full w-full">
             <BoardGrid round={board.round} cellRef={cellRef} />
-            {clue && phase !== "board" && (
+            {/*
+              A nitro holds the room while the host works out who found it and
+              what they are risking, and the clue is deliberately not sent yet —
+              so the card that normally covers the board had nothing in it. The
+              splash plays for two seconds and then the room watched a blank
+              panel over a grid. This is what belongs there instead.
+            */}
+            {clue && phase === "wager" && <NitroWait clue={clue} name={wagerName} stake={state.stake} />}
+            {clue && phase !== "board" && phase !== "wager" && (
               <ClueCard
                 clue={clue}
                 revealed={state.revealed}
@@ -488,8 +505,73 @@ function Tiebreak({ state, rows }) {
   )
 }
 
-function Interlude({ title, rows, sub, final = false, winner = null, tied = null }) {
+/**
+ * The board while a nitro bet is being placed.
+ *
+ * The clue is withheld on purpose — it must not be readable until the bet is
+ * locked, or the bet is not blind — so this cannot show the one thing a card
+ * normally shows. What it can show is everything the room is entitled to know
+ * and is actually waiting on: that a nitro was found, in which category, and
+ * who is deciding. That last line is the useful one, because until the host
+ * picks a side there is nobody to look at.
+ */
+function NitroWait({ clue, name, stake }) {
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-[2.5vmin] bg-void/92 px-[6vmin] text-center animate-slam">
+      <div className="font-display uppercase tracking-[0.2em] text-live animate-glow" style={{ fontSize: "max(26px, calc(var(--stage) * 5.5))" }}>
+        Noggin&rsquo; Nitro
+      </div>
+      <VeinLine className="w-[44vmin]" height={18} />
+
+      <div className="label" style={{ letterSpacing: "0.4em" }}>
+        {clue.category}
+      </div>
+
+      {name ? (
+        <div className="font-display text-ink" style={{ fontSize: "max(18px, calc(var(--stage) * 3.2))" }}>
+          <span className="text-gold brass-sm">{name}</span> is deciding what to risk
+        </div>
+      ) : (
+        <div className="font-display text-muted" style={{ fontSize: "max(16px, calc(var(--stage) * 2.6))" }}>
+          Who found it?
+        </div>
+      )}
+
+      {/* The tile's face value, which is what the bet is measured against and
+          the only number on screen until the wager is locked. */}
+      <div className="flex items-baseline gap-[1.5vmin]">
+        <span className="label">Tile</span>
+        <span className="font-value tabular-nums text-gold" style={{ fontSize: "max(20px, calc(var(--stage) * 3.6))" }}>
+          {stake}
+        </span>
+      </div>
+
+      <div className="flex gap-[1.2vmin]">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="h-[1.2vmin] w-[1.2vmin] rounded-full bg-live animate-glow"
+            style={{ animationDelay: `${i * 220}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Interlude({ title, rows, sub, final = false, champion = null, tied = null, survey = null }) {
   const medal = ["#f2c96b", "#c0c0c8", "#c08a5a"]
+  /*
+    Everyone, not the top eight.
+
+    The list was capped, which is defensible mid-game and wrong at the end of
+    one: a player who came ninth still wants to see their name when the lights
+    come up. So it scales instead of truncating — a big field gets smaller type
+    rather than losing its tail.
+  */
+  const n = rows.length
+  const size = n <= 6 ? 3.4 : n <= 10 ? 2.6 : n <= 16 ? 2 : 1.6
+  const gap = n <= 10 ? 1.4 : 0.7
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin]">
       {sub && <div className="label" style={{ letterSpacing: "0.4em" }}>{sub}</div>}
@@ -504,25 +586,44 @@ function Interlude({ title, rows, sub, final = false, winner = null, tied = null
         </div>
       )}
 
-      <div className="flex flex-col items-center gap-[1.4vmin]">
-        {rows.slice(0, 8).map((row, i) => (
-          <div key={row.id} className="flex items-baseline gap-[2.5vmin] animate-rise" style={{ animationDelay: `${i * 110}ms` }}>
-            <span className="font-value tabular-nums text-muted" style={{ fontSize: "max(14px, calc(var(--stage) * 2))" }}>
-              {i + 1}
-            </span>
-            <span
-              className="font-display"
-              style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))", color: final && i < 3 ? medal[i] : (row.color ?? "var(--color-ink)") }}
+      <div className="flex flex-col items-center" style={{ gap: `${gap}vmin` }}>
+        {rows.map((row, i) => {
+          // Survey points are a separate column and belong beside the score
+          // rather than added to it — the round is won on them, and a board
+          // that folded them in would be showing a number nobody played for.
+          const played = survey?.contenders?.includes(row.id)
+          const points = played ? (survey.points?.[row.id] ?? 0) : null
+          return (
+            <div
+              key={row.id}
+              className="flex items-baseline gap-[2.5vmin] animate-rise"
+              style={{ animationDelay: `${Math.min(i, 12) * 110}ms` }}
             >
-              {row.name}
-              {/* The scores stayed level; this says who actually won. */}
-              {winner === row.id && <span className="ml-[1.5vmin] text-live">♛</span>}
-            </span>
-            <span className="font-value tabular-nums text-gold" style={{ fontSize: "max(18px, calc(var(--stage) * 3.4))" }}>
-              {row.score}
-            </span>
-          </div>
-        ))}
+              <span className="font-value tabular-nums text-muted" style={{ fontSize: `max(12px, calc(var(--stage) * ${size * 0.6}))` }}>
+                {i + 1}
+              </span>
+              <span
+                className="font-display"
+                style={{ fontSize: `max(15px, calc(var(--stage) * ${size}))`, color: final && i < 3 ? medal[i] : (row.color ?? "var(--color-ink)") }}
+              >
+                {row.name}
+                {champion === row.id && <span className="ml-[1.5vmin] text-live">♛</span>}
+              </span>
+              <span className="font-value tabular-nums text-gold" style={{ fontSize: `max(15px, calc(var(--stage) * ${size}))` }}>
+                {row.score}
+              </span>
+              {points != null && (
+                <span
+                  className="font-value tabular-nums text-good"
+                  style={{ fontSize: `max(12px, calc(var(--stage) * ${size * 0.7}))` }}
+                  title="Survey points"
+                >
+                  +{points} survey
+                </span>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

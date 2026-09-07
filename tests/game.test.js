@@ -1865,3 +1865,62 @@ test("a seat won in a play-off survives a save", () => {
   assert.deepEqual(back.qualified, ["p2"])
   assert.equal(G.pending(back), "survey", "the cut is settled and stays settled")
 })
+
+test("the game names a champion, not just a tie-break winner", () => {
+  const room = surveyed(3) // 300 / 200 / 100
+  G.openSurvey(room)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 10)
+  G.revealSurvey(room, 0) // p1 takes 400 survey points
+  G.closeSurvey(room)
+
+  const st = G.projectState(room, "display")
+  assert.equal(st.winner, null, "no play-off happened")
+  assert.equal(st.champion, "p1", "but somebody plainly won it")
+  assert.equal(st.tied, null)
+
+  // The board is still ordered on quiz score, where p1 is second — which is
+  // exactly why the champion has to be named rather than inferred from the top
+  // of the list.
+  assert.deepEqual(st.players.map((p) => p.id), ["p0", "p1", "p2"])
+})
+
+test("nobody is champion while the game is level or still owed a round", () => {
+  const level = surveyed(3)
+  G.openSurvey(level)
+  G.closeSurvey(level) // nil-all between the two contenders
+  assert.equal(G.projectState(level, "host").champion, null, "level is not a win")
+
+  const owed = surveyed(3)
+  assert.equal(G.pending(owed), "survey")
+  assert.equal(G.projectState(owed, "host").champion, null, "a round still to play is not a win")
+})
+
+test("the room is told who found a nitro before the bet is locked", () => {
+  const room = setup(2)
+  G.currentRound(room).categories[0].clues[0].nitro = true
+  G.selectClue(room, 0, 0)
+  assert.equal(room.phase, G.PHASE.WAGER)
+
+  // Nothing known yet: the big screen has nobody to name.
+  assert.equal(G.projectState(room, "display").wager.playerId, null)
+
+  assert.deepEqual(kinds(G.setWagerWho(room, "p1")), ["wager-who"])
+  assert.equal(G.projectState(room, "display").wager.playerId, "p1")
+  assert.equal(room.wager.amount, null, "named, not committed")
+  assert.equal(room.phase, G.PHASE.WAGER, "and still deciding")
+
+  // The host can change their mind right up to locking it.
+  G.setWagerWho(room, "p0")
+  assert.equal(room.wager.playerId, "p0")
+
+  G.setWager(room, "p0", 300)
+  assert.equal(room.phase, G.PHASE.CLUE)
+  assert.equal(room.wager.amount, 300)
+})
+
+test("naming a finder does nothing outside a wager", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 1) // an ordinary clue
+  assert.deepEqual(G.setWagerWho(room, "p0"), [])
+})

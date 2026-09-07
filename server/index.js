@@ -1279,6 +1279,7 @@ const ACTION_LABELS = {
   "round:next": "started the next round",
   "game:pause": "paused the room",
   "game:resume": "let the room go",
+  "wager:who": "named who found the nitro",
   "wager:set": "locked a wager",
   "final:open": "opened the final",
   "final:start": "showed the final clue",
@@ -1436,6 +1437,8 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.startGame(room))
     case "clue:select":
       return apply(room, G.selectClue(room, Number(msg.catIndex), Number(msg.clueIndex)))
+    case "wager:who":
+      return apply(room, G.setWagerWho(room, String(msg.playerId ?? "")))
     case "wager:set":
       // A side, which on team night is a team id and otherwise a player's.
       return apply(room, G.setWager(room, msg.teamId ?? msg.playerId, msg.amount))

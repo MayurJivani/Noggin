@@ -258,8 +258,29 @@ function SoundJoin({ on, setOn }) {
 
 /** The grid, small. This is how the host picks — the big screen just follows. */
 function MiniBoard({ state, send }) {
-  const round = state.board.round
-  const live = state.phase === "board"
+  /*
+    Browsable, not just the round in play.
+
+    The desk is already sent the whole board — it needs it to adopt a resumed
+    game — so paging between rounds costs nothing but a state variable, and a
+    host who wants to check what is coming, or glance back at what a round
+    contained, no longer has to open the builder and lose the desk.
+
+    Only the live round's tiles are clickable. Making the others pickable would
+    be a second way to jump the running order, which is the thing the relay now
+    exists to stop.
+  */
+  const liveIndex = state.roundIndex
+  const all = state.rawBoard?.rounds ?? []
+  const [view, setView] = useState(liveIndex)
+  // Follow the game when it moves on, rather than stranding the host on the
+  // round they were reading.
+  useEffect(() => setView(liveIndex), [liveIndex])
+
+  const viewing = Math.min(Math.max(view, 0), Math.max(all.length - 1, 0))
+  const round = all[viewing] ?? state.board.round
+  const onLive = viewing === liveIndex
+  const live = state.phase === "board" && onLive
   if (!round) return null
 
   const cols = round.categories.length
@@ -269,8 +290,38 @@ function MiniBoard({ state, send }) {
   return (
     <div className="panel flex min-h-0 flex-col">
       <div className="flex items-baseline gap-2 border-b border-edge px-3 py-2">
+        {all.length > 1 && (
+          <button
+            className="text-[0.8rem] text-faint transition-colors hover:text-gold disabled:opacity-25"
+            disabled={viewing === 0}
+            onClick={() => setView(viewing - 1)}
+            title="Previous round"
+          >
+            ◀
+          </button>
+        )}
         <span className="label">{round.name}</span>
-        <span className="ml-auto text-[0.7rem] text-faint">{left} left</span>
+        {all.length > 1 && (
+          <button
+            className="text-[0.8rem] text-faint transition-colors hover:text-gold disabled:opacity-25"
+            disabled={viewing >= all.length - 1}
+            onClick={() => setView(viewing + 1)}
+            title="Next round"
+          >
+            ▶
+          </button>
+        )}
+        {/* Which round the room is actually on, when it is not this one. */}
+        {!onLive && (
+          <button
+            className="rounded border border-live/60 px-1.5 text-[0.6rem] uppercase tracking-wide text-live transition-colors hover:bg-live/10"
+            onClick={() => setView(liveIndex)}
+            title="Back to the round in play"
+          >
+            back to live
+          </button>
+        )}
+        <span className="ml-auto text-[0.7rem] text-faint">{onLive ? `${left} left` : "not in play"}</span>
       </div>
 
       {/*
@@ -346,9 +397,11 @@ function StagePanel({ state, send, now }) {
   useEffect(() => {
     if (phase === "wager") {
       setWagerAmount("")
-      setWagerPlayer(contenders[0]?.id ?? "")
+      const first = contenders[0]?.id ?? ""
+      setWagerPlayer(first)
+      if (first) send("wager:who", { playerId: first })
     }
-  }, [phase, clue?.id])
+  }, [phase, clue?.id, contenders, send])
 
   if (phase === "lobby") {
     return (
@@ -492,7 +545,17 @@ function StagePanel({ state, send, now }) {
       <div className="panel flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6">
         <div className="font-display text-2xl text-live animate-glow">NOGGIN&rsquo; NITRO</div>
         <div className="text-[12px] text-muted">{state.teams ? "Which team found it, and what are they risking?" : "Who found it, and what are they risking?"}</div>
-        <select className="field max-w-xs" value={wagerPlayer} onChange={(e) => setWagerPlayer(e.target.value)}>
+        {/* Tell the room as the host picks, not when the bet is locked — the
+            big screen has a name to put up for the whole wager instead of
+            asking who found it long after everyone knows. */}
+        <select
+          className="field max-w-xs"
+          value={wagerPlayer}
+          onChange={(e) => {
+            setWagerPlayer(e.target.value)
+            if (e.target.value) send("wager:who", { playerId: e.target.value })
+          }}
+        >
           {contenders.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name} — {c.score}
