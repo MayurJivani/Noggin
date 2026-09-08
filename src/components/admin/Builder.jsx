@@ -202,7 +202,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 {[
                   [-1, "✦ Final", board.final?.enabled, "The last clue — everyone wagers, writes, and is turned over one at a time"],
                   [-2, "◎ Survey", board.survey?.enabled, "We asked a hundred people — played last, after everything else"],
-                  [-3, "⚖ Tie-break", !!board.tiebreak?.prompt?.trim(), "Sudden death, if the game ends level"],
+                  [-3, "⚖ Tie-break", (board.tiebreaks ?? []).some((t) => t.prompt?.trim()), "Sudden death, if the game ends level"],
                 ].map(([i, label, on, title]) => (
                   <button
                     key={i}
@@ -893,45 +893,90 @@ function SurveyQuestion({ n, q, live, open, onToggle, onChange, onRemove }) {
 }
 
 function TiebreakEditor({ board, setBoard }) {
-  const tiebreak = board.tiebreak ?? {}
-  const patch = (p) => setBoard({ ...board, tiebreak: { ...tiebreak, ...p } })
-  const written = !!tiebreak.prompt?.trim()
+  /*
+    A list, because a game can need more than one.
+
+    There is a play-off for the last seat in the survey and another for the
+    win, and either can be rerun when nobody takes it. One clue between them
+    meant the second play-off asked a question the room had already heard —
+    and a rerun asked one whose answer had just been on the screen, since
+    nobody-got-it reveals it. Each is used once and then retired.
+  */
+  const list = board.tiebreaks?.length ? board.tiebreaks : [{ prompt: "", media: null, answer: "", answerMedia: null }]
+  const write = (next) => setBoard({ ...board, tiebreaks: next })
+  const patch = (i, p) => write(list.map((t, n) => (n === i ? { ...t, ...p } : t)))
+  const ready = list.filter((t) => t.prompt?.trim()).length
 
   return (
     <div className="mt-5 border-t border-edge pt-4">
       <div className="flex items-baseline gap-2">
-        <span className="label">Tie-break</span>
-        <span className={`text-[10px] ${written ? "text-good" : "text-faint"}`}>{written ? "ready" : "not written"}</span>
+        <span className="label">Tie-breaks</span>
+        <span className={`text-[10px] ${ready ? "text-good" : "text-faint"}`}>
+          {ready ? `${ready} written` : "none written"}
+        </span>
       </div>
       <p className="mt-1 text-[11px] leading-relaxed text-faint">
-        Sudden death, if the final leaves the top two level: the tied sides only, first correct answer wins, nothing scored. Leave it
-        empty and you can still run the buzzer on something you read out — but a tie is a poor moment to be inventing a question.
+        Sudden death: the tied sides only, first correct answer wins, nothing scored. A night can need two — one to settle the last
+        seat in the survey, one to settle the win — and a rerun burns another, so write a spare. Leave them empty and you can still
+        run the buzzer on something you read out, but a tie is a poor moment to be inventing a question.
       </p>
 
-      <div className="mt-3 space-y-3">
-        <label className="block">
-          <div className="label mb-1">Clue</div>
-          <textarea
-            className="field min-h-[72px] resize-y font-display text-[14px] leading-snug"
-            placeholder="Something with one short, unarguable answer"
-            value={tiebreak.prompt ?? ""}
-            onChange={(e) => patch({ prompt: e.target.value })}
-          />
-        </label>
+      <div className="mt-3 space-y-4">
+        {list.map((t, i) => (
+          <div key={i} className="rounded-lg border border-edge p-3">
+            <div className="flex items-baseline gap-2">
+              <span className="label">#{i + 1}</span>
+              <span className={`text-[10px] ${t.prompt?.trim() ? "text-good" : "text-faint"}`}>
+                {t.prompt?.trim() ? "ready" : "not written"}
+              </span>
+              {list.length > 1 && (
+                <button
+                  className="ml-auto text-[0.7rem] text-faint transition-colors hover:text-bad"
+                  onClick={() => write(list.filter((_, n) => n !== i))}
+                >
+                  remove
+                </button>
+              )}
+            </div>
 
-        <MediaField value={tiebreak.media ?? null} onChange={(media) => patch({ media })} label="Clue media" />
+            <label className="mt-2 block">
+              <div className="label mb-1">Clue</div>
+              <textarea
+                className="field min-h-[64px] resize-y font-display text-[14px] leading-snug"
+                placeholder="Something with one short, unarguable answer"
+                value={t.prompt ?? ""}
+                onChange={(e) => patch(i, { prompt: e.target.value })}
+              />
+            </label>
 
-        <label className="block">
-          <div className="label mb-1">Answer</div>
-          <textarea
-            className="field min-h-[48px] resize-y"
-            value={tiebreak.answer ?? ""}
-            onChange={(e) => patch({ answer: e.target.value })}
-          />
-        </label>
+            <div className="mt-2">
+              <MediaField value={t.media ?? null} onChange={(media) => patch(i, { media })} label="Clue media" />
+            </div>
 
-        <MediaField value={tiebreak.answerMedia ?? null} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
+            <label className="mt-2 block">
+              <div className="label mb-1">Answer</div>
+              <textarea
+                className="field min-h-[44px] resize-y"
+                value={t.answer ?? ""}
+                onChange={(e) => patch(i, { answer: e.target.value })}
+              />
+            </label>
+
+            <div className="mt-2">
+              <MediaField value={t.answerMedia ?? null} onChange={(answerMedia) => patch(i, { answerMedia })} label="Reveal media" />
+            </div>
+          </div>
+        ))}
       </div>
+
+      {list.length < 4 && (
+        <button
+          className="btn mt-3 w-full py-1.5 text-[11px]"
+          onClick={() => write([...list, { prompt: "", media: null, answer: "", answerMedia: null }])}
+        >
+          + Another tie-break
+        </button>
+      )}
     </div>
   )
 }

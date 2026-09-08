@@ -66,6 +66,20 @@ export const DEFAULTS = {
    */
   mirrorClue: true,
   /**
+   * Take the clue off the phones the moment somebody buzzes.
+   *
+   * Off by default, because it changes what the game rewards. On, you answer
+   * from memory: buzzing is a commitment made *before* you have the words in
+   * front of you, and the stall-and-read is over. It only touches phones — the
+   * big screen keeps the clue up, because the room has to be able to follow
+   * what is being answered, and hiding it there would punish everybody for one
+   * person's buzz.
+   *
+   * The clue comes back on its own when the buzzer reopens after a miss, since
+   * this keys on somebody actually holding the buzz.
+   */
+  hideOnBuzz: false,
+  /**
    * Several phones sharing one score and one buzz. See the Teams section.
    * Off by default: a party of five plays as five, and turning this on when
    * nobody asked for it would silently merge everyone's scores.
@@ -259,6 +273,27 @@ export function makeTiebreak() {
   return { prompt: "", media: null, answer: "", answerMedia: null }
 }
 
+/**
+ * How many sudden-death clues a board may carry.
+ *
+ * More than one because a game can now need more than one: a play-off for the
+ * last seat in the survey, and another for the win. It was a single clue, which
+ * meant the second play-off asked a question the room had already heard —
+ * and a rerun after nobody got it re-asked one whose answer had just been put
+ * on the screen. Four is enough for both play-offs plus a rerun each.
+ */
+export const MAX_TIEBREAKS = 4
+
+/** The sudden-death clue currently in play, or null if the board ran out. */
+export function tiebreakClue(room) {
+  const list = room.board.tiebreaks ?? []
+  return list[Math.min(room.tiebreakIndex ?? 0, list.length - 1)] ?? null
+}
+
+/** Whether there is a written clue left that the room has not already heard. */
+export const tiebreaksLeft = (room) =>
+  (room.board.tiebreaks ?? []).filter((t, i) => i >= (room.tiebreakIndex ?? 0) && t.prompt?.trim()).length
+
 export function makeBoard() {
   return {
     id: uid("b"),
@@ -270,7 +305,7 @@ export function makeBoard() {
     ],
     final: makeFinal(),
     survey: makeSurvey(),
-    tiebreak: makeTiebreak(),
+    tiebreaks: [makeTiebreak()],
   }
 }
 
@@ -310,12 +345,19 @@ export function normaliseBoard(raw) {
     enabled: !!raw.final?.enabled,
   }
 
-  board.tiebreak = {
-    prompt: str(raw.tiebreak?.prompt, 600),
-    media: media(raw.tiebreak?.media),
-    answer: str(raw.tiebreak?.answer, 300),
-    answerMedia: media(raw.tiebreak?.answerMedia),
-  }
+  /*
+    A list, migrating the single clue older boards carry into the first slot.
+    Every saved board goes through here on load, so nothing written before this
+    is lost — it simply becomes tie-break one.
+  */
+  const rawTiebreaks = Array.isArray(raw.tiebreaks) ? raw.tiebreaks : raw.tiebreak ? [raw.tiebreak] : []
+  board.tiebreaks = rawTiebreaks.slice(0, MAX_TIEBREAKS).map((t) => ({
+    prompt: str(t?.prompt, 600),
+    media: media(t?.media),
+    answer: str(t?.answer, 300),
+    answerMedia: media(t?.answerMedia),
+  }))
+  if (!board.tiebreaks.length) board.tiebreaks = [makeTiebreak()]
 
   const rounds = Array.isArray(raw.rounds) ? raw.rounds.slice(0, 8) : []
   if (!rounds.length) return board
@@ -1457,6 +1499,7 @@ export function resetGame(room) {
   room.winner = null
   room.played = { final: false, survey: false }
   room.qualified = []
+  room.tiebreakIndex = 0
   room.phase = PHASE.LOBBY
   room.roundIndex = 0
   room.active = null
@@ -1981,6 +2024,16 @@ export function tiebreakAgain(room, now = Date.now()) {
   if (room.phase !== PHASE.TIEBREAK) return []
   room.tiebreak.spent = []
   room.tiebreak.round += 1
+  /*
+    A new question, not the same one again.
+
+    When nobody takes a play-off the answer is revealed — that is what
+    `tiebreak-missed` does — so rerunning the same clue would be asking a
+    question the room has just been given the answer to. If the board has run
+    out of written ones this falls back to the last, and `hasClue` tells the
+    desk it is on its own.
+  */
+  retireTiebreakClue(room)
   room.revealed = false
   resetBuzzerState(room)
   room.buzzer.armed = true
@@ -2014,7 +2067,16 @@ export function awardTiebreak(room, unitId) {
  * the cut is recorded in `qualified` rather than by nudging a score, and why a
  * winner is recorded in `winner` rather than by awarding a point.
  */
+/** Move on to the next written clue, if the board has one. */
+function retireTiebreakClue(room) {
+  const list = room.board.tiebreaks ?? []
+  room.tiebreakIndex = Math.min((room.tiebreakIndex ?? 0) + 1, Math.max(list.length - 1, 0))
+}
+
 function takeTiebreak(room, unit) {
+  // Whoever won it, that question is spent — the next play-off needs a fresh
+  // one, and this game can have two.
+  retireTiebreakClue(room)
   if (room.tiebreak.purpose === "cut") {
     if (!room.qualified.includes(unit.id)) room.qualified.push(unit.id)
     record(unit, 0, "tiebreak-through", "Play-off")
@@ -2053,6 +2115,7 @@ export function snapshotRoom(room) {
     */
     played: { final: !!room.played?.final, survey: !!room.played?.survey },
     qualified: [...(room.qualified ?? [])],
+    tiebreakIndex: room.tiebreakIndex ?? 0,
     // Collected before the game, often days before — losing them to a restart
     // would lose the round.
     responses: room.responses ?? [],
@@ -2088,6 +2151,7 @@ export function restoreRoom(code, snapshot) {
   room.winner = typeof snapshot.winner === "string" ? snapshot.winner : null
   room.played = { final: !!snapshot.played?.final, survey: !!snapshot.played?.survey }
   room.qualified = (Array.isArray(snapshot.qualified) ? snapshot.qualified : []).filter((id) => typeof id === "string")
+  room.tiebreakIndex = Math.max(0, num(snapshot.tiebreakIndex, 0))
   room.responses = (Array.isArray(snapshot.responses) ? snapshot.responses : [])
     .slice(0, MAX_RESPONSES)
     .map((r) => ({ q: typeof r?.q === "string" ? r.q : "", text: str(r?.text, 60), at: num(r?.at, 0) }))
@@ -2167,7 +2231,7 @@ export function projectState(room, role, viewerId = null) {
     the same `clue` field means the big screen, the cue cards and the phones all
     draw it with the machinery they already have, under the same redaction.
   */
-  const tb = room.phase === PHASE.TIEBREAK ? room.board.tiebreak : null
+  const tb = room.phase === PHASE.TIEBREAK ? tiebreakClue(room) : null
 
   const showAnswer = privileged || room.revealed
   /*
@@ -2184,13 +2248,19 @@ export function projectState(room, role, viewerId = null) {
     the round. See `projectFinal`.
   */
   const mirrored = privileged || role !== "player" || room.settings.mirrorClue !== false
-  const hidden = !mirrored || (room.phase === PHASE.WAGER && !privileged)
+  /*
+    Withheld while somebody holds the buzz — see `hideOnBuzz`. Enforced here
+    rather than by the phone hiding what it was sent, for the same reason
+    `mirrorClue` is: "hidden" that is one devtools panel away is not hidden.
+  */
+  const buzzedOut = !privileged && role === "player" && !!room.settings.hideOnBuzz && !!room.buzzer.winner
+  const hidden = !mirrored || buzzedOut || (room.phase === PHASE.WAGER && !privileged)
   const clue = tb
     ? {
         id: "tiebreak",
         value: 0,
-        prompt: mirrored ? tb.prompt : "",
-        media: mirrored ? tb.media : null,
+        prompt: hidden ? "" : tb.prompt,
+        media: hidden ? null : tb.media,
         nitro: false,
         answer: showAnswer && mirrored ? tb.answer : null,
         answerMedia: showAnswer && mirrored ? tb.answerMedia : null,
@@ -2262,7 +2332,16 @@ export function projectState(room, role, viewerId = null) {
       The play-off. `tied` is offered whenever the game is over and level, so
       the desk can propose one without every screen recomputing the leaders.
     */
-    tiebreak: room.tiebreak && room.phase === PHASE.TIEBREAK ? { ...room.tiebreak, hasClue: !!room.board.tiebreak?.prompt } : null,
+    tiebreak:
+      room.tiebreak && room.phase === PHASE.TIEBREAK
+        ? {
+            ...room.tiebreak,
+            hasClue: !!tiebreakClue(room)?.prompt?.trim(),
+            /** Which of the board's sudden-death clues is up, and how many are left. */
+            clueIndex: room.tiebreakIndex ?? 0,
+            spare: Math.max(0, tiebreaksLeft(room) - 1),
+          }
+        : null,
     /*
       A tie is only worth breaking once the scores are final.
 

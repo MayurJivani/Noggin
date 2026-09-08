@@ -291,7 +291,17 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
     send the words at all, so `clue.prompt` is simply empty. This only decides
     whether to draw the panel around what did arrive.
   */
-  const showClue = clue && phase !== "board" && !!(clue.prompt || clue.media)
+  /*
+    Also drawn when the words have been *taken away* rather than never sent.
+
+    With `hideOnBuzz` on, the clue arrives empty the moment somebody buzzes, so
+    the panel vanished mid-question — category, value and all. A block of the
+    page disappearing under your thumb reads as a phone that has dropped the
+    room, and the first thing anyone does about that is press the button again.
+    Better to keep the frame and say what happened inside it.
+  */
+  const clueHidden = !!state.settings?.hideOnBuzz && !!buzzer.winner && phase === "clue"
+  const showClue = clue && phase !== "board" && (!!(clue.prompt || clue.media) || clueHidden)
 
   const iHoldIt = buzzer.winner === me?.id
   const spent = buzzer.spent.includes(me?.id)
@@ -473,7 +483,15 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
           <div className="label mb-1">
             {clue.category} · {state.stake}
           </div>
-          {clue.prompt && <div className="font-display text-[15px] leading-snug text-ink">{clue.prompt}</div>}
+          {clue.prompt ? (
+            <div className="font-display text-[15px] leading-snug text-ink">{clue.prompt}</div>
+          ) : (
+            clueHidden && (
+              <div className="font-display text-[14px] leading-snug text-muted">
+                {iHoldIt ? "Answer from memory — it's still on the big screen." : "Hidden while someone answers."}
+              </div>
+            )
+          )}
           {clue.media?.kind === "image" && <img src={resolveMediaUrl(clue.media.url)} alt="" className="mt-2 max-h-40 w-full rounded-lg object-contain" />}
           {clue.media?.kind === "audio" && <audio src={resolveMediaUrl(clue.media.url)} controls className="mt-2 w-full" preload="none" />}
           {/* Not autoplayed. Everyone is looking at the TV; a dozen phones each

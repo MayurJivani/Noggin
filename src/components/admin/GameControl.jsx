@@ -180,6 +180,21 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
                   : "Never sent to them — and their buzzer is bigger for it."
               }
             />
+            {/* Only worth offering when there is a clue on the phones to take
+                away. With mirroring off it would toggle nothing. */}
+            {state.settings.mirrorClue !== false && (
+              <Toggle
+                className="mt-2"
+                on={!!state.settings.hideOnBuzz}
+                onClick={() => send("settings:set", { settings: { hideOnBuzz: !state.settings.hideOnBuzz } })}
+                label={state.settings.hideOnBuzz ? "Hidden once buzzed" : "Stays up when buzzed"}
+                hint={
+                  state.settings.hideOnBuzz
+                    ? "Buzz and the words go — you answer from memory. The big screen keeps it."
+                    : "Whoever buzzed can keep reading it while they think."
+                }
+              />
+            )}
           </Drawer>
 
           <Drawer title="This game">
@@ -706,13 +721,24 @@ function TiebreakControls({ state, send }) {
             </>
           ) : (
             <p className="text-center text-[13px] text-muted">
-              No tie-break clue was written, so read one out — then arm the buzzer. Write one on the{" "}
-              <span className="text-ink">✦ Final</span> tab to have it here next time.
+              {tb.clueIndex > 0
+                ? "The written tie-breaks are used up — read one out, then arm the buzzer. A night can need two, plus a rerun."
+                : "No tie-break clue was written, so read one out — then arm the buzzer."}{" "}
+              Write them on the <span className="text-ink">⚖ Tie-break</span> tab to have them here next time.
             </p>
           )}
 
           {tb.spent.length > 0 && (
             <div className="mt-3 text-center text-[11px] text-faint">out: {tb.spent.map(name).join(", ")}</div>
+          )}
+
+          {/* Whether "run it again" has a fresh question behind it. A rerun on
+              the same clue would be asking one whose answer is already out. */}
+          {tb.hasClue && (
+            <div className="mt-2 text-center text-[10px] text-faint">
+              Tie-break #{tb.clueIndex + 1}
+              {tb.spare > 0 ? ` · ${tb.spare} spare` : " · no spare written"}
+            </div>
           )}
         </div>
       </div>

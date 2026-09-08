@@ -1129,7 +1129,7 @@ test("correction never applies to the sound-check or an early press", () => {
 /** A finished game with `scores` handed out, in player order. */
 function ended(scores, settings = {}) {
   const room = setup(scores.length, settings)
-  room.board.tiebreak = { prompt: "Name it", media: null, answer: "That", answerMedia: null }
+  room.board.tiebreaks = [{ prompt: "Name it", media: null, answer: "That", answerMedia: null }]
   scores.forEach((s, i) => (room.players.get(`p${i}`).score = s))
   room.phase = G.PHASE.ENDED
   return room
@@ -1242,7 +1242,7 @@ test("teams tie as teams", () => {
   const { room, a, b } = teamed(4)
   a.score = 800
   b.score = 800
-  room.board.tiebreak = { prompt: "?", media: null, answer: "!", answerMedia: null }
+  room.board.tiebreaks = [{ prompt: "?", media: null, answer: "!", answerMedia: null }]
   room.phase = G.PHASE.ENDED
 
   assert.deepEqual(G.leaders(room).map((u) => u.id).sort(), [a.id, b.id].sort())
@@ -1923,4 +1923,114 @@ test("naming a finder does nothing outside a wager", () => {
   const room = setup(2)
   G.selectClue(room, 0, 1) // an ordinary clue
   assert.deepEqual(G.setWagerWho(room, "p0"), [])
+})
+
+test("two play-offs in one night get two different questions", () => {
+  const room = surveyed(3)
+  room.board.tiebreaks = [
+    { prompt: "First question", media: null, answer: "one", answerMedia: null },
+    { prompt: "Second question", media: null, answer: "two", answerMedia: null },
+  ]
+  // Level for the last survey seat.
+  room.players.get("p0").score = 500
+  room.players.get("p1").score = 200
+  room.players.get("p2").score = 200
+
+  G.openTiebreak(room)
+  assert.equal(G.projectState(room, "host").clue.prompt, "First question")
+  G.awardTiebreak(room, "p1")
+
+  // The survey, then level on its points, then the second play-off.
+  G.openSurvey(room)
+  G.closeSurvey(room)
+  assert.deepEqual(G.projectState(room, "host").tied.sort(), ["p0", "p1"])
+
+  G.openTiebreak(room)
+  assert.equal(
+    G.projectState(room, "host").clue.prompt,
+    "Second question",
+    "the room has already heard the first one",
+  )
+})
+
+test("a rerun asks a new question, because the answer to the last one is out", () => {
+  const room = ended([500, 500])
+  room.board.tiebreaks = [
+    { prompt: "First question", media: null, answer: "one", answerMedia: null },
+    { prompt: "Second question", media: null, answer: "two", answerMedia: null },
+  ]
+  G.openTiebreak(room)
+  G.armBuzzer(room, 0)
+
+  // Both miss it, which reveals the answer.
+  G.buzz(room, "p0", 10)
+  G.judgeTiebreak(room, false)
+  G.armBuzzer(room, 100)
+  G.buzz(room, "p1", 110)
+  assert.deepEqual(kinds(G.judgeTiebreak(room, false)), ["tiebreak-missed"])
+  assert.equal(room.revealed, true, "the answer went up")
+
+  G.tiebreakAgain(room)
+  assert.equal(room.revealed, false)
+  assert.equal(G.projectState(room, "host").clue.prompt, "Second question")
+})
+
+test("running out of written tie-breaks is reported, not faked", () => {
+  const room = ended([500, 500])
+  room.board.tiebreaks = [{ prompt: "Only one", media: null, answer: "x", answerMedia: null }]
+  G.openTiebreak(room)
+  assert.equal(G.projectState(room, "host").tiebreak.hasClue, true)
+  assert.equal(G.projectState(room, "host").tiebreak.spare, 0, "and the desk is told there is no spare")
+
+  G.tiebreakAgain(room)
+  // Nothing new to draw: it stays on the last rather than serving a blank.
+  assert.equal(G.projectState(room, "host").clue.prompt, "Only one")
+  assert.equal(G.tiebreaksLeft(room), 1)
+})
+
+test("a board written before tie-breaks were a list keeps its clue", () => {
+  const legacy = { id: "b", title: "Old", rounds: [], tiebreak: { prompt: "Written long ago", answer: "still here" } }
+  const board = G.normaliseBoard(legacy)
+  assert.equal(board.tiebreaks.length, 1)
+  assert.equal(board.tiebreaks[0].prompt, "Written long ago")
+  assert.equal(board.tiebreaks[0].answer, "still here")
+})
+
+test("hideOnBuzz takes the clue off the phones, and only the phones", () => {
+  const room = setup(2, { hideOnBuzz: true })
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+
+  // Before anyone presses, everybody can read it.
+  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
+
+  G.buzz(room, "p1", 10)
+  assert.equal(room.buzzer.winner, "p1")
+
+  // Withheld, not merely hidden — the words are not on the wire at all.
+  const buzzed = G.projectState(room, "player", "p1")
+  assert.equal(buzzed.clue.prompt, "", "whoever buzzed answers from memory")
+  assert.equal(buzzed.clue.media, null)
+  assert.ok(!JSON.stringify(buzzed).includes("prompt 0-0"), "and it is nowhere else in the projection")
+
+  // Everyone else loses it too: they buzzed on the same question and would
+  // otherwise be reading it while the answer is given.
+  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "")
+
+  // The room and the people driving keep it.
+  assert.equal(G.projectState(room, "display").clue.prompt, "prompt 0-0", "the big screen still shows it")
+  assert.equal(G.projectState(room, "host").clue.prompt, "prompt 0-0")
+
+  // A miss reopens the buzzer, and the words come back on their own.
+  G.judge(room, false)
+  assert.equal(room.buzzer.winner, null)
+  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0", "back for the rebound")
+})
+
+test("hideOnBuzz is off unless asked for", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 10)
+  assert.equal(G.projectState(room, "player", "p1").clue.prompt, "prompt 0-0", "the default keeps it up")
 })

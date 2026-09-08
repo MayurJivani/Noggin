@@ -134,6 +134,18 @@ What exists, and what is deliberately left for later.
   self-reinforcing: the only round that could have got them back was the one
   they were barred from. The nitro uses the same rule, with the round's top tile
   as an additional floor.
+- **A tie-break is a list, not a clue.** A night can need two play-offs, and a
+  rerun burns another — so one written clue meant the second play-off asked a
+  question the room had already heard, and a rerun asked one whose answer had
+  just been put on the screen (nobody-got-it reveals it). Up to four, used once
+  each and retired; boards written before this keep their single clue as the
+  first. When they run out the desk says so rather than silently repeating one.
+- **Hide the clue once buzzed** — an optional rule that takes the words off the
+  phones the moment somebody presses, so buzzing is a commitment made before you
+  have the question in front of you and the stall-and-read is over. Withheld in
+  `projectState`, not hidden by the phone. The big screen keeps it, because the
+  room has to follow what is being answered; and it comes back on its own when
+  the buzzer reopens after a miss.
 - **Two play-offs, for two different things.** The survey is a two-hander, so
   the final is also a cut — and a tie at the *boundary* has to be settled before
   the round can start, because a two-handed round cannot begin until it knows
