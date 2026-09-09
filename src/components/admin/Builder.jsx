@@ -17,6 +17,7 @@ import {
   patchRound,
   resizeRound,
   scatterNitro,
+  tiebreakRole,
   tiebreaksOf,
 } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
@@ -933,12 +934,16 @@ function TiebreakEditor({ board, setBoard }) {
           <div key={i} className="rounded-lg border border-edge p-3">
             <div className="flex items-baseline gap-2">
               <span className="label">#{i + 1}</span>
-              <span className={`text-[10px] ${t.prompt?.trim() ? "text-good" : "text-faint"}`}>
+              {/* What this one is for, rather than merely which number it is.
+                  They are drawn in order as they are needed, so the answer
+                  depends on whether a survey follows the final. */}
+              <span className="text-[10px] text-muted">{tiebreakRole(board, i)}</span>
+              <span className={`ml-auto text-[10px] ${t.prompt?.trim() ? "text-good" : "text-faint"}`}>
                 {t.prompt?.trim() ? "ready" : "not written"}
               </span>
               {list.length > 1 && (
                 <button
-                  className="ml-auto text-[0.7rem] text-faint transition-colors hover:text-bad"
+                  className="text-[0.7rem] text-faint transition-colors hover:text-bad"
                   onClick={() => write(list.filter((_, n) => n !== i))}
                 >
                   remove

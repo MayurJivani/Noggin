@@ -2077,3 +2077,21 @@ test("a board still carrying the old single tie-break shows it, rather than an e
   // And the list wins once it exists.
   assert.equal(tiebreaksOf({ tiebreaks: [{ prompt: "a" }, { prompt: "b" }], tiebreak: { prompt: "old" } }).length, 2)
 })
+
+test("a tie-break slot is labelled by what it is for, not just its number", async () => {
+  const { tiebreakRole } = await import("../src/lib/board.js")
+
+  // With a survey there are two play-offs, and the slots are drawn in order.
+  const withSurvey = { survey: { enabled: true } }
+  assert.match(tiebreakRole(withSurvey, 0), /after the final.*seat in the survey/)
+  assert.match(tiebreakRole(withSurvey, 1), /after the survey.*for the win/)
+  assert.match(tiebreakRole(withSurvey, 2), /spare/)
+
+  // Without one there is only ever the play-off for the win.
+  const noSurvey = { survey: { enabled: false } }
+  assert.match(tiebreakRole(noSurvey, 0), /after the final.*for the win/)
+  assert.match(tiebreakRole(noSurvey, 1), /spare/)
+
+  // Past the named ones everything is a spare rather than undefined.
+  assert.match(tiebreakRole(withSurvey, 9), /spare/)
+})

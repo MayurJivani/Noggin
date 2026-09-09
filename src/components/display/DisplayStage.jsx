@@ -390,6 +390,36 @@ function Lobby({ code, codeHidden, broadcasting, players, teams, title, check })
           <div className="font-value tabular-nums text-gold" style={{ fontSize: "max(18px, calc(var(--stage) * 3.2))" }}>
             {heard} / {players.length}
           </div>
+
+          {/*
+            Who got there first, on the screen everyone is already looking at.
+
+            A sound check is a room activity — everybody presses at once and
+            then looks up — and the answer to "who was quickest?" was only ever
+            on the host's laptop. The order is the relay's, computed with the
+            same rule that will judge the real race, so the rehearsal predicts
+            the game rather than merely proving the buttons work.
+          */}
+          {check.order?.length > 0 && (
+            <div className="mt-[1.2vmin] flex flex-wrap justify-center gap-[1vmin]">
+              {check.order.map((r) => {
+                const who = players.find((p) => p.id === r.id)
+                if (!who) return null
+                return (
+                  <span
+                    key={r.id}
+                    className={`rounded-full border px-[1.6vmin] py-[0.5vmin] font-display animate-tile-in ${
+                      r.place === 1 ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"
+                    }`}
+                    style={{ fontSize: "max(10px, calc(var(--stage) * 1.5))", animationDelay: `${(r.place - 1) * 90}ms` }}
+                  >
+                    {r.place}. {who.name}
+                    <span className="ml-[0.8vmin] tabular-nums text-faint">{r.place === 1 ? "first" : `+${r.behind}ms`}</span>
+                  </span>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

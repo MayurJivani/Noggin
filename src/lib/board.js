@@ -71,6 +71,31 @@ export const makeTiebreak = () => ({ prompt: "", media: null, answer: "", answer
  * question already written invisible and offered an empty box in its place,
  * which looks exactly like being allowed only one.
  */
+/**
+ * What each tie-break slot is actually for.
+ *
+ * They are drawn in order as they are needed rather than assigned to a moment,
+ * so what #1 is *for* depends on the board. With a survey there are two
+ * play-offs — one to settle the last seat before it, one to settle the win
+ * after — and the first slot goes to whichever happens first. Without a survey
+ * there is only ever the one, and everything past it is a spare.
+ *
+ * Naming them mattered enough to compute: "#1, #2, #3" told a host nothing
+ * about which question the room would hear when.
+ */
+export function tiebreakRoles(board) {
+  const survey = !!board?.survey?.enabled
+  return survey
+    ? ["after the final — for the last seat in the survey", "after the survey — for the win", "spare, for a rerun"]
+    : ["after the final — for the win", "spare, for a rerun"]
+}
+
+/** The label for slot `i`, falling back to "spare" past the named ones. */
+export const tiebreakRole = (board, i) => {
+  const roles = tiebreakRoles(board)
+  return roles[Math.min(i, roles.length - 1)]
+}
+
 export function tiebreaksOf(board) {
   if (Array.isArray(board?.tiebreaks) && board.tiebreaks.length) return board.tiebreaks
   const legacy = board?.tiebreak
