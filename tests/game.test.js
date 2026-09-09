@@ -2034,3 +2034,46 @@ test("hideOnBuzz is off unless asked for", () => {
   G.buzz(room, "p1", 10)
   assert.equal(G.projectState(room, "player", "p1").clue.prompt, "prompt 0-0", "the default keeps it up")
 })
+
+/**
+ * The builder works on a local copy of a board and renders before the room's
+ * first snapshot arrives, so `src/lib/board.js` keeps its own copy of the
+ * shapes. Two copies drift, and this one has twice: settings added on the
+ * relay went missing from the builder's defaults, and tie-breaks became a list
+ * on one side and stayed a single clue on the other — which showed up as being
+ * allowed only one tie-break question, with the one already written invisible.
+ */
+test("the builder's mirror of the rules matches the relay's", async () => {
+  const board = await import("../src/lib/board.js")
+  assert.deepEqual(
+    Object.keys(board.DEFAULT_SETTINGS).sort(),
+    Object.keys(G.DEFAULTS).sort(),
+    "a setting the builder does not know about renders as an uncontrolled input",
+  )
+})
+
+test("the builder's board shape matches the relay's", async () => {
+  const board = await import("../src/lib/board.js")
+  const mine = board.makeBoard()
+  const theirs = G.makeBoard()
+
+  // `final` is added by the relay's normaliser rather than its constructor, so
+  // compare what both sides actually build.
+  const keys = (o) => Object.keys(o).sort()
+  assert.deepEqual(keys(mine).filter((k) => k !== "final"), keys(theirs).filter((k) => k !== "final"))
+  assert.ok(Array.isArray(mine.tiebreaks), "tie-breaks are a list on both sides")
+  assert.equal(board.MAX_TIEBREAKS, G.MAX_TIEBREAKS)
+})
+
+test("a board still carrying the old single tie-break shows it, rather than an empty box", async () => {
+  const { tiebreaksOf } = await import("../src/lib/board.js")
+  const legacy = { tiebreak: { prompt: "Written before this was a list", answer: "still here" } }
+  assert.deepEqual(tiebreaksOf(legacy), [legacy.tiebreak], "the question already written is what you see")
+
+  // A new board, and one whose legacy slot was never filled, both start with a
+  // single empty slot to type into.
+  assert.equal(tiebreaksOf({}).length, 1)
+  assert.equal(tiebreaksOf({ tiebreak: { prompt: "", answer: "" } })[0].prompt, "")
+  // And the list wins once it exists.
+  assert.equal(tiebreaksOf({ tiebreaks: [{ prompt: "a" }, { prompt: "b" }], tiebreak: { prompt: "old" } }).length, 2)
+})

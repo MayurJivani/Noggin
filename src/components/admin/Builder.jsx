@@ -9,6 +9,7 @@ import {
   makeCategory,
   makeRound,
   MAX_SURVEY_QUESTIONS,
+  MAX_TIEBREAKS,
   makeSurveyAnswer,
   makeSurveyQuestion,
   patchCategory,
@@ -16,6 +17,7 @@ import {
   patchRound,
   resizeRound,
   scatterNitro,
+  tiebreaksOf,
 } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
 import { surveyUrl } from "../../lib/net"
@@ -202,7 +204,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 {[
                   [-1, "✦ Final", board.final?.enabled, "The last clue — everyone wagers, writes, and is turned over one at a time"],
                   [-2, "◎ Survey", board.survey?.enabled, "We asked a hundred people — played last, after everything else"],
-                  [-3, "⚖ Tie-break", (board.tiebreaks ?? []).some((t) => t.prompt?.trim()), "Sudden death, if the game ends level"],
+                  [-3, "⚖ Tie-break", tiebreaksOf(board).some((t) => t.prompt?.trim()), "Sudden death, if the game ends level"],
                 ].map(([i, label, on, title]) => (
                   <button
                     key={i}
@@ -902,8 +904,13 @@ function TiebreakEditor({ board, setBoard }) {
     and a rerun asked one whose answer had just been on the screen, since
     nobody-got-it reveals it. Each is used once and then retired.
   */
-  const list = board.tiebreaks?.length ? board.tiebreaks : [{ prompt: "", media: null, answer: "", answerMedia: null }]
-  const write = (next) => setBoard({ ...board, tiebreaks: next })
+  const list = tiebreaksOf(board)
+  // Writing drops the legacy singular key as well, so a board only carries one
+  // shape once it has been touched and the two cannot drift apart again.
+  const write = (next) => {
+    const { tiebreak, ...rest } = board
+    setBoard({ ...rest, tiebreaks: next })
+  }
   const patch = (i, p) => write(list.map((t, n) => (n === i ? { ...t, ...p } : t)))
   const ready = list.filter((t) => t.prompt?.trim()).length
 
@@ -969,7 +976,7 @@ function TiebreakEditor({ board, setBoard }) {
         ))}
       </div>
 
-      {list.length < 4 && (
+      {list.length < MAX_TIEBREAKS && (
         <button
           className="btn mt-3 w-full py-1.5 text-[11px]"
           onClick={() => write([...list, { prompt: "", media: null, answer: "", answerMedia: null }])}

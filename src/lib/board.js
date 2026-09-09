@@ -24,7 +24,9 @@ export const DEFAULT_SETTINGS = {
   penaltyForWrong: true,
   teams: false,
   mirrorClue: true,
+  hideOnBuzz: false,
   pingCorrection: false,
+  streamer: false,
 }
 
 export const makeClue = (value = 200) => ({
@@ -56,7 +58,25 @@ export const makeSurveyAnswer = () => ({ text: "", points: 0 })
 export const makeSurveyQuestion = () => ({ id: uid("sq"), category: "", prompt: "", answers: [] })
 export const makeSurvey = () => ({ enabled: false, collecting: true, questions: [makeSurveyQuestion()] })
 
+export const MAX_TIEBREAKS = 4
 export const makeTiebreak = () => ({ prompt: "", media: null, answer: "", answerMedia: null })
+
+/**
+ * A board's tie-breaks, adopting the single clue older boards carry.
+ *
+ * The relay migrates `tiebreak` into `tiebreaks[0]` on the way in, but a board
+ * being edited has not been near the relay: the builder works on a local copy
+ * out of `localStorage`, so a board written before tie-breaks were a list
+ * arrived here still shaped the old way. Reading only the new key made the
+ * question already written invisible and offered an empty box in its place,
+ * which looks exactly like being allowed only one.
+ */
+export function tiebreaksOf(board) {
+  if (Array.isArray(board?.tiebreaks) && board.tiebreaks.length) return board.tiebreaks
+  const legacy = board?.tiebreak
+  if (legacy?.prompt?.trim() || legacy?.answer?.trim()) return [legacy]
+  return [makeTiebreak()]
+}
 
 export const makeBoard = () => ({
   id: uid("b"),
@@ -64,7 +84,7 @@ export const makeBoard = () => ({
   updatedAt: Date.now(),
   rounds: [makeRound("Round 1", DEFAULT_VALUES), makeRound("Round 2", DEFAULT_VALUES.map((v) => v * 2))],
   survey: makeSurvey(),
-  tiebreak: makeTiebreak(),
+  tiebreaks: [makeTiebreak()],
 })
 
 /** Re-price a round's tiles after its value ladder changes. */
