@@ -1,6 +1,5 @@
 /**
- * Vendored from Knock — ../Knock, commit c1cae24 (plus one uncommitted change
- * making the preamble threshold configurable).
+ * Vendored from Knock — ../Knock, commit 8592cc6.
  *
  * A copy rather than a dependency, and not by preference: `knock-audio` is not
  * published to npm, and a `file:../Knock` dependency cannot survive the Docker
