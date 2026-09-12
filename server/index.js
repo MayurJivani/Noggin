@@ -18,7 +18,7 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync } 
 import { networkInterfaces } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { WebSocketServer } from "ws"
+import { WebSocket, WebSocketServer } from "ws"
 
 import * as G from "./game.js"
 import { Nonces, parse as parseKnock } from "./knock.js"
@@ -1109,7 +1109,18 @@ wss.on("connection", (ws, req) => {
 
     if (meta.role === "player" && meta.playerId) {
       const player = room.players.get(meta.playerId)
-      if (player) {
+      /*
+        Only if this socket is still the one sitting in the seat.
+
+        A reload opens the new connection *before* the old one reports itself
+        closed, so this handler runs after the player is already back. Marking
+        them disconnected then was bad enough — the roster showed them away and
+        the grace timer queued their deletion — but the worse case was a phone
+        with no stored id: `findSeat` only adopts a seat nobody is sitting in,
+        the old seat still looked connected, so the rejoin built a *second*
+        seat and the duplicate-name rule christened it "Alice 2".
+      */
+      if (player && player.socket === ws) {
         // Hold the seat warm. A phone that locks its screen or blips off wifi
         // must come back to the same name and score, not a fresh zero.
         player.connected = false
@@ -1206,6 +1217,9 @@ async function handleJoin(ws, meta, msg, req) {
       seat.connected = true
       seat.name = name || seat.name
       meta.playerId = seat.id
+      // Whose socket this seat now belongs to. See the close handler: a reload
+      // opens the new connection before the old one reports itself shut.
+      seat.socket = ws
     } else {
       // Two people really are called Alice. Distinguishing them beats handing
       // the second one a seat with the first one's score on it.
@@ -1217,6 +1231,7 @@ async function handleJoin(ws, meta, msg, req) {
       const id = `p_${Math.random().toString(36).slice(2, 10)}`
       const player = G.makePlayer(id, name)
       player.lifelines = { ...room.settings.lifelines }
+      player.socket = ws
       room.players.set(id, player)
       meta.playerId = id
       // Somewhere to sit. A phone arriving on team night with no side can't
@@ -1253,8 +1268,22 @@ const nameTaken = (room, name) => [...room.players.values()].some((p) => sameNam
 function findSeat(room, playerId, name) {
   const byId = playerId && room.players.get(String(playerId))
   if (byId) return byId
-  return [...room.players.values()].find((p) => !p.connected && sameName(p.name, name)) ?? null
+  return [...room.players.values()].find((p) => !occupied(p) && sameName(p.name, name)) ?? null
 }
+
+/**
+ * Whether somebody is genuinely sitting in this seat right now.
+ *
+ * `connected` alone is not the question. A reload opens the new socket before
+ * the old one's close event fires, so for that moment the flag still says yes
+ * while the socket underneath it is already shut — and a phone with no stored
+ * id (a private tab, or storage the browser refused to write) was told its own
+ * seat was taken, given a new one, and renamed "Alice 2" beside itself.
+ *
+ * Asking the socket is the honest test: a seat whose connection has gone is
+ * empty whatever the bookkeeping says.
+ */
+const occupied = (p) => p.connected && !!p.socket && p.socket.readyState === WebSocket.OPEN
 
 /**
  * What each command is called, when someone else has to read about it.

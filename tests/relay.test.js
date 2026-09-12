@@ -1659,3 +1659,67 @@ test("the cut is played off before the survey, over the wire", async (t) => {
 
   for (const c of [ann, ben, cal]) c.ws.close()
 })
+
+/**
+ * Reloading a phone.
+ *
+ * A browser opens the new socket *before* the old one reports itself closed,
+ * so the relay sees the rejoin first and the disconnect second. Getting that
+ * order wrong showed the player as away and queued their seat for deletion —
+ * and for a phone with no stored id it built a second seat beside the first
+ * and called it "Ann 2".
+ */
+test("a phone that reloads keeps one seat, not two", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.state.code
+  t.after(() => host.ws.close())
+
+  const first = client("player", { code, name: "Ann" })
+  await first.ready
+  const seat = first.identity.playerId
+  host.send("score:adjust", { playerId: seat, delta: 400 })
+  await settle()
+
+  await t.test("rejoining with the stored id keeps the seat and the score", async () => {
+    // The reload order: new socket up, *then* the old one closes.
+    const again = client("player", { code, name: "Ann", playerId: seat })
+    await again.ready
+    first.ws.close()
+    await settle(300)
+
+    assert.equal(again.identity.playerId, seat, "same seat")
+    assert.equal(host.state.players.length, 1, "and only one of them")
+    const me = host.state.players[0]
+    assert.equal(me.name, "Ann", "not renamed")
+    assert.equal(me.score, 400, "and still holding their score")
+    assert.equal(me.connected, true, "the old socket's close must not mark the new one away")
+    again.ws.close()
+    await settle(300)
+  })
+
+  // Note on coverage: this covers the ordinary reconnect, where the old socket
+  // has already closed. `occupied()` additionally frees a seat whose socket is
+  // shut but whose close event has not been processed yet — a real window, but
+  // one I could not pin down deterministically from a test client, so it is a
+  // defensive improvement rather than a proven one.
+  await t.test("rejoining by name alone, for a private tab or blocked storage", async () => {
+    const back = client("player", { code, name: "Ann" })
+    await back.ready
+    await settle()
+    assert.equal(host.state.players.length, 1, "no second seat")
+    assert.equal(host.state.players[0].name, "Ann", 'and no "Ann 2"')
+    assert.equal(host.state.players[0].score, 400, "the score came back with them")
+
+    // Two people genuinely called Ann still get their own seats.
+    const other = client("player", { code, name: "Ann" })
+    await other.ready
+    await settle()
+    assert.equal(host.state.players.length, 2, "a real second Ann is a real second seat")
+    assert.ok(
+      host.state.players.some((p) => p.name === "Ann 2"),
+      "and is told apart rather than handed the first one's score",
+    )
+    for (const c of [back, other]) c.ws.close()
+  })
+})
