@@ -271,6 +271,15 @@ function SoundJoin({ on, setOn }) {
   )
 }
 
+/**
+ * A typed wager, held inside what the side is actually allowed to stake.
+ *
+ * The relay enforces this too — `maxWager` is the authority — but silently
+ * clamping a number the host typed is worse than showing them the one that
+ * will be used. Blank stays blank so the field can be cleared.
+ */
+const clampWager = (raw, max) => Math.max(0, Math.min(Math.floor(Number(raw) || 0), max))
+
 /** The grid, small. This is how the host picks — the big screen just follows. */
 function MiniBoard({ state, send }) {
   /*
@@ -411,12 +420,28 @@ function StagePanel({ state, send, now }) {
 
   useEffect(() => {
     if (phase === "wager") {
+      /*
+        Nobody preselected, deliberately.
+
+        `contenders` is the scoreboard, so the first entry is whoever is
+        *winning* — which has nothing to do with who found the tile. Defaulting
+        to them put the leader's name on the big screen as the finder before the
+        host had looked at the room, and a default that is wrong most of the
+        time is worse than no default: it turns a decision into a correction.
+      */
       setWagerAmount("")
-      const first = contenders[0]?.id ?? ""
-      setWagerPlayer(first)
-      if (first) send("wager:who", { playerId: first })
+      setWagerPlayer("")
     }
-  }, [phase, clue?.id, contenders, send])
+    /*
+      Only the phase and the clue, deliberately.
+
+      `contenders` is rebuilt from `state` on every broadcast — and the relay
+      broadcasts on a lag ping every few seconds — so listing it here re-ran
+      this effect and wiped the host's choice moments after they made it. The
+      symptom was a wager that could not be typed: the amount field stays shut
+      until somebody is picked, and the pick kept undoing itself.
+    */
+  }, [phase, clue?.id])
 
   if (phase === "lobby") {
     return (
@@ -563,34 +588,72 @@ function StagePanel({ state, send, now }) {
         {/* Tell the room as the host picks, not when the bet is locked — the
             big screen has a name to put up for the whole wager instead of
             asking who found it long after everyone knows. */}
+        {/* By name, not by score. The host is hunting for one person in a
+            list; ordering it by the standings makes that harder and puts the
+            leader under the cursor, which is how the wrong name got picked. */}
         <select
           className="field max-w-xs"
           value={wagerPlayer}
           onChange={(e) => {
             setWagerPlayer(e.target.value)
+            // Tell the room as the host picks, so the big screen has a name up
+            // for the whole wager instead of asking who found it.
             if (e.target.value) send("wager:who", { playerId: e.target.value })
           }}
         >
-          {contenders.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} — {c.score}
-            </option>
-          ))}
+          <option value="">{state.teams ? "Which team found it?" : "Who found it?"}</option>
+          {[...contenders]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} — {c.score}
+              </option>
+            ))}
         </select>
+
+        {/*
+          The amount, once there is somebody to bet it. Disabled until then
+          because the cap depends on whose score it is, so a number typed first
+          would be measured against the wrong ceiling.
+        */}
         <div className="flex w-full max-w-xs items-center gap-2">
           <input
             type="number"
             className="field font-value text-lg"
-            placeholder={`up to ${max}`}
+            min={0}
+            max={max}
+            disabled={!wagerPlayer}
+            placeholder={wagerPlayer ? `up to ${max}` : "pick who found it first"}
             value={wagerAmount}
             onChange={(e) => setWagerAmount(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && wagerPlayer && send("wager:set", { playerId: wagerPlayer, amount: +wagerAmount || 0 })}
+            onBlur={() => wagerAmount !== "" && setWagerAmount(String(clampWager(wagerAmount, max)))}
+            onKeyDown={(e) => e.key === "Enter" && wagerPlayer && send("wager:set", { playerId: wagerPlayer, amount: clampWager(wagerAmount, max) })}
           />
-          <button className="btn" onClick={() => setWagerAmount(String(max))}>
-            max
-          </button>
         </div>
-        <button className="btn btn-gold px-6" disabled={!wagerPlayer} onClick={() => send("wager:set", { playerId: wagerPlayer, amount: +wagerAmount || 0 })}>
+
+        {/* The three amounts a host actually reaches for, so the common case is
+            one tap rather than typing a number with a microphone in hand. */}
+        <div className="flex flex-wrap justify-center gap-1.5">
+          {[...new Set([state.stake, 1000, max])]
+            .filter((v) => v > 0 && v <= max)
+            .sort((a, b) => a - b)
+            .map((v) => (
+              <button
+                key={v}
+                className={`btn px-3 py-1 text-[12px] ${Number(wagerAmount) === v ? "btn-gold" : ""}`}
+                disabled={!wagerPlayer}
+                onClick={() => setWagerAmount(String(v))}
+              >
+                {v === max ? `max ${v}` : v === state.stake ? `tile ${v}` : v}
+              </button>
+            ))}
+        </div>
+
+        <button
+          className="btn btn-gold px-6"
+          disabled={!wagerPlayer || wagerAmount === ""}
+          onClick={() => send("wager:set", { playerId: wagerPlayer, amount: clampWager(wagerAmount, max) })}
+        >
           Lock it in
         </button>
         <button className="text-[11px] text-faint hover:text-muted" onClick={() => send("clue:close")}>
