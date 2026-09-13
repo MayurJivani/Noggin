@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
-import { getRelayOrigin, resolveMediaUrl } from "../../lib/mediaUrl"
+import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
-import { listen } from "../../lib/knock/knock"
+import { listenForRoom } from "../../lib/knockJoin"
 import { readJson, removeStore, writeJson } from "../../lib/storage"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
@@ -137,28 +137,16 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
     setSoundMsg(null)
     setListening(true)
     try {
-      const rx = await listen(async (bytes) => {
-        try {
-          const res = await fetch(`${getRelayOrigin()}/api/knock`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ bytes: Array.from(bytes) }),
-          }).then((r) => r.json())
-
-          if (res.code) {
-            setCode(res.code)
-            setSoundMsg(`Room ${res.code} found — put your name in.`)
-            stopListening()
-          } else if (res.error) {
-            // A stale nonce is the expected failure, not a broken one: the
-            // screen rotates every few seconds and a frame caught across a
-            // rotation can arrive just too late. Keep listening — the next one
-            // is already on its way.
-            setSoundMsg(res.error)
-          }
-        } catch {
-          setSoundMsg("Could not verify room. Type code instead.")
-        }
+      /*
+        Straight into the box. The tone carries the room code itself, so there
+        is nothing to go and check — which is most of why this used to feel
+        slow: hearing the room was only the first half, and the second half
+        could fail and send you round again.
+      */
+      const rx = await listenForRoom((heard) => {
+        setCode(heard)
+        setSoundMsg(`Room ${heard} found — put your name in.`)
+        stopListening()
       })
 
       // Held before the usable check, so a frame that decodes in the meantime

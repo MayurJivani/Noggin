@@ -3,7 +3,7 @@ import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { controllerUrl, cardsUrl } from "../../lib/net"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
-import { broadcast } from "../../lib/knock/knock"
+import { announceRoom } from "../../lib/knockJoin"
 import { nameOf, rows as sideRows } from "../../lib/sides"
 import { QrBlock } from "../ui/QrBlock"
 import { PlayerRoster } from "./PlayerRoster"
@@ -15,47 +15,36 @@ import { PlayerRoster } from "./PlayerRoster"
  * under pressure, while talking. The one thing it does own is the answer,
  * which nobody else in the building can see.
  */
-export function GameControl({ state, send, now, requests, code, savedAt, controllerKey, addMessageListener }) {
+export function GameControl({ state, send, now, requests, code, savedAt, controllerKey }) {
   const { phase, board, clue, players, buzzer, timer, lifeline } = state
   const round = board.round
 
   const [soundBroadcasting, setSoundBroadcasting] = useState(false)
   const txRef = useRef(null)
 
+  // The desk's own speakers saying the room code, for the people queuing at the
+  // laptop rather than looking at the projector. Nothing to fetch or rotate:
+  // the tone carries the code itself and simply runs until switched off.
   useEffect(() => {
-    if (!soundBroadcasting) {
-      if (txRef.current) {
-        txRef.current.stop()
-        txRef.current = null
-      }
+    let live = true
+    const stop = () => {
+      txRef.current?.stop()
+      txRef.current = null
+    }
+    if (!soundBroadcasting || !code) {
+      stop()
       return
     }
 
-    send("knock:issue")
-    const interval = setInterval(() => {
-      send("knock:issue")
-    }, 6000)
-
-    const unsubscribe = addMessageListener?.(async (msg) => {
-      if (msg.type === "knock:nonce" && Array.isArray(msg.payload)) {
-        try {
-          if (txRef.current) txRef.current.stop()
-          txRef.current = await broadcast(new Uint8Array(msg.payload), { volume: 0.15 })
-        } catch (err) {
-          console.warn("[knock] host broadcast failed:", err)
-        }
-      }
-    })
+    announceRoom(code)
+      .then((tx) => (live ? (txRef.current = tx) : tx.stop()))
+      .catch((err) => console.warn("[knock] host broadcast failed:", err))
 
     return () => {
-      clearInterval(interval)
-      unsubscribe?.()
-      if (txRef.current) {
-        txRef.current.stop()
-        txRef.current = null
-      }
+      live = false
+      stop()
     }
-  }, [soundBroadcasting, send, addMessageListener])
+  }, [soundBroadcasting, code])
 
   // Space to arm/lock, Y/N to judge, Enter to move on. Hosts end up driving
   // this with one hand while holding a microphone with the other.

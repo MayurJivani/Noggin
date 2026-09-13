@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRoom } from "../../lib/useRoom"
 import { playForEffect, unlock, isUnlocked, music } from "../../lib/sfx"
-import { broadcast } from "../../lib/knock/knock"
+import { announceRoom } from "../../lib/knockJoin"
 import { nameOf, rows as sideRows } from "../../lib/sides"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
@@ -13,14 +13,6 @@ import { FinalStage, SurveyBoard } from "./FinalStage"
 import { ClueCard } from "./ClueCard"
 import { ScoreBar } from "./ScoreBar"
 import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, TimerRing } from "./Overlays"
-
-/**
- * How often the screen asks for a new payload. Shorter than the nonce's life,
- * so there is always an overlap rather than a gap. The relay is the authority
- * on both numbers; this is the fallback for the first request, before the
- * relay's `rotateMs` has arrived.
- */
-const KNOCK_ROTATE_MS = 6_000
 
 /**
  * The big screen. Read-only by design: it holds no game state of its own and
@@ -50,26 +42,6 @@ export function DisplayStage({ code: initialCode }) {
   /** Whether a tone is actually going out, as opposed to merely intended. */
   const [broadcasting, setBroadcasting] = useState(false)
 
-  const onMessage = useCallback(async (msg) => {
-    if (msg?.type !== "knock:nonce") return
-    // A null payload means the room is holding its cap of live nonces. Keep
-    // playing the one already going rather than falling silent — it is still
-    // valid for a few more seconds, and the next rotation will succeed.
-    if (!Array.isArray(msg.payload)) return
-    try {
-      const tx = await broadcast(new Uint8Array(msg.payload), { volume: 0.15 })
-      // Swap only once the new one is running. Stopping first leaves a gap on
-      // every rotation, and a phone that starts listening in that gap waits
-      // another six seconds for something to hear.
-      txRef.current?.stop()
-      txRef.current = tx
-      setBroadcasting(true)
-    } catch (err) {
-      console.warn("[knock] broadcast failed:", err)
-      setBroadcasting(false)
-    }
-  }, [])
-
   const onEffects = useCallback((effects, next) => {
     for (const fx of effects) {
       playForEffect(fx)
@@ -96,36 +68,53 @@ export function DisplayStage({ code: initialCode }) {
     }
   }, [])
 
-  const { state, connected, send } = useRoom({ role: "display", code, onEffects, onError: setError, onMessage })
+  const { state, connected, send } = useRoom({ role: "display", code, onEffects, onError: setError })
 
-  // Broadcast room + nonce over sound while in lobby phase (requires user gesture)
+  /*
+    Say the room code out loud, quietly, for as long as the lobby is open.
+
+    One transmission that simply runs, rather than a nonce fetched and rotated
+    every few seconds: nothing expires, so there is no gap to fall into and no
+    frame that arrives just too late to be accepted.
+
+    The code comes from this page's own URL rather than from the projection,
+    which matters under streamer mode — the relay withholds `state.code` from
+    the big screen there, and the screen still has to be able to announce the
+    room it is showing.
+  */
   useEffect(() => {
-    const isLobby = state?.phase === "lobby"
-    if (!connected || !audioOn || !isLobby) {
-      if (txRef.current) {
-        txRef.current.stop()
-        txRef.current = null
-      }
+    let live = true
+    const wanted = audioOn && connected && state?.phase === "lobby" && !!code
+
+    const stop = () => {
+      txRef.current?.stop()
+      txRef.current = null
       setBroadcasting(false)
+    }
+
+    if (!wanted) {
+      stop()
       return
     }
 
-    // `send` is send(type, payload) — passing an object as the type produced a
-    // message shaped { type: { type: "knock:issue" } }, which matched nothing
-    // and was silently dropped. Nothing errored; the screen simply never made
-    // a sound.
-    send("knock:issue")
-    const interval = setInterval(() => send("knock:issue"), KNOCK_ROTATE_MS)
+    announceRoom(code)
+      .then((tx) => {
+        // The effect may have been torn down while the AudioContext was
+        // starting; without this the tone outlives the lobby.
+        if (!live) return tx.stop()
+        txRef.current = tx
+        setBroadcasting(true)
+      })
+      .catch((err) => {
+        console.warn("[knock] broadcast failed:", err)
+        setBroadcasting(false)
+      })
 
     return () => {
-      clearInterval(interval)
-      if (txRef.current) {
-        txRef.current.stop()
-        txRef.current = null
-      }
-      setBroadcasting(false)
+      live = false
+      stop()
     }
-  }, [connected, audioOn, state?.phase, send])
+  }, [connected, audioOn, state?.phase, code])
 
   // A projector that sleeps mid-round is the worst failure mode there is.
   useWakeLock()

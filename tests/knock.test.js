@@ -1,6 +1,5 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { Nonces, parse as parseKnock } from "../server/knock.js"
 import { encode, decode } from "../src/lib/knock/dsp.js"
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -16,40 +15,25 @@ test("Noggin room code alphabet is 100% compatible with Knock payloads", () => {
   }
 })
 
-test("Knock issue, DSP encode/decode, and parse round-trip with Noggin room codes", () => {
-  const knock = new Nonces({ ttlMs: 15_000 })
-  const testCodes = ["ROOM", "ABCD", "3456", "XYZ9"]
 
-  for (const code of testCodes) {
-    const { payload, nonce } = knock.issue(code)
-    assert.equal(payload.length, 8, "Payload must be 8 bytes (4 room + 4 nonce)")
-
-    // DSP encode -> decode
-    const symbols = encode(payload)
-    const decodedBytes = decode(symbols)
-
-    assert.deepEqual(decodedBytes, payload, "Decoded bytes must match original payload")
-
-    // Parse payload back to room code and nonce
-    const parsed = parseKnock(decodedBytes)
-    assert.ok(parsed, "Parsed result must not be null")
-    assert.equal(parsed.room, code, "Parsed room code must match original")
-    assert.deepEqual(parsed.nonce, nonce, "Parsed nonce must match original")
+test("the tone carries a room code, and it survives the modem", () => {
+  // What joining by sound now is, end to end: the code in, the code out. No
+  // nonce and no round trip — see src/lib/knockJoin.js for why that changed.
+  for (const code of ["ROOM", "ABCD", "3456", "XYZ9"]) {
+    const payload = new TextEncoder().encode(code)
+    assert.equal(payload.length, 4, "four bytes, which is a 660ms frame")
+    const back = new TextDecoder().decode(decode(encode(payload)))
+    assert.equal(back, code)
   }
 })
 
-test("Nonces single-use redemption and replay defence", () => {
-  const knock = new Nonces({ ttlMs: 1000 })
-  const { nonce } = knock.issue("GAME")
-
-  // First redemption succeeds
-  const first = knock.redeem("GAME", nonce)
-  assert.equal(first, true, "First redemption must succeed")
-
-  // Second redemption (replay) fails
-  const replay = knock.redeem("GAME", nonce)
-  assert.equal(replay, false, "Replay attempt must be rejected")
-
-  // Invalid room or wrong nonce fails
-  assert.equal(knock.redeem("WRNG", nonce), false, "Wrong room must be rejected")
+test("every code the relay can mint survives it", () => {
+  // The alphabet is the seam between the two projects: `newCode` builds from
+  // this set, and a character the modem cannot carry would be a room nobody
+  // could join by sound.
+  for (const ch of CODE_ALPHABET) {
+    const code = `${ch}${ch}${ch}${ch}`
+    const back = new TextDecoder().decode(decode(encode(new TextEncoder().encode(code))))
+    assert.equal(back, code, `"${code}" did not survive`)
+  }
 })

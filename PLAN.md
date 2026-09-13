@@ -22,17 +22,23 @@ What exists, and what is deliberately left for later.
   tell the host the opposite of what the game is about to do, and they would
   find out on the first clue that mattered. A test press scores nothing and is
   not a race entry.
-- **Join by being in the room** — the big screen plays the room code and a
-  rotating nonce as a tone nobody can hear, and a phone with the player page
-  open decodes it and joins. The modem is [Knock](../Knock), vendored into
-  `src/lib/knock/` and `server/knock.js`: `knock-audio` is not on npm and the
-  Docker build context cannot reach a sibling directory, so it is a copy with a
-  commit on it. **Fix bugs upstream first, then re-copy.**
+- **Join by being in the room** — the big screen says the room code as a tone
+  nobody can hear, and a phone with the player page open fills it in. The modem
+  is [Knock](../Knock), vendored into `src/lib/knock/`: `knock-audio` is not on
+  npm and the Docker build context cannot reach a sibling directory, so it is a
+  copy with a commit on it. **Fix bugs upstream first, then re-copy.**
 
-  The nonce is not a gate and is not sold as one — joining a Noggin room has
-  never needed more than the code. What it buys is narrower: a *recording* of
-  the room cannot join. Without it, filming the television and playing the clip
-  back near a phone would walk that phone into the game.
+  The payload is the code and nothing else — the same mechanic as
+  [Chorus](../Chorus/apps/web/src/features/multiplayer/knockJoin.ts), and
+  deliberately the same shape, so the awkward parts only have to be worked out
+  once. It used to carry a nonce the phone posted back for checking, which
+  bought a replay defence and cost a 990ms frame instead of 660ms, a round trip,
+  and a failure mode with no good answer: a frame caught across a rotation was
+  refused and the phone went round again for a room it had heard perfectly.
+
+  Losing the replay defence matters less than it looks — a room code was never
+  a secret, and anyone who could replay the tone could have read the code off
+  the same footage. It is not an excuse to treat joining as authenticated.
 
   Microphone access needs a secure context, so **this does not work over a bare
   LAN address** — the button is not offered on `http://192.168.x.x` at all, only
@@ -277,14 +283,12 @@ holding, so it avoids things that are absent or hostile on real devices:
   through doors and walls, a phone in the next room can hear the tone, and
   anything with a speaker can transmit a payload that passes CRC — which is why
   `/api/knock` validates what it is handed rather than trusting it.
-- No rate limiting on the login route, and now `/auth/forgot` is a second one
-  with the same property. On a LAN that is fine; on a public URL a patient
-  attacker can grind both. scrypt makes each attempt expensive, and a recovery
-  code is 20 characters from a 32-symbol alphabet — roughly 100 bits, so
-  guessing it is not the worry. Expensive is still not the same as blocked.
+- Rate limiting on `/auth/login` and `/auth/forgot` counts failures per account
+  and per address; see `server/throttle.js`. Behind a proxy that does not set
+  `CF-Connecting-IP`, set `NOGGIN_TRUST_PROXY=1` or the address bucket is
+  skipped — it throttles by account alone rather than putting every caller in
+  one bucket, which would let a single attacker lock out everyone.
 - Saved rooms are never expired. A machine that has hosted a hundred quizzes
   accumulates a hundred rows; the front page shows the most recent and the rest
   just sit there.
 - The big screen assumes a landscape display and a room that can see it.
-- The end-of-round and final-scores lists on the big screen show the top eight.
-  With more players than that the rest are on `/scores` rather than the TV.

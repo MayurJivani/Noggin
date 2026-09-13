@@ -21,7 +21,6 @@ import { fileURLToPath } from "node:url"
 import { WebSocket, WebSocketServer } from "ws"
 
 import * as G from "./game.js"
-import { Nonces, parse as parseKnock } from "./knock.js"
 import { Throttle, clientIp } from "./throttle.js"
 import { getStore, initStore, safeKey } from "./store/index.js"
 import {
@@ -500,48 +499,6 @@ async function handleRequest(req, res) {
     }
   }
 
-  /*
-    Redeem what a phone heard.
-
-    The big screen plays the room code and a nonce as a tone nobody can hear;
-    a phone in the room decodes it and posts it here. If the nonce is one we
-    issued in the last few seconds and has not been spent, the phone is told the
-    code and joins without anyone typing anything.
-
-    **This is not a gate, and must not be mistaken for one.** Joining a Noggin
-    room has never needed more than the code, and that is deliberate — see the
-    known limits in PLAN.md. What the nonce actually buys is narrower and worth
-    stating: a *recording* of the room cannot join. Without it, anyone who films
-    the television and later plays that clip back near a phone would have it
-    walk into the game, which is a real nuisance for a room streaming to a
-    projector or posting clips afterwards. Freshness fixes exactly that and
-    claims nothing more.
-  */
-  if (url.pathname === "/api/knock" && req.method === "POST") {
-    let body
-    try {
-      body = JSON.parse(await readBody(req, 1024))
-    } catch {
-      return json(res, 400, { error: "Bad request." })
-    }
-
-    // Bytes off the air are anonymous, attacker-controlled input, and CRC
-    // detects accidents rather than adversaries. `parseKnock` is the validator:
-    // it rejects anything that is not four printable ASCII bytes and a nonce.
-    const heard = Array.isArray(body?.bytes) ? parseKnock(Uint8Array.from(body.bytes.map((n) => Number(n) & 0xff))) : null
-    if (!heard) return json(res, 400, { error: "That doesn't look like a room." })
-
-    const code = heard.room.toUpperCase()
-    // Redeem before looking the room up, so a wrong guess is charged against
-    // the attempt limiter whether or not the room happens to exist.
-    const ok = knock.redeem(code, heard.nonce)
-    if (!ok) return json(res, 403, { error: "That was heard too long ago. Type the code instead." })
-
-    const room = rooms.get(code)
-    if (!room) return json(res, 404, { error: "That room has closed." })
-    return json(res, 200, { code, title: room.board?.title ?? null })
-  }
-
   if (req.method === "GET" && url.pathname.startsWith("/files/")) {
     let raw
     try {
@@ -794,10 +751,10 @@ const rooms = new Map()
 /**
  * Unambiguous on a phone keypad and on a projector: no I, O, 0, 1.
  *
- * Four characters from this set is also, by luck rather than design, exactly
- * what Knock's payload format wants — four printable ASCII bytes. Changing the
- * length or admitting a non-ASCII character here breaks joining by sound, so
- * `tests/knock.test.js` asserts the whole alphabet survives the round trip.
+ * These are also what the join tone carries, verbatim — four printable ASCII
+ * bytes is exactly what Knock's payload wants. Changing the length or admitting
+ * a character outside this set breaks joining by sound, so `tests/knock.test.js`
+ * asserts the whole alphabet survives a round trip through the modem.
  */
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -812,35 +769,6 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
  * against a fifteen-second life leaves two or three valid at once, which is the
  * overlap that makes the seam invisible.
  */
-const KNOCK_TTL_MS = 15_000
-const KNOCK_ROTATE_MS = 6_000
-const knock = new Nonces({ ttlMs: KNOCK_TTL_MS })
-
-/** Screens that may mint a nonce: the ones that could plausibly have speakers. */
-const KNOCK_BROADCASTERS = new Set(["display", "host", "controller", "cards"])
-
-/**
- * Hand a screen a fresh payload to play.
- *
- * `issue` returns null rather than throwing when a room is already holding its
- * cap of live nonces, and the caller has to mean it: destructuring the null was
- * an uncaught TypeError in the socket handler, and because a rotating screen
- * asks again every six seconds it was not a one-off — the room's broadcast
- * simply stopped and threw once per rotation from then on. Running out is a
- * normal condition, so it gets a normal answer.
- */
-function issueKnock(room, meta, ws) {
-  if (!KNOCK_BROADCASTERS.has(meta.role)) return
-  const issued = knock.issue(room.code)
-  if (!issued) return send(ws, { type: "knock:nonce", payload: null, retryMs: KNOCK_ROTATE_MS })
-  return send(ws, {
-    type: "knock:nonce",
-    payload: Array.from(issued.payload),
-    ttlMs: KNOCK_TTL_MS,
-    rotateMs: KNOCK_ROTATE_MS,
-  })
-}
-
 function newCode() {
   for (let i = 0; i < 50; i++) {
     const code = Array.from({ length: 4 }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join("")
@@ -1153,20 +1081,6 @@ wss.on("connection", (ws, req) => {
 
     const room = meta.code ? rooms.get(meta.code) : null
     if (!room) return
-
-    /*
-      Minting a nonce to broadcast, which cuts across the usual split.
-
-      It cannot live in the host handler, because the screen that should be
-      making the sound is the one wired to the room's speakers — the projector,
-      not the laptop next to the host — and `display` is not a privileged role.
-      It cannot live in the player handler either: a phone has no business
-      minting these, and a joined player spamming them would exhaust
-      `maxPerRoom` and take the feature down for the screen that needs it.
-
-      So it sits here, above the split, with its own guest list.
-    */
-    if (msg.type === "knock:issue") return issueKnock(room, meta, ws)
 
     // Host and controller share one command surface — the remote controller in
     // phase 2 is a second privileged client, not a second protocol.

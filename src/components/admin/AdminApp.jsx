@@ -286,7 +286,6 @@ function HostDesk({ auth }) {
             code={state.code}
             savedAt={savedAt}
             controllerKey={controllerKey}
-            addMessageListener={addMessageListener}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center text-[13px] text-faint">Opening the room…</div>
