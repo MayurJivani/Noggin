@@ -13,12 +13,14 @@ import { fileURLToPath } from "node:url"
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
 const BOARD_DIR = path.resolve(process.env.NOGGIN_DATA_DIR ?? path.join(ROOT, "data", "boards"))
 const ROOM_DIR = path.resolve(process.env.NOGGIN_ROOM_DIR ?? path.join(ROOT, "data", "rooms"))
+const RESULT_DIR = path.resolve(process.env.NOGGIN_RESULT_DIR ?? path.join(ROOT, "data", "results"))
 const USER_DIR = path.resolve(process.env.NOGGIN_USER_DIR ?? path.join(ROOT, "data", "users"))
 /** Sessions are one small file, rewritten whole — there are never many. */
 const SESSION_FILE = path.join(USER_DIR, "sessions.json")
 
 mkdirSync(BOARD_DIR, { recursive: true })
 mkdirSync(ROOM_DIR, { recursive: true })
+mkdirSync(RESULT_DIR, { recursive: true })
 mkdirSync(USER_DIR, { recursive: true })
 
 /**
@@ -140,6 +142,32 @@ export function createFileStore() {
      * owner-scoped — it exists to show a host their games and returns nothing
      * without an owner, which is right for a page and useless for housekeeping.
      */
+    // ── Results ──────────────────────────────────────────────────────────────
+
+    async saveResult(summary) {
+      // Code plus time, because a code is reused the next time someone opens a
+      // game and a results row has to outlive that.
+      const id = safeKey(`${summary.code}-${summary.endedAt}`)
+      const file = fileFor(RESULT_DIR, id)
+      if (!file) return null
+      const saved = { ...summary, id }
+      writeJson(file, saved)
+      return saved
+    },
+
+    async listResults(ownerId) {
+      return readAll(RESULT_DIR)
+        .filter((r) => ownedBy(r, ownerId))
+        .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+        .slice(0, 100)
+        .map((r) => ({ id: r.id, code: r.code, title: r.title, winner: r.winner, endedAt: r.endedAt }))
+    },
+
+    async loadResult(id) {
+      const file = fileFor(RESULT_DIR, id)
+      return file && existsSync(file) ? readJson(file) : null
+    },
+
     async sweepRooms(cutoff) {
       let removed = 0
       for (const room of readAll(ROOM_DIR)) {

@@ -462,6 +462,17 @@ export function createRoom(code, settings = {}) {
     qualified: [],
     /** Who actually won, once a tie has been settled. See `openTiebreak`. */
     winner: null,
+    /**
+     * What happened, in order, for the record at the end of the night.
+     *
+     * Scores alone cannot answer "which clue did nobody get" — a tile that was
+     * played and missed by everyone looks exactly like one that was played and
+     * won, once the numbers settle. Append-only and bounded; each entry is a
+     * few fields, not a snapshot.
+     */
+    log: [],
+    /** Whether the clue on screen has been won. See `closeClue`. */
+    activeWon: false,
     /** {catIndex, clueIndex} of the clue on screen, or null. */
     active: null,
     /** Daily double bookkeeping for the clue on screen. */
@@ -838,6 +849,8 @@ export function selectClue(room, catIndex, clueIndex) {
   if (!clue || clue.status === CLUE_STATUS.PLAYED) return []
 
   room.active = { catIndex, clueIndex }
+  /** Whether this clue has been taken, so closing it can record a miss. */
+  room.activeWon = false
   room.judgements = []
   room.revealed = false
   room.wager = null
@@ -1120,6 +1133,8 @@ export function judge(room, correct, target = judgeTarget(room)) {
   if (correct) {
     unit.score += amount
     record(unit, amount, room.wager ? "nitro" : "correct", clueLabel(room))
+    room.activeWon = true
+    logEvent(room, { kind: "clue", clue: clueLabel(room), by: unit.name, unitId: unit.id, amount, nitro: !!room.wager })
     room.buzzer.armed = false
     room.buzzer.winner = playerId
     room.phase = PHASE.REVEAL
@@ -1131,6 +1146,7 @@ export function judge(room, correct, target = judgeTarget(room)) {
   if (room.settings.penaltyForWrong) {
     unit.score -= amount
     record(unit, -amount, "wrong", clueLabel(room))
+    logEvent(room, { kind: "miss", clue: clueLabel(room), by: unit.name, unitId: unit.id, amount })
   }
   // The whole side is out, not just the phone that answered — otherwise a team
   // works through its members until one of them guesses right.
@@ -1180,6 +1196,15 @@ function spentSide(room, target) {
 }
 
 /** A short "where did this come from", for the history. */
+/** How many events are kept. A long night is a few hundred; this is plenty. */
+const LOG_LIMIT = 500
+
+function logEvent(room, entry) {
+  room.log ??= []
+  room.log.push({ at: Date.now(), ...entry })
+  if (room.log.length > LOG_LIMIT) room.log.shift()
+}
+
 function clueLabel(room) {
   const clue = activeClue(room)
   if (!clue) return null
@@ -1362,6 +1387,16 @@ const boardDone = (room) => room.phase === PHASE.ENDED || (room.phase === PHASE.
 /** Back to the grid. Rolls into the next round once the board is cleared. */
 export function closeClue(room) {
   if (room.phase !== PHASE.CLUE && room.phase !== PHASE.REVEAL && room.phase !== PHASE.WAGER) return []
+  /*
+    A tile that went back on the board with nobody having won it.
+
+    This is the entry scores cannot reconstruct: once the numbers settle, a
+    clue everyone missed looks exactly like one nobody chose. Recorded before
+    `markPlayed`, while the clue is still the active one.
+  */
+  if (!room.activeWon && clueLabel(room)) {
+    logEvent(room, { kind: "unanswered", clue: clueLabel(room), answer: activeClue(room)?.answer ?? null })
+  }
   markPlayed(room)
   room.active = null
   room.wager = null
@@ -2118,6 +2153,68 @@ function takeTiebreak(room, unit) {
  * people would argue about — the board with its spent tiles, who was playing,
  * and what they had scored.
  */
+/**
+ * The night, written down.
+ *
+ * Built when a game ends, because that is the only moment everything it needs
+ * exists at once: the final standings, who actually won (which after a survey
+ * is not the top of the quiz board), and a log that says which clues nobody
+ * took. Afterwards the room is freed and all of it is gone.
+ *
+ * Plain data with no Maps in it, so it can be stored and served as-is.
+ */
+export function summariseGame(room) {
+  const table = standing(room)
+  const best = table.length ? Math.max(...table.map((r) => r.value)) : 0
+  const champ = room.winner ?? (table.filter((r) => r.value === best).length === 1 ? table.find((r) => r.value === best)?.unit.id : null)
+
+  return {
+    code: room.code,
+    title: room.board.title,
+    ownerId: room.ownerId ?? null,
+    endedAt: Date.now(),
+    teams: !!room.settings.teams,
+    /** How the game was decided — the quiz board, or the survey's own points. */
+    decidedOn: room.played?.survey && room.survey?.contenders?.length ? "survey" : "score",
+    winner: champ ? (sides(room).find((u) => u.id === champ)?.name ?? null) : null,
+    standings: sides(room)
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        score: u.score,
+        surveyPoints: room.survey?.points?.[u.id] ?? null,
+        inSurvey: !!room.survey?.contenders?.includes(u.id),
+        won: u.id === champ,
+      }))
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
+    /** Clues taken, clues missed, and clues nobody took. In order. */
+    log: (room.log ?? []).map((e) => ({ ...e })),
+  }
+}
+
+/** A results row as a spreadsheet, which is what most people want to do with it. */
+export function resultsCsv(summary) {
+  const esc = (v) => {
+    const t = v == null ? "" : String(v)
+    // Quote anything that would otherwise break a cell, and double any quotes
+    // inside it — the two mistakes that turn a CSV into a support request.
+    return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
+  }
+  const rows = [["Place", "Name", "Score", "Survey points", "Won"]]
+  summary.standings.forEach((s, i) => {
+    rows.push([i + 1, s.name, s.score, s.surveyPoints ?? "", s.won ? "yes" : ""])
+  })
+  rows.push([])
+  rows.push(["What happened"])
+  rows.push(["Clue", "Outcome", "Who", "Points"])
+  for (const e of summary.log) {
+    if (e.kind === "clue") rows.push([e.clue, e.nitro ? "nitro won" : "won", e.by, e.amount])
+    else if (e.kind === "miss") rows.push([e.clue, "missed", e.by, -e.amount])
+    else if (e.kind === "unanswered") rows.push([e.clue, "nobody got it", "", ""])
+  }
+  return rows.map((r) => r.map(esc).join(",")).join("\r\n")
+}
+
 export function snapshotRoom(room) {
   return {
     code: room.code,

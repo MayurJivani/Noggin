@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
 import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { controllerUrl, cardsUrl } from "../../lib/net"
+import { getRelayOrigin } from "../../lib/mediaUrl"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
 import { announceRoom } from "../../lib/knockJoin"
 import { nameOf, rows as sideRows } from "../../lib/sides"
@@ -187,6 +188,10 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
           </Drawer>
 
           <Drawer title="This game">
+            {/* Only once there is something to take away. The relay writes the
+                record when the running order has nothing left to offer, which
+                is also when this becomes true. */}
+            {phase === "ended" && <ResultsLink />}
             <SaveControls send={send} savedAt={savedAt} code={code} />
             <button
               className="btn mt-2 w-full py-1.5 text-[11px] hover:border-bad hover:text-bad"
@@ -255,6 +260,45 @@ function SoundJoin({ on, setOn }) {
         {on
           ? "This machine's speakers are carrying the code. The big screen does it too, in the lobby."
           : "Phones on the player page can hear the room code. Needs HTTPS on their side."}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The night, to take away.
+ *
+ * Fetched rather than pushed down the socket: it is written once at the end and
+ * read at most once, so putting it in every projection would be paying for it
+ * all evening. The CSV is the useful half — a scoreboard's natural next stop is
+ * a spreadsheet — and the JSON is there for anything else.
+ */
+function ResultsLink() {
+  const [result, setResult] = useState(null)
+
+  useEffect(() => {
+    let live = true
+    fetch(`${getRelayOrigin()}/results`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => live && setResult(j?.results?.[0] ?? null))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
+
+  if (!result) return null
+  return (
+    <div className="mb-2">
+      <div className="label mb-1.5">The night</div>
+      <a
+        className="btn btn-gold flex w-full items-center justify-center py-1.5 text-[11px]"
+        href={`${getRelayOrigin()}/results/${encodeURIComponent(result.id)}.csv`}
+      >
+        Download the scores
+      </a>
+      <div className="mt-1 text-[10px] leading-snug text-faint">
+        Final standings and every clue — including the ones nobody got, which the scoreboard cannot tell you.
       </div>
     </div>
   )

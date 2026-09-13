@@ -71,3 +71,22 @@ CREATE INDEX IF NOT EXISTS noggin_rooms_owner_idx    ON noggin_rooms (owner_id);
 -- Upgrading a database created before accounts existed.
 ALTER TABLE noggin_boards ADD COLUMN IF NOT EXISTS owner_id text REFERENCES noggin_users(id) ON DELETE CASCADE;
 ALTER TABLE noggin_rooms  ADD COLUMN IF NOT EXISTS owner_id text REFERENCES noggin_users(id) ON DELETE CASCADE;
+
+-- Finished games, kept after the room they came from is freed.
+--
+-- Written once when a game ends and never updated, which is why there is no
+-- saved_at to bump: `ended_at` is the only time that matters and it is the
+-- thing you sort by. The room's code is not the key — a code is reused the
+-- next time somebody opens a game — so the id carries the time as well.
+CREATE TABLE IF NOT EXISTS noggin_results (
+  id       text PRIMARY KEY,
+  owner_id text        REFERENCES noggin_users(id) ON DELETE CASCADE,
+  code     text        NOT NULL,
+  title    text        NOT NULL DEFAULT 'Untitled Game',
+  winner   text,
+  data     jsonb       NOT NULL,
+  ended_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS noggin_results_ended_idx ON noggin_results (ended_at DESC);
+CREATE INDEX IF NOT EXISTS noggin_results_owner_idx ON noggin_results (owner_id);

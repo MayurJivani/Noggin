@@ -1722,3 +1722,92 @@ test("the relay reports its own health", async () => {
   assert.ok(!JSON.stringify(again).includes(code), "but did not name it")
   live.ws.close()
 })
+
+test("a finished game is written down and can be taken away as a spreadsheet", async (t) => {
+  const host = client("host")
+  await host.ready
+  t.after(() => host.ws.close())
+
+  // One round, two clues, so the game can be played out quickly.
+  const board = JSON.parse(JSON.stringify(BOARD))
+  host.send("board:set", { board })
+  await settle()
+
+  const ann = client("player", { code: host.state.code, name: "Ann" })
+  const ben = client("player", { code: host.state.code, name: "Ben" })
+  await Promise.all([ann.ready, ben.ready])
+  host.send("game:start")
+  await settle()
+
+  // Ann takes the first clue; the last one is closed with nobody taking it.
+  host.send("clue:select", { catIndex: 0, clueIndex: 0 })
+  host.send("buzzer:arm")
+  await settle()
+  ann.send("buzz")
+  await settle()
+  host.send("judge", { correct: true })
+  host.send("clue:close")
+  await settle()
+
+  const round = host.state.board.round
+  for (let ci = 0; ci < round.categories.length; ci++) {
+    for (let qi = 0; qi < round.categories[ci].clues.length; qi++) {
+      if (round.categories[ci].clues[qi].status === "played") continue
+      host.send("clue:select", { catIndex: ci, clueIndex: qi })
+      host.send("clue:close")
+    }
+  }
+  await settle(400)
+  assert.equal(host.state.phase, "ended")
+
+  await t.test("it appears in the host's results", async () => {
+    const res = await asHost("/results")
+    assert.equal(res.status, 200)
+    const { results } = await res.json()
+    assert.ok(results.length >= 1, "the game was recorded")
+    const mine = results[0]
+    assert.equal(mine.code, host.state.code)
+    assert.equal(mine.winner, "Ann", "and says who won")
+  })
+
+  await t.test("in full, with what nobody got", async () => {
+    const { results } = await (await asHost("/results")).json()
+    const res = await asHost(`/results/${encodeURIComponent(results[0].id)}`)
+    assert.equal(res.status, 200)
+    const { result } = await res.json()
+
+    assert.equal(result.standings[0].name, "Ann")
+    assert.equal(result.decidedOn, "score")
+    assert.ok(
+      result.log.some((e) => e.kind === "clue" && e.by === "Ann"),
+      "the clue Ann took",
+    )
+    assert.ok(
+      result.log.some((e) => e.kind === "unanswered"),
+      "and the ones nobody did — which scores alone cannot tell you",
+    )
+  })
+
+  await t.test("and as a CSV", async () => {
+    const { results } = await (await asHost("/results")).json()
+    const res = await asHost(`/results/${encodeURIComponent(results[0].id)}.csv`)
+    assert.equal(res.status, 200)
+    assert.match(res.headers.get("content-type"), /text\/csv/)
+    assert.match(res.headers.get("content-disposition"), /attachment; filename=/)
+    const body = await res.text()
+    assert.match(body, /Place,Name,Score/)
+    assert.match(body, /1,Ann,/)
+    assert.match(body, /nobody got it/)
+  })
+
+  await t.test("but not to somebody else", async () => {
+    const stranger = await signUp("nosy@example.com", "correct horse battery")
+    const { results } = await (await asHost("/results")).json()
+    const res = await asHost(`/results/${encodeURIComponent(results[0].id)}`, {}, stranger)
+    assert.equal(res.status, 403)
+    const theirs = await (await asHost("/results", {}, stranger)).json()
+    assert.deepEqual(theirs.results, [], "and their own list is empty")
+  })
+
+  for (const c of [ann, ben]) c.ws.close()
+})

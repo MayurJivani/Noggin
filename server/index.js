@@ -454,6 +454,37 @@ async function handleRequest(req, res) {
   }
 
   // Saved rooms — games put down mid-flight and picked up another night.
+  /*
+    Finished games. Owner-scoped, like boards and rooms.
+
+    A summary list, then one game in full, then the same game as a spreadsheet
+    — which is what most people actually want to do with a scoreboard.
+  */
+  if (url.pathname === "/results" && req.method === "GET") {
+    if (!me) return json(res, 401, { error: "sign in" })
+    return json(res, 200, { results: await store.listResults(me.id) })
+  }
+
+  if (url.pathname.startsWith("/results/") && req.method === "GET") {
+    if (!me) return json(res, 401, { error: "sign in" })
+    const raw = decodeURIComponent(url.pathname.slice("/results/".length))
+    const csv = raw.endsWith(".csv")
+    const result = await store.loadResult(csv ? raw.slice(0, -4) : raw)
+    if (!result) return json(res, 404, { error: "no such result" })
+    if (!ownsRecord(result, me)) return json(res, 403, { error: "not yours" })
+
+    if (!csv) return json(res, 200, { result })
+    const body = G.resultsCsv(result)
+    res.writeHead(200, {
+      ...corsFor(req),
+      "Content-Type": "text/csv; charset=utf-8",
+      // Named for the game rather than the id, because the id is for us and
+      // the filename is for whoever opens it.
+      "Content-Disposition": `attachment; filename="${(result.title || "noggin").replace(/[^\w -]/g, "")} scores.csv"`,
+    })
+    return res.end(body)
+  }
+
   if (url.pathname === "/rooms" && req.method === "GET") {
     if (!me) return json(res, 401, { error: "sign in" })
     const saved = await store.listRooms(me.id)
@@ -1051,6 +1082,28 @@ function apply(room, effects) {
   scheduleSettle(room)
   broadcast(room, effects)
   markDirty(room)
+  if (effects?.some((e) => e.kind === "game-end")) recordResult(room)
+}
+
+/**
+ * Write the night down, once, when it genuinely ends.
+ *
+ * `game-end` fires more than once in a game with a survey — the final produces
+ * one, and so does the round after it — so this waits until the running order
+ * has nothing left to offer. Writing on the first would record a winner the
+ * survey was about to change.
+ *
+ * Failures are logged and swallowed. A results row is a nice thing to have
+ * afterwards; it is not worth ending anybody's game over.
+ */
+function recordResult(room) {
+  if (G.pending(room)) return
+  if (room.resultSaved) return
+  room.resultSaved = true
+  getStore()
+    .saveResult(G.summariseGame(room))
+    .then((saved) => saved && console.log(`[noggin] recorded ${room.code} as ${saved.id}`))
+    .catch((err) => console.error(`[noggin] could not record ${room.code}: ${err.message}`))
 }
 
 // ── WebSocket ────────────────────────────────────────────────────────────────

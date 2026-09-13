@@ -187,6 +187,14 @@ What exists, and what is deliberately left for later.
 - **Save & resume** — a room freezes to storage under its own code and comes
   back with its board, spent tiles, players and scores. Autosaves on change, on
   the last person leaving, and on shutdown.
+- **The night, written down** — when a game genuinely ends, the standings, who
+  won, and a log of every clue: taken, missed, or taken by nobody. That last one
+  is the point, because scores cannot reconstruct it — once the numbers settle,
+  a clue everybody missed looks exactly like one nobody chose. Owner-scoped at
+  `/results`, and the same game as a CSV, which is where a scoreboard usually
+  wants to go next. Written once: `game-end` fires twice in a game with a
+  survey, and recording the first would name a winner the survey was about to
+  change.
 - **Storage** — Postgres when `DATABASE_URL` is set, JSON files otherwise,
   behind one async interface.
 - **`/health`** — uptime, rooms, players, sockets and heap, for something to
@@ -225,7 +233,6 @@ What exists, and what is deliberately left for later.
   opening the board, and folders once there are more than a dozen.
 - **Spectator view.** A read-only `/display` variant for people watching from
   another room.
-- **Persisted game history.** Who won, what was missed, which clues nobody got.
 
 ## Audio notes
 

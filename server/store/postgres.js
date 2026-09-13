@@ -20,7 +20,8 @@ export async function createPostgresStore(url) {
     SELECT to_regclass('public.noggin_boards')   IS NOT NULL
        AND to_regclass('public.noggin_rooms')    IS NOT NULL
        AND to_regclass('public.noggin_users')    IS NOT NULL
-       AND to_regclass('public.noggin_sessions') IS NOT NULL AS ok
+       AND to_regclass('public.noggin_sessions') IS NOT NULL
+       AND to_regclass('public.noggin_results')  IS NOT NULL AS ok
   `
   if (!ok) {
     await sql.end({ timeout: 5 }).catch(() => {})
@@ -109,6 +110,33 @@ export async function createPostgresStore(url) {
     },
 
     /** Delete saved games older than `cutoff` (epoch ms). One statement. */
+    // ── Results ──────────────────────────────────────────────────────────────
+
+    async saveResult(summary) {
+      const id = `${summary.code}-${summary.endedAt}`
+      await sql`
+        INSERT INTO noggin_results (id, owner_id, code, title, winner, data, ended_at)
+        VALUES (${id}, ${summary.ownerId ?? null}, ${summary.code}, ${summary.title ?? "Untitled Game"},
+                ${summary.winner ?? null}, ${sql.json(summary)}, ${new Date(summary.endedAt)})
+        ON CONFLICT (id) DO NOTHING
+      `
+      return { ...summary, id }
+    },
+
+    async listResults(ownerId) {
+      if (!ownerId) return []
+      const rows = await sql`
+        SELECT id, code, title, winner, ended_at FROM noggin_results
+        WHERE owner_id = ${ownerId} ORDER BY ended_at DESC LIMIT 100
+      `
+      return rows.map((r) => ({ id: r.id, code: r.code, title: r.title, winner: r.winner, endedAt: +r.ended_at }))
+    },
+
+    async loadResult(id) {
+      const rows = await sql`SELECT data FROM noggin_results WHERE id = ${id}`
+      return rows[0] ? { ...rows[0].data, id } : null
+    },
+
     async sweepRooms(cutoff) {
       const rows = await sql`
         DELETE FROM noggin_rooms WHERE saved_at < ${new Date(cutoff)} RETURNING code
