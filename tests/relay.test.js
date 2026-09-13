@@ -1723,3 +1723,56 @@ test("a phone that reloads keeps one seat, not two", async (t) => {
     for (const c of [back, other]) c.ws.close()
   })
 })
+
+test("guessing a password is slowed down, and getting it right is not", async (t) => {
+  const email = "throttled@example.com"
+  await signUp(email, "correct horse battery")
+
+  const attempt = (password, extra = {}) =>
+    fetch(`http://127.0.0.1:${PORT}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...extra },
+      body: JSON.stringify({ email, password }),
+    })
+
+  await t.test("eight wrong guesses, then refused", async () => {
+    for (let i = 0; i < 8; i++) {
+      const res = await attempt(`wrong-${i}`)
+      assert.equal(res.status, 401, `guess ${i + 1} should be a plain refusal`)
+    }
+    const blocked = await attempt("wrong-again")
+    assert.equal(blocked.status, 429)
+    assert.ok(Number(blocked.headers.get("retry-after")) > 0, "and says how long to wait")
+    const body = await blocked.json()
+    assert.match(body.error, /Too many attempts/)
+    // Still nothing about whether the account exists.
+    assert.ok(!/no such|unknown|exist/i.test(body.error))
+  })
+
+  await t.test("the right password is refused too, while the budget is spent", async () => {
+    // Deliberate: once over the limit the route stops doing work at all, which
+    // is the point — the cost of refusing must stay below the cost of trying.
+    const res = await attempt("correct horse battery")
+    assert.equal(res.status, 429)
+  })
+
+  await t.test("a different account is unaffected", async () => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "host@example.com", password: "nope" }),
+    })
+    assert.equal(res.status, 401, "one account's attacker must not lock out another")
+  })
+
+  await t.test("and a fresh account still logs in cleanly", async () => {
+    const fresh = "unthrottled@example.com"
+    await signUp(fresh, "correct horse battery")
+    const res = await fetch(`http://127.0.0.1:${PORT}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: fresh, password: "correct horse battery" }),
+    })
+    assert.equal(res.status, 200)
+  })
+})

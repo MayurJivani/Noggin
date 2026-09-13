@@ -22,6 +22,7 @@ import { WebSocket, WebSocketServer } from "ws"
 
 import * as G from "./game.js"
 import { Nonces, parse as parseKnock } from "./knock.js"
+import { Throttle, clientIp } from "./throttle.js"
 import { getStore, initStore, safeKey } from "./store/index.js"
 import {
   SESSION_COOKIE,
@@ -602,6 +603,63 @@ async function startSession(res, req, userId, body) {
   res.end(JSON.stringify(body))
 }
 
+/**
+ * What a guesser is allowed, before the expensive hash runs.
+ *
+ * Two buckets, because neither is sufficient alone. The account bucket is
+ * always accurate — the email is the thing being attacked and cannot be
+ * spoofed away — but on its own it lets one attacker work through a list of
+ * accounts unimpeded. The address bucket catches that, and is deliberately
+ * looser, because addresses are shared: an office behind one NAT is many
+ * honest people, and `clientIp` returns null rather than lumping everyone
+ * together when it cannot tell them apart.
+ */
+const loginLimit = new Throttle({ limit: 8, windowMs: 15 * 60_000 })
+const addressLimit = new Throttle({ limit: 40, windowMs: 15 * 60_000 })
+
+/**
+ * Refuse, and say for how long.
+ *
+ * `Retry-After` in seconds, because that is what the header means and what a
+ * client library will honour. The message says nothing about whether the
+ * account exists, for the same reason the failure message does not.
+ */
+function tooMany(res, req, waitMs) {
+  const seconds = Math.ceil(waitMs / 1000)
+  res.writeHead(429, {
+    ...corsFor(req),
+    "Content-Type": "application/json",
+    "Retry-After": String(seconds),
+  })
+  return res.end(JSON.stringify({ error: `Too many attempts. Try again in ${seconds > 60 ? `${Math.ceil(seconds / 60)} minutes` : `${seconds} seconds`}.` }))
+}
+
+/** Keys for one attempt: the account, and the caller if we can identify them. */
+function attemptKeys(req, route, email) {
+  const ip = clientIp(req)
+  return {
+    account: `${route}:${email}`,
+    address: ip ? `${route}:${ip}` : null,
+  }
+}
+
+/** The wait, if any, before this attempt may be made at all. */
+function throttled(keys, now = Date.now()) {
+  const a = loginLimit.retryAfter(keys.account, now)
+  const b = keys.address ? addressLimit.retryAfter(keys.address, now) : 0
+  return Math.max(a, b)
+}
+
+function recordFailure(keys, now = Date.now()) {
+  loginLimit.fail(keys.account, now)
+  if (keys.address) addressLimit.fail(keys.address, now)
+}
+
+function recordSuccess(keys) {
+  loginLimit.clear(keys.account)
+  if (keys.address) addressLimit.clear(keys.address)
+}
+
 async function handleAuth(req, res, url, me) {
   const json = jsonFor(req)
   const store = getStore()
@@ -664,11 +722,19 @@ async function handleAuth(req, res, url, me) {
     if (password.length < 8) return json(res, 400, { error: "The new password needs at least 8 characters." })
 
     const email = String(payload?.email ?? "").trim().toLowerCase()
+    const keys = attemptKeys(req, "forgot", email)
+    const wait = throttled(keys)
+    if (wait) return tooMany(res, req, wait)
+
     const user = await store.findUserByEmail(email)
     const ok = user?.recoveryHash && (await verifyRecoveryCode(payload?.code, user.recoveryHash))
     // One message for both failures, so this cannot be used to work out which
     // emails have accounts — the same reason the login route says one thing.
-    if (!ok) return json(res, 401, { error: "That email and recovery code don't match." })
+    if (!ok) {
+      recordFailure(keys)
+      return json(res, 401, { error: "That email and recovery code don't match." })
+    }
+    recordSuccess(keys)
 
     // A code is spent once used. Minting the replacement in the same breath is
     // what stops a reset leaving the account with no way back in next time.
@@ -691,11 +757,22 @@ async function handleAuth(req, res, url, me) {
       return json(res, 400, { error: "Bad request." })
     }
     const email = String(payload?.email ?? "").trim().toLowerCase()
+    const keys = attemptKeys(req, "login", email)
+    // Checked before the lookup and the hash, so being refused is cheap for us
+    // and the grinding is expensive for them — the opposite way round is a
+    // limiter that is itself the denial of service.
+    const wait = throttled(keys)
+    if (wait) return tooMany(res, req, wait)
+
     const user = await store.findUserByEmail(email)
     const ok = user && (await verifyPassword(String(payload?.password ?? ""), user.passwordHash))
     // One message for both failures, so this cannot be used to enumerate who
     // has an account here.
-    if (!ok) return json(res, 401, { error: "Wrong email or password." })
+    if (!ok) {
+      recordFailure(keys)
+      return json(res, 401, { error: "Wrong email or password." })
+    }
+    recordSuccess(keys)
     return startSession(res, req, user.id, { user: publicUser(user) })
   }
 
