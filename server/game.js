@@ -493,7 +493,16 @@ export function createRoom(code, settings = {}) {
     /** { type, playerId, endsAt } while a lifeline is running. */
     lifeline: null,
     /** Enough of the last ruling to take it back. See `undoJudgement`. */
-    lastJudgement: null,
+    /**
+     * Rulings that can still be taken back, newest last.
+     *
+     * A stack rather than one slot, because mis-taps come in pairs: a host who
+     * hits ✕ instead of ✓ often notices only after ruling on the next player,
+     * and one level of undo leaves the first mistake to be fixed by hand in
+     * front of the room. Bounded, because each entry holds a clone of the
+     * buzzer and the board pointer.
+     */
+    judgements: [],
     /** Live state of the final clue. See the Final round section. */
     final: null,
     revealed: false,
@@ -829,7 +838,7 @@ export function selectClue(room, catIndex, clueIndex) {
   if (!clue || clue.status === CLUE_STATUS.PLAYED) return []
 
   room.active = { catIndex, clueIndex }
-  room.lastJudgement = null
+  room.judgements = []
   room.revealed = false
   room.wager = null
   room.timer = null
@@ -1092,7 +1101,7 @@ export function judge(room, correct, target = judgeTarget(room)) {
   // ✓ and ✕ constantly — they are two adjacent buttons pressed under pressure
   // while talking — and "fix it by hand afterwards" means editing a score, a
   // spent-player list and a clue's status separately, in front of an audience.
-  room.lastJudgement = {
+  pushJudgement(room, {
     target,
     playerId,
     correct,
@@ -1104,7 +1113,7 @@ export function judge(room, correct, target = judgeTarget(room)) {
     active: room.active && { ...room.active },
     buzzer: cloneBuzzer(room.buzzer),
     timer: room.timer,
-  }
+  })
 
   room.timer = null
 
@@ -1188,15 +1197,27 @@ const cloneBuzzer = (b) => ({ ...b, order: b.order.map((e) => ({ ...e })), locke
  * of the game anyway, and a longer history would need the board's own state
  * versioned to be honest about what it was restoring.
  */
+/** How many rulings can be taken back. Each holds a clone of the buzzer. */
+export const UNDO_DEPTH = 10
+
+function pushJudgement(room, entry) {
+  room.judgements.push(entry)
+  if (room.judgements.length > UNDO_DEPTH) room.judgements.shift()
+}
+
+/**
+ * Take back the most recent ruling, and then the one before it.
+ *
+ * Unwinds in order, so two mis-taps take two presses and land where they
+ * started. A ruling whose player has since left cannot be restored, and is
+ * dropped rather than blocking everything behind it.
+ */
 export function undoJudgement(room) {
-  const last = room.lastJudgement
+  const last = room.judgements.pop()
   if (!last) return []
 
   const unit = scorer(room, last.target ?? last.playerId)
-  if (!unit) {
-    room.lastJudgement = null
-    return []
-  }
+  if (!unit) return []
 
   unit.score = last.score
   if (unit.history?.length) unit.history.pop()
@@ -1207,7 +1228,6 @@ export function undoJudgement(room) {
   room.timer = last.timer
   const clue = activeClue(room)
   if (clue && last.clueStatus) clue.status = last.clueStatus
-  room.lastJudgement = null
 
   return [{ kind: "undo", playerId: last.playerId, unitId: unit.id, correct: last.correct, score: unit.score }]
 }
@@ -1567,7 +1587,7 @@ export function openFinal(room) {
   room.phase = PHASE.FINAL
   room.active = null
   room.timer = null
-  room.lastJudgement = null
+  room.judgements = []
   resetBuzzerState(room)
   room.final = {
     stage: "wager",
@@ -2320,7 +2340,9 @@ export function projectState(room, role, viewerId = null) {
     // would be worse than noise.
     operators: privileged ? [...room.operators.values()] : undefined,
     lastAction: privileged ? (room.lastAction ?? null) : undefined,
-    canUndo: privileged && !!room.lastJudgement,
+    canUndo: privileged && room.judgements.length > 0,
+    /** How many rulings deep the host can still go. */
+    undoDepth: privileged ? room.judgements.length : undefined,
     everyoneSpent: everyoneSpent(room),
     // The buzzer sound-check. Everyone sees it: a player needs to know their
     // press landed, and the big screen showing "testing" beats it showing a

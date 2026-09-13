@@ -115,8 +115,11 @@ What exists, and what is deliberately left for later.
   with the room.
 - **Several games at once** — the desk switches between your rooms and opens new
   ones; deleting a game ends it live and removes the saved copy.
-- **Undo the last ruling** — one deep, restoring score, spent player, buzzer and
-  tile together.
+- **Undo a ruling, ten deep** — restoring score, spent player, buzzer and tile
+  together, unwinding newest first. A stack rather than one slot because
+  mis-taps come in pairs: a host who hits ✕ for ✓ often notices only after
+  ruling on the next player, and one level left the first mistake to be fixed
+  by hand in front of the room. Picking a new clue ends the argument.
 - **Survey round** — an optional "we asked a hundred people" round played last,
   after the final and *before* any tie-break — it still moves scores, so a tie
   settled ahead of it would be settled on the wrong numbers. Up to five questions, each its own board of
@@ -186,6 +189,10 @@ What exists, and what is deliberately left for later.
   the last person leaving, and on shutdown.
 - **Storage** — Postgres when `DATABASE_URL` is set, JSON files otherwise,
   behind one async interface.
+- **`/health`** — uptime, rooms, players, sockets and heap, for something to
+  watch. Deliberately names no rooms: it is unauthenticated, and a list of live
+  codes is exactly what it would be scraped for. `/net` is LAN discovery and
+  answers even when the relay is wedged, which is why it is not this.
 - **Host desk** (`/host`) — board builder and control desk in one page.
   Categories, editable point ladders, image/audio clues, Nitro tiles, board
   autosave and import/export, tunable rules.
@@ -288,7 +295,7 @@ holding, so it avoids things that are absent or hostile on real devices:
   `CF-Connecting-IP`, set `NOGGIN_TRUST_PROXY=1` or the address bucket is
   skipped — it throttles by account alone rather than putting every caller in
   one bucket, which would let a single attacker lock out everyone.
-- Saved rooms are never expired. A machine that has hosted a hundred quizzes
-  accumulates a hundred rows; the front page shows the most recent and the rest
-  just sit there.
+- Saved games are swept after thirty days (`NOGGIN_ROOM_TTL_MS`, zero to keep
+  everything), on startup and every six hours. Live rooms are exempt whatever
+  their age.
 - The big screen assumes a landscape display and a room that can see it.

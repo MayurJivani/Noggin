@@ -108,6 +108,14 @@ export async function createPostgresStore(url) {
       return rows.length > 0
     },
 
+    /** Delete saved games older than `cutoff` (epoch ms). One statement. */
+    async sweepRooms(cutoff) {
+      const rows = await sql`
+        DELETE FROM noggin_rooms WHERE saved_at < ${new Date(cutoff)} RETURNING code
+      `
+      return rows.length
+    },
+
     async listRooms(ownerId) {
       if (!ownerId) return []
       const rows = await sql`

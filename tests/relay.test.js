@@ -1688,3 +1688,23 @@ test("guessing a password is slowed down, and getting it right is not", async (t
     assert.equal(res.status, 200)
   })
 })
+
+
+test("the relay reports its own health", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/health`)
+  assert.equal(res.status, 200)
+  const body = await res.json()
+  assert.equal(body.ok, true)
+  for (const k of ["uptimeSeconds", "rooms", "players", "sockets", "heapUsedMb", "rssMb"]) {
+    assert.equal(typeof body[k], "number", `${k} should be a number`)
+  }
+  assert.equal(typeof body.store, "string")
+  // Unauthenticated, so it must not hand out the codes of live rooms.
+  const live = client("host")
+  await live.ready
+  const code = live.state.code
+  const again = await (await fetch(`http://127.0.0.1:${PORT}/health`)).json()
+  assert.ok(again.rooms >= 1, "it counted the room")
+  assert.ok(!JSON.stringify(again).includes(code), "but did not name it")
+  live.ws.close()
+})

@@ -45,6 +45,20 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const UPLOAD_DIR = path.resolve(process.env.NOGGIN_UPLOAD_DIR ?? path.join(ROOT, "uploads"))
 /** How long a disconnected player keeps their seat and score. */
 const PLAYER_GRACE_MS = Number(process.env.NOGGIN_PLAYER_GRACE_MS ?? 5 * 60_000)
+
+/**
+ * How long a saved game is kept before it is swept up.
+ *
+ * Saved rooms were kept forever: a machine that has hosted a hundred quizzes
+ * accumulated a hundred rows, the front page showed the most recent, and the
+ * rest sat there being backed up and migrated for no reason. Thirty days is
+ * long enough that "we'll finish it next week" works and short enough that the
+ * pile does not grow without end.
+ *
+ * Zero disables it, for anyone who wants to keep everything.
+ */
+const ROOM_TTL_MS = Number(process.env.NOGGIN_ROOM_TTL_MS ?? 30 * 24 * 60 * 60_000)
+const ROOM_SWEEP_MS = 6 * 60 * 60_000
 const MAX_UPLOAD_BYTES = Number(process.env.NOGGIN_MAX_UPLOAD ?? 25 * 1024 * 1024)
 /** How often the relay times a player's round trip, and how many it remembers. */
 const LAG_PING_MS = 5_000
@@ -359,6 +373,34 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === "POST" && url.pathname === "/upload") return handleUpload(req, res, url)
+
+  /*
+    Liveness, and enough to tell whether the relay is struggling.
+
+    `/net` is LAN discovery, not health — it answers even while rooms are
+    wedged. This is the one a monitor should watch, and the numbers are the
+    ones that go wrong first: sockets and rooms climbing without players is a
+    leak, and the heap is what a long night eats.
+
+    No room codes and no names: this is unauthenticated, and a list of live
+    codes is exactly what someone would want it for.
+  */
+  if (req.method === "GET" && url.pathname === "/health") {
+    const live = [...rooms.values()]
+    const players = live.reduce((n, r) => n + r.players.size, 0)
+    const sockets = live.reduce((n, r) => n + r.sockets.size, 0)
+    const mem = process.memoryUsage()
+    return json(res, 200, {
+      ok: true,
+      uptimeSeconds: Math.round(process.uptime()),
+      rooms: live.length,
+      players,
+      sockets,
+      heapUsedMb: Math.round(mem.heapUsed / 1048576),
+      rssMb: Math.round(mem.rss / 1048576),
+      store: getStore().describe(),
+    })
+  }
 
   if (req.method === "GET" && url.pathname === "/net") {
     return json(res, 200, { ips: lanAddresses(), port: PORT })
@@ -801,6 +843,27 @@ function getRoom(code, { create = false, ownerId = null } = {}) {
  * wins. Clobbering a game in progress with a three-day-old snapshot is the one
  * thing this must never do.
  */
+/**
+ * Delete saved games nobody has touched in a long time.
+ *
+ * Live rooms are exempt whatever their age — a quiz that has been running all
+ * evening is not stale, and its snapshot is rewritten on every change anyway.
+ * Failures are logged and otherwise ignored: housekeeping must never be the
+ * reason a room cannot be opened.
+ */
+async function sweepSavedRooms(now = Date.now()) {
+  if (!ROOM_TTL_MS) return 0
+  let removed = 0
+  try {
+    removed = await getStore().sweepRooms(now - ROOM_TTL_MS)
+  } catch (err) {
+    console.error(`[noggin] room sweep failed: ${err.message}`)
+    return 0
+  }
+  if (removed) console.log(`[noggin] swept ${removed} saved game(s) older than ${Math.round(ROOM_TTL_MS / 86_400_000)}d`)
+  return removed
+}
+
 async function resumeRoom(code) {
   const key = String(code ?? "").toUpperCase()
   if (rooms.has(key)) return rooms.get(key)
@@ -1643,6 +1706,17 @@ wss.on("close", () => clearInterval(heartbeat))
  * relay start together, and the browser is already asking.
  */
 await initStore()
+
+/*
+  Housekeeping, on a slow timer.
+
+  Once at startup so a long-running box that is restarted occasionally still
+  gets tidied, then every few hours. `unref` so this timer never holds the
+  process open — a relay that will not shut down because it is waiting to sweep
+  is a worse problem than a stale row.
+*/
+sweepSavedRooms().catch(() => {})
+setInterval(() => sweepSavedRooms().catch(() => {}), ROOM_SWEEP_MS).unref?.()
 
 http.listen(PORT, "0.0.0.0", () => {
   const ips = lanAddresses()

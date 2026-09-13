@@ -133,6 +133,26 @@ export function createFileStore() {
       return true
     },
 
+    /**
+     * Delete saved games older than `cutoff`, and say how many went.
+     *
+     * Its own method rather than `listRooms` with a filter, because that one is
+     * owner-scoped — it exists to show a host their games and returns nothing
+     * without an owner, which is right for a page and useless for housekeeping.
+     */
+    async sweepRooms(cutoff) {
+      let removed = 0
+      for (const room of readAll(ROOM_DIR)) {
+        if ((room?.savedAt ?? 0) >= cutoff) continue
+        const file = fileFor(ROOM_DIR, String(room?.code ?? "").toUpperCase())
+        if (file && existsSync(file)) {
+          rmSync(file)
+          removed++
+        }
+      }
+      return removed
+    },
+
     async listRooms(ownerId) {
       return readAll(ROOM_DIR)
         .filter((r) => ownedBy(r, ownerId))

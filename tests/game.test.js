@@ -333,22 +333,47 @@ test("undoing a correct ruling reopens the clue it closed", () => {
   assert.equal(room.revealed, false, "and the answer is off the screen")
 })
 
-test("there is only ever one ruling to undo", () => {
+test("rulings unwind in order, and a new clue clears the slate", () => {
   const room = setup()
   G.selectClue(room, 0, 0)
   G.armBuzzer(room, 0)
   G.buzz(room, "p0", 5)
-  G.judge(room, true)
+  G.judge(room, false) // wrong: -200
+  const afterWrong = room.players.get("p0").score
+  G.armBuzzer(room, 10)
+  G.buzz(room, "p1", 15)
+  G.judge(room, true) // right: +200 to p1
 
+  assert.equal(room.players.get("p1").score, 200)
+  assert.equal(G.projectState(room, "host").undoDepth, 2, "both are still takeable")
+
+  // Newest first, then the one before it — two mis-taps, two presses.
   assert.equal(G.undoJudgement(room).length, 1)
-  assert.equal(G.undoJudgement(room).length, 0, "a second undo does nothing")
+  assert.equal(room.players.get("p1").score, 0, "the second ruling is off")
+  assert.equal(G.undoJudgement(room).length, 1)
+  assert.equal(room.players.get("p0").score, afterWrong + 200, "and so is the first")
 
-  // And picking a new clue clears the slate.
+  assert.equal(G.undoJudgement(room).length, 0, "nothing left to take back")
+
+  // Picking a new clue ends the argument about the last one.
   G.judge(room, true)
   G.closeClue(room)
   G.selectClue(room, 1, 0)
-  assert.equal(room.lastJudgement, null)
+  assert.deepEqual(room.judgements, [])
   assert.equal(G.undoJudgement(room).length, 0)
+})
+
+test("the undo stack is bounded, so a long round cannot grow it forever", () => {
+  const room = setup()
+  for (let i = 0; i < G.UNDO_DEPTH + 6; i++) {
+    G.selectClue(room, 0, 0)
+    G.armBuzzer(room, 0)
+    G.buzz(room, "p0", 5)
+    G.judge(room, true)
+    G.closeClue(room)
+    G.currentRound(room).categories[0].clues[0].status = G.CLUE_STATUS.OPEN
+  }
+  assert.ok(room.judgements.length <= G.UNDO_DEPTH, `held ${room.judgements.length}`)
 })
 
 test("only privileged roles are told an undo is available", () => {
