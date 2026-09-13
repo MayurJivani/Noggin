@@ -123,6 +123,17 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
   const [soundMsg, setSoundMsg] = useState(null)
   const rxRef = useRef(null)
 
+  /*
+    Whether a microphone can be asked for at all.
+
+    Browsers refuse `getUserMedia` outside a secure context, and a bare LAN
+    address is not one — which is exactly how Noggin is usually played. The
+    button used to disappear with no explanation, so joining by sound looked
+    broken on the very setup it was built for. It says why now, and what to do
+    about it, because "open the HTTPS address instead" is a thing a host can
+    actually act on.
+  */
+  const onLan = typeof window !== "undefined" && !window.isSecureContext
   const isSecure = typeof window !== "undefined" && (window.isSecureContext || location.hostname === "localhost" || location.hostname === "127.0.0.1")
 
   const stopListening = () => {
@@ -202,6 +213,13 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
             onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
           />
         </div>
+
+        {!isSecure && onLan && (
+          <div className="rounded-lg border border-edge bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-faint">
+            Joining by sound needs a secure page, and this one is on a plain LAN address. Ask the host for their{" "}
+            <span className="text-muted">https://</span> link if they have one — otherwise the code above is the way in.
+          </div>
+        )}
 
         {isSecure && (
           <div>

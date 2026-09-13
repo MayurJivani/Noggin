@@ -263,3 +263,26 @@ test("the clock is in the panel, and setup is behind a drawer", () => {
   assert.equal(count(el, /<details/g), 3, "three drawers, all shut")
   assert.equal(count(el, /<details open/g), 0)
 })
+
+// ── The join screen's honesty about what it cannot do ────────────────────────
+
+test("the player is told why joining by sound is missing, rather than left guessing", async () => {
+  const { PlayerApp } = await import("../src/components/play/PlayerApp.jsx")
+
+  // A bare LAN address: not a secure context, so no microphone, so no button.
+  // This used to vanish silently on exactly the setup Noggin is usually played
+  // on, which made a working feature look broken.
+  const lan = { isSecureContext: false, location: { search: "", hostname: "192.168.1.148" } }
+  const prev = { ctx: globalThis.window?.isSecureContext, loc: globalThis.location }
+  globalThis.window = { ...(globalThis.window ?? {}), ...lan }
+  globalThis.location = lan.location
+  try {
+    const out = text(<PlayerApp />)
+    assert.ok(out.includes("secure page"), "it says why")
+    assert.ok(out.includes("https://"), "and what to ask for")
+    assert.ok(!out.includes("Listening for TV sound"), "and does not offer a button that cannot work")
+  } finally {
+    if (globalThis.window) globalThis.window.isSecureContext = prev.ctx
+    globalThis.location = prev.loc
+  }
+})

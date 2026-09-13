@@ -41,9 +41,11 @@ What exists, and what is deliberately left for later.
   the same footage. It is not an excuse to treat joining as authenticated.
 
   Microphone access needs a secure context, so **this does not work over a bare
-  LAN address** — the button is not offered on `http://192.168.x.x` at all, only
-  over HTTPS or localhost. Every path falls back to typing the code, including
-  browsers that resample the microphone below the band and can never hear it.
+  LAN address** — only over HTTPS or localhost. The phone says so rather than
+  quietly dropping the button, because vanishing without explanation on the very
+  setup Noggin is usually played on made a working feature look broken. Every
+  path falls back to typing the code, including browsers that resample the
+  microphone below the band and can never hear it.
 - **Streamer mode** — a room setting that keeps the code and the join QR off
   every screen a camera can see: the big screen, the scoreboard, the podiums and
   the players' own phones. The host desk, the cue cards and the controller keep
