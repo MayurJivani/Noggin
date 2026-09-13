@@ -64,8 +64,22 @@ async function signUp(email, password) {
 const asHost = (path, init = {}, jar = cookie) =>
   fetch(`http://127.0.0.1:${PORT}${path}`, { ...init, headers: { ...(init.headers ?? {}), Cookie: jar } })
 
-after(() => {
-  server?.kill("SIGTERM")
+after(async () => {
+  // Wait for it to actually go before removing its directory. The relay writes
+  // rooms down on shutdown and sweeps saved games on a timer, so pulling the
+  // floor out from under it races those writes — which surfaced as an
+  // intermittent ENOTEMPTY that had nothing to do with the test that "failed".
+  if (server && server.exitCode === null) {
+    await new Promise((resolve) => {
+      const done = () => resolve()
+      server.once("exit", done)
+      server.kill("SIGTERM")
+      setTimeout(() => {
+        server.kill("SIGKILL")
+        resolve()
+      }, 3000).unref?.()
+    })
+  }
   if (dataDir) rmSync(dataDir, { recursive: true, force: true })
 })
 

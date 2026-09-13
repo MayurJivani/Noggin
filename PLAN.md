@@ -250,6 +250,23 @@ it exists to make the bodies run, and to be strict where real Web Audio is
 strict: `exponentialRampToValueAtTime` rejects a target of zero, and scheduling
 times must be finite.
 
+## Testing notes
+
+Components are rendered in the suite now, which they were not — and every UI
+bug this project has had escaped for exactly that reason and was caught by hand
+afterwards. `tests/dom.js` renders a real component against a hand-built
+projection with `renderToStaticMarkup`; `tests/jsx-loader.js` teaches Node to
+load `.jsx` and to resolve the extensionless imports the app writes for Vite.
+esbuild does the transform and was already here, so this is a loader rather than
+a framework.
+
+**What it does not do is run effects**, and that is checked rather than assumed:
+reintroducing the buzzer-order and legacy-tie-break bugs fails these tests, but
+reintroducing the nitro's leader-preselect does not, because that default is
+applied by an effect. Logic that needs covering should be lifted out of the
+effect rather than have the harness grow a fake one; anything genuinely
+effect-shaped stays a browser check, and the test file says which is which.
+
 ## Browser notes
 
 The player page is the one that has to work on whatever someone happens to be
