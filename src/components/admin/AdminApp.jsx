@@ -5,7 +5,7 @@ import { AuthLoading, SignIn } from "../auth/SignIn"
 import { DEFAULT_SETTINGS, makeBoard } from "../../lib/board"
 import { readJson, readStore, removeStore, writeJson, writeStore } from "../../lib/storage"
 import { getRelayOrigin } from "../../lib/mediaUrl"
-import { displayUrl, podiumsUrl, scoresUrl } from "../../lib/net"
+import { displayUrl, podiumsUrl, scoresUrl, watchUrl } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
@@ -329,8 +329,8 @@ function ScreenLinks({ code }) {
   const [urls, setUrls] = useState(null)
   useEffect(() => {
     if (!code) return setUrls(null)
-    Promise.all([displayUrl(code), podiumsUrl(code), scoresUrl(code)]).then(([display, podiums, scores]) =>
-      setUrls({ display, podiums, scores }),
+    Promise.all([displayUrl(code), podiumsUrl(code), scoresUrl(code), watchUrl(code)]).then(
+      ([display, podiums, scores, watch]) => setUrls({ display, podiums, scores, watch }),
     )
   }, [code])
   if (!urls) return null
@@ -342,6 +342,9 @@ function ScreenLinks({ code }) {
         ["display", "TV"],
         ["podiums", "Podiums"],
         ["scores", "Scores"],
+        // For the next room. Same view, minus the things only the room's own
+        // screen should do.
+        ["watch", "Watch"],
       ].map(([kind, label]) => (
         <a
           key={kind}

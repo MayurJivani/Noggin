@@ -11,7 +11,10 @@ export const BoardGrid = forwardRef(function BoardGrid({ round, cellRef }, ref) 
   const rows = round.values.length
 
   return (
-    <div ref={ref} className="flex h-full w-full flex-col gap-[0.7vmin] p-[1.5vmin]">
+    /* `--cols` so the stylesheet can do the sizing. It used to be an inline
+       font-size, which beats any stylesheet rule and so silently defeated the
+       container-query sizing below it. */
+    <div ref={ref} className="board flex h-full w-full flex-col gap-[0.7vmin] p-[1.5vmin]" style={{ "--cols": cols }}>
       <div className="grid gap-[0.7vmin]" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {round.categories.map((cat, ci) => (
           <div
@@ -19,7 +22,7 @@ export const BoardGrid = forwardRef(function BoardGrid({ round, cellRef }, ref) 
             className="flex items-center justify-center rounded-[0.8vmin] border border-gold-deep/45 bg-gradient-to-b from-onyx/85 to-void/90 px-[0.6vmin] py-[1.4vmin] text-center animate-tile-in"
             style={{ animationDelay: `${ci * 55}ms` }}
           >
-            <span className="font-display uppercase leading-[1.05] text-gold brass-sm" style={{ fontSize: `max(11px, calc(var(--stage) * ${2.4 - cols * 0.08}))` }}>
+            <span className="board-category font-display uppercase leading-[1.05] text-gold brass-sm">
               {cat.title || " "}
             </span>
           </div>
@@ -36,7 +39,7 @@ export const BoardGrid = forwardRef(function BoardGrid({ round, cellRef }, ref) 
               <div
                 key={clue.id}
                 ref={(el) => cellRef?.(ci, qi, el)}
-                className={`flex items-center justify-center rounded-[0.8vmin] border transition-all duration-700 animate-tile-in ${
+                className={`board-cell flex items-center justify-center rounded-[0.8vmin] border transition-all duration-700 animate-tile-in ${
                   played
                     ? "border-edge/30 bg-black/35"
                     : "border-gold-dim/35 bg-gradient-to-b from-onyx/90 to-void/95 shadow-[inset_0_1px_0_rgba(242,201,107,0.14)]"
@@ -47,10 +50,7 @@ export const BoardGrid = forwardRef(function BoardGrid({ round, cellRef }, ref) 
                     A hole in the grid reads as a rendering fault from across a
                     room; a burnt-out bulb reads as a tile that has been played,
                     and the board keeps its shape either way. */}
-                <span
-                  className={`font-value tabular-nums transition-all duration-700 ${played ? "text-gold-dim/45" : "text-gold brass"}`}
-                  style={{ fontSize: `max(20px, calc(var(--stage) * ${6 - cols * 0.35}))` }}
-                >
+                <span className={`board-value font-value tabular-nums transition-all duration-700 ${played ? "text-gold-dim/45" : "text-gold brass"}`}>
                   {clue.value}
                 </span>
               </div>

@@ -182,6 +182,15 @@ What exists, and what is deliberately left for later.
 - **Auto-arm** — the buzzer opens with the clue, optionally after a reading
   delay.
 - **Board housekeeping** — duplicate and delete from the builder's list.
+- **Watching from elsewhere** (`/watch`) — the big screen's view for somebody
+  not in the room. The same stage, because a spectator wants to see exactly what
+  the room sees; what it is not is the room's screen, and the two things that
+  follow are the whole page. It holds no wake lock — a projector must never
+  sleep, but keeping somebody's handset awake for an hour they did not ask for
+  is rude, and getting it wrong that way costs a tap rather than a black screen
+  in front of a room. And it never broadcasts the join tone: several devices
+  transmitting the same frame a moment apart smear each other and the phones
+  hear neither.
 - **Podium screens** (`/podium`) — one per player, name and score filling it,
   lighting up when they buzz. **Scoreboard** (`/scores`) — all of them at once.
 - **Front door** (`/`) — pick a role, join by code, and resume any unfinished
@@ -233,8 +242,6 @@ What exists, and what is deliberately left for later.
   across games without copying the whole thing.
 - **Board library.** Duplicate and delete shipped. Still missing: rename without
   opening the board, and folders once there are more than a dozen.
-- **Spectator view.** A read-only `/display` variant for people watching from
-  another room.
 
 ## Audio notes
 
@@ -324,4 +331,5 @@ holding, so it avoids things that are absent or hostile on real devices:
 - Saved games are swept after thirty days (`NOGGIN_ROOM_TTL_MS`, zero to keep
   everything), on startup and every six hours. Live rooms are exempt whatever
   their age.
-- The big screen assumes a landscape display and a room that can see it.
+- The big screen is happy in portrait now — tiles size themselves from their own
+  box rather than from the viewport — but still assumes a room that can see it.

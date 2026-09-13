@@ -19,7 +19,12 @@ import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, TimerRing } fr
  * takes no input, so it can be reloaded at any point in the night and land
  * exactly where the room is.
  */
-export function DisplayStage({ code: initialCode }) {
+/**
+ * @param {object} props
+ * @param {boolean} [props.spectator] – someone watching from another room,
+ *   rather than the screen the room is playing on.
+ */
+export function DisplayStage({ code: initialCode, spectator = false }) {
   const [code] = useState(() => initialCode || new URLSearchParams(location.search).get("code")?.toUpperCase() || "")
   const [error, setError] = useState(null)
   const [audioOn, setAudioOn] = useState(false)
@@ -84,7 +89,14 @@ export function DisplayStage({ code: initialCode }) {
   */
   useEffect(() => {
     let live = true
-    const wanted = audioOn && connected && state?.phase === "lobby" && !!code
+    /*
+      Only the room's own screen announces the code.
+
+      Several devices transmitting the same frame a moment apart do not add up
+      — they smear each other and the phones hear neither. A spectator is by
+      definition not the speaker anybody is standing near, so it stays quiet.
+    */
+    const wanted = !spectator && audioOn && connected && state?.phase === "lobby" && !!code
 
     const stop = () => {
       txRef.current?.stop()
@@ -114,10 +126,16 @@ export function DisplayStage({ code: initialCode }) {
       live = false
       stop()
     }
-  }, [connected, audioOn, state?.phase, code])
+  }, [connected, audioOn, state?.phase, code, spectator])
 
-  // A projector that sleeps mid-round is the worst failure mode there is.
-  useWakeLock()
+  /*
+    A projector that sleeps mid-round is the worst failure mode there is — but
+    a spectator's phone is not a projector. Holding a wake lock on somebody's
+    handset for an hour they did not ask for is rude, and the consequence of
+    getting it wrong the other way is a tap on the screen rather than a room
+    staring at black.
+  */
+  useWakeLock(!spectator)
 
   // Nothing on this page is clickable, so the audio gesture has to be caught
   // wherever it lands — one tap anywhere arms the cues for the night.
@@ -141,6 +159,7 @@ export function DisplayStage({ code: initialCode }) {
       connected={connected}
       error={error}
       audioOn={audioOn}
+      spectator={spectator}
       broadcasting={broadcasting}
       flash={flash}
       splash={splash}
@@ -154,7 +173,7 @@ export function DisplayStage({ code: initialCode }) {
  * Split out so the music effect below can hang off `state` without the early
  * returns above making it a conditional hook.
  */
-function Stage({ code, state, connected, error, audioOn, broadcasting, flash, splash, origin, cellRef }) {
+function Stage({ code, state, connected, error, audioOn, spectator, broadcasting, flash, splash, origin, cellRef }) {
   /*
     The bed follows the room rather than this screen.
 
@@ -229,6 +248,7 @@ function Stage({ code, state, connected, error, audioOn, broadcasting, flash, sp
           <Lobby
             code={state.code}
             codeHidden={state.codeHidden}
+            spectator={spectator}
             broadcasting={broadcasting}
             players={players}
             teams={state.teams}
@@ -355,7 +375,7 @@ function HiddenJoin({ broadcasting }) {
   )
 }
 
-function Lobby({ code, codeHidden, broadcasting, players, teams, title, check }) {
+function Lobby({ code, codeHidden, spectator, broadcasting, players, teams, title, check }) {
   const heard = check ? players.filter((p) => check.hits?.[p.id]).length : 0
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[4vmin]">
@@ -412,7 +432,18 @@ function Lobby({ code, codeHidden, broadcasting, players, teams, title, check })
         </div>
       )}
 
-      {codeHidden ? (
+      {spectator ? (
+        /* No join card: a spectator is watching, not running the room, and a
+           QR on a screen in another building helps nobody. */
+        <div className="rounded-[1.4vmin] border-[0.3vmin] border-edge bg-black/30 px-[4vmin] py-[2vmin] text-center">
+          <div className="label" style={{ letterSpacing: "0.3em" }}>
+            Watching
+          </div>
+          <div className="mt-[0.8vmin] text-muted" style={{ fontSize: "max(11px, calc(var(--stage) * 1.6))" }}>
+            This screen follows the game. It does not hold the room awake, and it says nothing out loud.
+          </div>
+        </div>
+      ) : codeHidden ? (
         <HiddenJoin broadcasting={broadcasting} />
       ) : (
         <JoinCard code={code} size={Math.round(Math.min(260, Math.max(150, window.innerWidth / 7)))} />

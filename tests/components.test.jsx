@@ -286,3 +286,30 @@ test("the player is told why joining by sound is missing, rather than left guess
     globalThis.location = prev.loc
   }
 })
+
+// ── Watching from another room ───────────────────────────────────────────────
+
+test("a spectator screen does not pretend to be the room's own", async () => {
+  const { DisplayStage } = await import("../src/components/display/DisplayStage.jsx")
+
+  // Static rendering of the lobby: what a spectator is offered instead of a
+  // join card. The two behavioural differences — no wake lock, no join tone —
+  // are effect-driven and are asserted in the unit tests for those hooks.
+  const prevLoc = globalThis.location
+  globalThis.location = { search: "?code=ABCD", hostname: "localhost" }
+  try {
+    const watching = text(<DisplayStage code="ABCD" spectator />)
+    assert.ok(watching.includes("Looking for the room") || watching.includes("Joining"), "it connects like any screen")
+  } finally {
+    globalThis.location = prevLoc
+  }
+})
+
+test("the desk offers a link for the next room", async () => {
+  // net.js builds URLs from the page's own origin, so it needs one.
+  globalThis.window = globalThis.window ?? {}
+  globalThis.window.location = { protocol: "http:", hostname: "noggin.example", port: "" }
+  const net = await import("../src/lib/net.js")
+  assert.equal(typeof net.watchUrl, "function", "there is a spectator link to hand out")
+  assert.match(await net.watchUrl("ABCD"), /\/watch\?code=ABCD$/)
+})

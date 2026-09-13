@@ -66,6 +66,16 @@ export async function surveyUrl(code) {
   return `${await originForLan()}/survey?code=${code}`
 }
 
+/**
+ * The spectator link, for people watching from somewhere else.
+ *
+ * The same view as the big screen, minus the two things that only the room's
+ * own screen should do — see `src/pages/watch.astro`.
+ */
+export async function watchUrl(code) {
+  return `${await originForLan()}/watch?code=${code}`
+}
+
 /** The all-players scoreboard, for a second monitor or the control desk. */
 export async function scoresUrl(code) {
   return `${await originForLan()}/scores?code=${code}`

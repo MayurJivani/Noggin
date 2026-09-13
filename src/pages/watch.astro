@@ -1,0 +1,20 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { DisplayStage } from "../components/display/DisplayStage"
+import "../styles/global.css"
+
+/**
+ * The big screen, for somebody who is not in the room.
+ *
+ * The same stage, because a spectator wants to see exactly what the room sees —
+ * the board, the buzz, the scores. What it is not is the room's screen, and the
+ * two things that follow from that are the whole page: it does not hold a wake
+ * lock on somebody's handset for an hour they did not ask for, and it does not
+ * broadcast the join tone, because several devices transmitting the same frame
+ * a moment apart smear each other and the phones hear neither.
+ */
+---
+
+<Layout title="NOGGIN’ — watching">
+  <DisplayStage client:only="react" spectator />
+</Layout>

@@ -365,6 +365,65 @@
   .vein-flow-fast { animation-duration: 4.5s; }
 
   /*
+    The board sizes its type from its own tiles, not from the viewport.
+
+    `--stage` is `min(1vw, 1.78vh)`, which is right for a 16:9 panel and wrong
+    for anything much taller: on a 1080x1920 screen it reads 10.8px, so a tile
+    measuring 191x325 rendered its value at 20px — six per cent of its own
+    height, against about forty on a landscape panel. A board nobody can read
+    from the back of the room is not a board.
+    
+    Container units ask the tile how big it is, which is the question that was
+    actually being approximated. The `--stage` rule above stays as the declared
+    value so a browser without container queries keeps exactly what it had.
+  */
+
+  /*
+    A tile sizes its own number, rather than the viewport doing it.
+
+    `--stage` is `min(1vw, 1.78vh)`, right for 16:9 and wrong for anything much
+    taller: on a 1080x1920 panel it reads 10.8px, so a tile measuring 191x329
+    rendered its value at 20px — six per cent of its own height, against about
+    forty in landscape. A board nobody can read from the back of the room is not
+    a board.
+
+    Container units ask the tile how big it is, which is the question the old
+    formula was approximating. Stated as the plain declaration and the fallback
+    put behind `@supports not`, rather than the other way round: as an override
+    it lost the cascade to the very rule it was meant to replace, and an
+    override that silently does not is worse than no override.
+  */
+  /* A value tile has a definite height — the grid gives it one — so it can be
+     asked about both axes. */
+  .board-cell {
+    container-type: size;
+  }
+
+  /* Bounded on both axes — width so the digits sit side by side, height so a
+     tall thin tile does not set them taller than itself. */
+  .board-value {
+    font-size: max(20px, min(42cqw, 48cqh));
+  }
+
+  /*
+    Category titles keep the old formula, deliberately.
+
+    Measured before changing anything: it already worked out to about 11% of
+    the cell's width in both orientations, so it was never the thing that broke
+    in portrait. Sizing it from the container instead pushed it to 46px and
+    clipped every header by three pixels — a fix for a bug that was not there.
+  */
+  .board-category {
+    font-size: max(11px, calc(var(--stage) * (2.4 - var(--cols, 5) * 0.08)));
+  }
+
+  @supports not (container-type: size) {
+    .board-value {
+      font-size: max(20px, calc(var(--stage) * (6 - var(--cols, 5) * 0.35)));
+    }
+  }
+
+  /*
     The desk's drawers draw their own arrow, so the browser's must go.
 
     `list-style: none` is enough in Chrome and current Safari, but WebKit before
