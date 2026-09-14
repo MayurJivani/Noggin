@@ -90,3 +90,23 @@ CREATE TABLE IF NOT EXISTS noggin_results (
 
 CREATE INDEX IF NOT EXISTS noggin_results_ended_idx ON noggin_results (ended_at DESC);
 CREATE INDEX IF NOT EXISTS noggin_results_owner_idx ON noggin_results (owner_id);
+
+-- Clues kept for reuse across boards.
+--
+-- A source, not a dependency: a board takes a *copy* when it pulls one in, and
+-- the two have nothing to do with each other afterwards. Boards are
+-- self-contained documents everywhere else here — duplicate deep-copies, export
+-- is one file, a room snapshots the whole thing — and results now reference the
+-- clues that were played. Referencing would mean editing a bank clue silently
+-- rewrote a board somebody already ran.
+CREATE TABLE IF NOT EXISTS noggin_clues (
+  id       text PRIMARY KEY,
+  owner_id text        REFERENCES noggin_users(id) ON DELETE CASCADE,
+  category text        NOT NULL DEFAULT '',
+  prompt   text        NOT NULL DEFAULT '',
+  answer   text        NOT NULL DEFAULT '',
+  data     jsonb       NOT NULL,
+  saved_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS noggin_clues_owner_idx ON noggin_clues (owner_id, saved_at DESC);

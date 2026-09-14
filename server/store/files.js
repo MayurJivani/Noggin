@@ -14,6 +14,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const BOARD_DIR = path.resolve(process.env.NOGGIN_DATA_DIR ?? path.join(ROOT, "data", "boards"))
 const ROOM_DIR = path.resolve(process.env.NOGGIN_ROOM_DIR ?? path.join(ROOT, "data", "rooms"))
 const RESULT_DIR = path.resolve(process.env.NOGGIN_RESULT_DIR ?? path.join(ROOT, "data", "results"))
+const CLUE_DIR = path.resolve(process.env.NOGGIN_CLUE_DIR ?? path.join(ROOT, "data", "clues"))
 const USER_DIR = path.resolve(process.env.NOGGIN_USER_DIR ?? path.join(ROOT, "data", "users"))
 /** Sessions are one small file, rewritten whole — there are never many. */
 const SESSION_FILE = path.join(USER_DIR, "sessions.json")
@@ -21,6 +22,7 @@ const SESSION_FILE = path.join(USER_DIR, "sessions.json")
 mkdirSync(BOARD_DIR, { recursive: true })
 mkdirSync(ROOM_DIR, { recursive: true })
 mkdirSync(RESULT_DIR, { recursive: true })
+mkdirSync(CLUE_DIR, { recursive: true })
 mkdirSync(USER_DIR, { recursive: true })
 
 /**
@@ -142,6 +144,29 @@ export function createFileStore() {
      * owner-scoped — it exists to show a host their games and returns nothing
      * without an owner, which is right for a page and useless for housekeeping.
      */
+    // ── The clue bank ────────────────────────────────────────────────────────
+
+    async saveClue(clue) {
+      const file = fileFor(CLUE_DIR, clue.id)
+      if (!file) return null
+      writeJson(file, clue)
+      return clue
+    },
+
+    async listClues(ownerId) {
+      return readAll(CLUE_DIR)
+        .filter((c) => ownedBy(c, ownerId))
+        .sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0))
+        .slice(0, 500)
+    },
+
+    async deleteClue(id) {
+      const file = fileFor(CLUE_DIR, id)
+      if (!file || !existsSync(file)) return false
+      rmSync(file)
+      return true
+    },
+
     // ── Results ──────────────────────────────────────────────────────────────
 
     async saveResult(summary) {
@@ -294,6 +319,7 @@ export function boardSummary(b) {
   return {
     id: b.id,
     title: b.title ?? "Untitled Game",
+    folder: b.folder ?? "",
     updatedAt: b.updatedAt ?? 0,
     rounds: b.rounds?.length ?? 0,
     clues: (b.rounds ?? []).reduce(

@@ -181,7 +181,19 @@ What exists, and what is deliberately left for later.
   replaces anything, with bad rows reported by line.
 - **Auto-arm** — the buzzer opens with the clue, optionally after a reading
   delay.
-- **Board housekeeping** — duplicate and delete from the builder's list.
+- **A clue bank** — keep a clue and drop it into any board later, searchable by
+  question, answer or category. A **source, not a dependency**: pulling one in
+  takes a copy with its own id, and the two have nothing to do with each other
+  afterwards. That is the only model that fits — boards are self-contained
+  documents everywhere else here (duplicate deep-copies, export is one file, a
+  room snapshots the whole thing) and results now name the clues that were
+  played, so referencing would mean a typo fixed tonight silently rewrote a
+  board somebody ran last month. The tile keeps its own value and nitro flag,
+  because those belong to the board's shape rather than to the question.
+- **Board housekeeping** — duplicate, delete, and rename without opening, which
+  is why nobody tidied their library before. A board can be filed under a
+  heading; unfiled ones sit at the top with no label, because "Uncategorised"
+  above every row is a heading that says nothing.
 - **Watching from elsewhere** (`/watch`) — the big screen's view for somebody
   not in the room. The same stage, because a spectator wants to see exactly what
   the room sees; what it is not is the room's screen, and the two things that
@@ -238,10 +250,6 @@ What exists, and what is deliberately left for later.
   a fast one, and it needs its own phase rather than a flag on the buzzer.
 - **Multiple choice.** A per-clue list of options shown on the phones. Cheap to
   add and a different game — worth deciding it is wanted before building it.
-- **Question bank.** Boards can be duplicated; individual clues cannot be reused
-  across games without copying the whole thing.
-- **Board library.** Duplicate and delete shipped. Still missing: rename without
-  opening the board, and folders once there are more than a dozen.
 
 ## Audio notes
 

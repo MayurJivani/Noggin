@@ -17,6 +17,8 @@ import {
   patchRound,
   resizeRound,
   scatterNitro,
+  clueFromBankShape,
+  groupBoards,
   tiebreakRole,
   tiebreaksOf,
 } from "../../lib/board"
@@ -37,6 +39,8 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
   const [saved, setSaved] = useState("idle")
   const [boards, setBoards] = useState([])
   const [importing, setImporting] = useState(false)
+  /** The board whose name is being changed, if any. */
+  const [renaming, setRenaming] = useState(null)
   const firstRun = useRef(true)
 
   const round = board.rounds[roundIndex] ?? board.rounds[0]
@@ -421,6 +425,12 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
               </label>
 
               <MediaField value={clue.answerMedia} onChange={(answerMedia) => patch({ answerMedia })} label="Reveal media" />
+
+              <ClueBank
+                clue={clue}
+                category={round.categories[selected.catIndex].title}
+                onInsert={(entry) => patch(clueFromBankShape(entry, clue.value))}
+              />
             </div>
           ) : (
             <div className="py-8 text-center text-[12px] text-faint">Pick a tile to write it.</div>
@@ -535,9 +545,18 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
 
         <div className="panel p-4">
           <div className="label mb-2">Your boards</div>
-          <div className="max-h-44 space-y-1 overflow-y-auto">
+          <div className="max-h-56 space-y-1 overflow-y-auto">
             {boards.length === 0 && <div className="text-[11px] text-faint">Nothing saved yet.</div>}
-            {boards.map((b) => (
+            {groupBoards(boards).map(([folder, list]) => (
+              <div key={folder || "(none)"}>
+                {/* Only worth a heading once there is more than one group —
+                    a single "Uncategorised" label above every board is a label
+                    that says nothing. */}
+                {folder && (
+                  <div className="mt-2 px-1 text-[10px] uppercase tracking-wider text-faint first:mt-0">{folder}</div>
+                )}
+                <div className="space-y-1">
+                  {list.map((b) => (
               <div
                 key={b.id}
                 className={`group/board flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
@@ -561,6 +580,13 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                   ⧉
                 </button>
                 <button
+                  className="shrink-0 px-1.5 py-0.5 text-[12px] text-faint opacity-70 transition hover:text-gold group-hover/board:opacity-100"
+                  title="Rename, and file it under a heading"
+                  onClick={() => setRenaming(b)}
+                >
+                  ✎
+                </button>
+                <button
                   className="shrink-0 px-1.5 py-0.5 text-[12px] text-faint opacity-70 transition hover:text-bad group-hover/board:opacity-100"
                   title="Delete this board"
                   onClick={() => remove(b)}
@@ -568,8 +594,24 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                   ✕
                 </button>
               </div>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
+
+          {renaming && (
+            <RenameBoard
+              board={renaming}
+              onClose={() => setRenaming(null)}
+              onDone={(next) => {
+                setRenaming(null)
+                // The one on screen is the live copy, so it has to move too.
+                if (next.id === board.id) setBoard({ ...board, title: next.title, folder: next.folder })
+                setBoards((list) => list.map((b) => (b.id === next.id ? { ...b, ...next } : b)))
+              }}
+            />
+          )}
         </div>
 
         <button className="btn btn-gold w-full py-3 text-base" onClick={onPush} disabled={pushState === "pushing"}>
@@ -888,6 +930,193 @@ function SurveyQuestion({ n, q, live, open, onToggle, onChange, onRemove }) {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Keeping a clue, and taking one back out.
+ *
+ * The bank is a source, not a dependency: pulling one in copies it, and the two
+ * have nothing to do with each other afterwards. That is the only model that
+ * fits — boards are self-contained documents everywhere else here, and a game
+ * that has been played is referenced by its results, so editing a bank entry
+ * must never reach backwards into it.
+ */
+/**
+ * Renaming a board without opening it.
+ *
+ * Opening one to change its title meant losing whatever was on screen, which is
+ * why nobody tidied their library. Fetches the board, writes the two fields
+ * back, and leaves everything else exactly as it was — a rename must not be a
+ * round trip through the builder's idea of a board.
+ */
+function RenameBoard({ board, onClose, onDone }) {
+  const [title, setTitle] = useState(board.title ?? "")
+  const [folder, setFolder] = useState(board.folder ?? "")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const save = async () => {
+    const next = title.trim()
+    if (!next) return setError("A board needs a name.")
+    setBusy(true)
+    setError(null)
+    try {
+      const full = await fetch(`${getRelayOrigin()}/boards/${encodeURIComponent(board.id)}`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => j?.board)
+      if (!full) throw new Error("That board could not be opened.")
+
+      const res = await fetch(`${getRelayOrigin()}/boards/${encodeURIComponent(board.id)}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...full, title: next, folder: folder.trim(), updatedAt: Date.now() }),
+      })
+      if (!res.ok) throw new Error("That did not save.")
+      onDone({ id: board.id, title: next, folder: folder.trim() })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 px-6" onClick={onClose}>
+      <div className="panel w-full max-w-sm p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="label mb-2">Rename</div>
+        <input
+          className="field font-display"
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+        />
+        <div className="label mb-1 mt-3">Filed under</div>
+        <input
+          className="field text-[13px]"
+          placeholder="Optional — a pub, a season, a client"
+          value={folder}
+          onChange={(e) => setFolder(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+        />
+        <div className="mt-1 text-[10px] text-faint">Leave it blank and the board sits at the top of the list, unfiled.</div>
+        {error && <div className="mt-2 text-[12px] text-bad">{error}</div>}
+        <div className="mt-3 flex gap-2">
+          <button className="btn btn-gold flex-1 py-2 text-[12px]" disabled={busy} onClick={save}>
+            {busy ? "Saving…" : "Save"}
+          </button>
+          <button className="btn px-4 py-2 text-[12px]" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ClueBank({ clue, category, onInsert }) {
+  const [open, setOpen] = useState(false)
+  const [entries, setEntries] = useState([])
+  const [q, setQ] = useState("")
+  const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const load = (query = "") => {
+    fetch(`${getRelayOrigin()}/clues?q=${encodeURIComponent(query)}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setEntries(j?.clues ?? []))
+      .catch(() => {})
+  }
+
+  useEffect(() => {
+    if (open) load(q)
+    // Debounced would be nicer; a bank is a few hundred rows and the search is
+    // done on the relay, so the simple thing is fast enough.
+  }, [open, q])
+
+  const keep = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch(`${getRelayOrigin()}/clues`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clue, category }),
+      })
+      if (res.ok) {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 1800)
+        if (open) load(q)
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const forget = async (id) => {
+    await fetch(`${getRelayOrigin()}/clues/${encodeURIComponent(id)}`, { method: "DELETE", credentials: "include" }).catch(() => {})
+    setEntries((list) => list.filter((c) => c.id !== id))
+  }
+
+  return (
+    <div className="border-t border-edge pt-3">
+      <div className="flex items-center gap-2">
+        <button className="btn flex-1 py-1.5 text-[11px]" disabled={!clue.prompt?.trim() || busy} onClick={keep}>
+          {saved ? "Kept ✓" : "Keep this clue"}
+        </button>
+        <button className={`btn py-1.5 px-3 text-[11px] ${open ? "btn-gold" : ""}`} onClick={() => setOpen(!open)}>
+          Bank
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-2">
+          <input
+            className="field text-[12px]"
+            placeholder="Search your clues…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <div className="mt-2 max-h-52 space-y-1 overflow-y-auto">
+            {entries.length === 0 && (
+              <div className="py-3 text-center text-[11px] text-faint">
+                {q ? "Nothing matches." : "Nothing kept yet — write a clue and press Keep."}
+              </div>
+            )}
+            {entries.map((entry) => (
+              <div key={entry.id} className="group/clue flex items-start gap-1.5 rounded-lg border border-edge px-2 py-1.5">
+                <button
+                  className="min-w-0 flex-1 text-left"
+                  title="Drop this into the tile you have open"
+                  onClick={() => {
+                    onInsert(entry)
+                    setOpen(false)
+                  }}
+                >
+                  <div className="truncate text-[12px] text-ink">{entry.prompt}</div>
+                  <div className="truncate text-[10px] text-faint">
+                    {entry.category ? `${entry.category} · ` : ""}
+                    {entry.answer || "no answer written"}
+                  </div>
+                </button>
+                <button
+                  className="shrink-0 px-1 text-[11px] text-faint opacity-70 transition hover:text-bad group-hover/clue:opacity-100"
+                  title="Forget this clue"
+                  onClick={() => forget(entry.id)}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-1.5 text-[10px] leading-snug text-faint">
+            Dropping one in copies it. Editing it here afterwards changes this board and nothing else.
           </div>
         </div>
       )}

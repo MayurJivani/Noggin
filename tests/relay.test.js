@@ -1811,3 +1811,72 @@ test("a finished game is written down and can be taken away as a spreadsheet", a
 
   for (const c of [ann, ben]) c.ws.close()
 })
+
+test("the clue bank keeps clues, finds them, and keeps them to their owner", async (t) => {
+  const host = client("host")
+  await host.ready
+  t.after(() => host.ws.close())
+
+  const keep = (clue, category) =>
+    asHost("/clues", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clue, category }),
+    })
+
+  await t.test("a clue goes in", async () => {
+    const res = await keep({ prompt: "Black, veined with gold", answer: "marble", value: 400 }, "STONE")
+    assert.equal(res.status, 200)
+    const { clue } = await res.json()
+    assert.equal(clue.prompt, "Black, veined with gold")
+    assert.equal(clue.category, "STONE")
+    assert.ok(clue.id, "with an identity of its own")
+  })
+
+  await t.test("one with no question does not", async () => {
+    const res = await keep({ prompt: "  ", answer: "marble" }, "STONE")
+    assert.equal(res.status, 400)
+  })
+
+  await t.test("and can be found again by any part of it", async () => {
+    await keep({ prompt: "Au", answer: "gold", value: 200 }, "ELEMENTS")
+    await settle()
+
+    const all = await (await asHost("/clues")).json()
+    assert.equal(all.clues.length, 2)
+
+    // Prompt, answer and category are all searchable — a host remembers the
+    // question sometimes and the answer other times.
+    for (const [q, expected] of [["veined", "marble"], ["gold", null], ["ELEMENTS", "gold"], ["stone", "marble"]]) {
+      const hit = await (await asHost(`/clues?q=${encodeURIComponent(q)}`)).json()
+      assert.ok(hit.clues.length >= 1, `"${q}" found nothing`)
+      if (expected) assert.ok(hit.clues.some((c) => c.answer === expected), `"${q}" did not find ${expected}`)
+    }
+
+    const none = await (await asHost("/clues?q=zzzznothing")).json()
+    assert.deepEqual(none.clues, [])
+  })
+
+  await t.test("it belongs to the host who kept it", async () => {
+    const stranger = await signUp("magpie@example.com", "correct horse battery")
+    const theirs = await (await asHost("/clues", {}, stranger)).json()
+    assert.deepEqual(theirs.clues, [], "another host's bank is not yours to read")
+
+    const mine = await (await asHost("/clues")).json()
+    const res = await asHost(`/clues/${encodeURIComponent(mine.clues[0].id)}`, { method: "DELETE" }, stranger)
+    assert.equal(res.status, 404, "nor to empty by guessing ids")
+  })
+
+  await t.test("and can be forgotten", async () => {
+    const before = await (await asHost("/clues")).json()
+    const res = await asHost(`/clues/${encodeURIComponent(before.clues[0].id)}`, { method: "DELETE" })
+    assert.equal(res.status, 200)
+    const after = await (await asHost("/clues")).json()
+    assert.equal(after.clues.length, before.clues.length - 1)
+  })
+
+  await t.test("signed out, there is no bank at all", async () => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/clues`)
+    assert.equal(res.status, 401)
+  })
+})

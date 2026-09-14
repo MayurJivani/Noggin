@@ -455,6 +455,46 @@ async function handleRequest(req, res) {
 
   // Saved rooms — games put down mid-flight and picked up another night.
   /*
+    The clue bank. Owner-scoped, like everything else a host owns.
+
+    A source rather than a dependency — `bankClue` explains why — so there is no
+    route to "update everywhere". Saving the same clue twice makes two entries,
+    which is correct: they are copies from the moment they are taken.
+  */
+  if (url.pathname === "/clues" && req.method === "GET") {
+    if (!me) return json(res, 401, { error: "sign in" })
+    const q = String(url.searchParams.get("q") ?? "").trim().toLowerCase()
+    const all = await store.listClues(me.id)
+    const hit = (c) =>
+      !q || `${c.category} ${c.prompt} ${c.answer}`.toLowerCase().includes(q)
+    return json(res, 200, { clues: all.filter(hit).slice(0, 200) })
+  }
+
+  if (url.pathname === "/clues" && req.method === "POST") {
+    if (!me) return json(res, 401, { error: "sign in" })
+    let payload
+    try {
+      payload = JSON.parse(await readBody(req, 64 * 1024))
+    } catch {
+      return json(res, 400, { error: "Bad request." })
+    }
+    const entry = G.bankClue(payload?.clue, { category: payload?.category, ownerId: me.id })
+    if (!entry) return json(res, 400, { error: "A clue with no question is not a clue." })
+    const saved = await store.saveClue(entry)
+    return json(res, 200, { clue: saved })
+  }
+
+  if (url.pathname.startsWith("/clues/") && req.method === "DELETE") {
+    if (!me) return json(res, 401, { error: "sign in" })
+    const id = decodeURIComponent(url.pathname.slice("/clues/".length))
+    // Ownership before deletion, so one host cannot clear another's bank by
+    // guessing ids.
+    const mine = await store.listClues(me.id)
+    if (!mine.some((c) => c.id === id)) return json(res, 404, { error: "no such clue" })
+    return json(res, 200, { deleted: await store.deleteClue(id) })
+  }
+
+  /*
     Finished games. Owner-scoped, like boards and rooms.
 
     A summary list, then one game in full, then the same game as a spreadsheet

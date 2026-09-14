@@ -381,3 +381,42 @@ export function parseBoardCsv(text, title = "Imported Game") {
     issues,
   }
 }
+
+/**
+ * A bank entry as a patch for the tile that is open.
+ *
+ * Keeps the tile's own value and its nitro flag: those belong to the board's
+ * shape, not to the question. Everything else is replaced, because pulling a
+ * clue in and then finding half the old one still there is worse than not
+ * offering it at all.
+ */
+export function clueFromBankShape(entry, value) {
+  return {
+    prompt: entry?.prompt ?? "",
+    answer: entry?.answer ?? "",
+    media: entry?.media ?? null,
+    answerMedia: entry?.answerMedia ?? null,
+    value,
+  }
+}
+
+/**
+ * Boards grouped by the heading they were filed under.
+ *
+ * Unfiled ones come first and unlabelled: a library of four does not want
+ * navigation, and "Uncategorised" above every row is a heading that says
+ * nothing. Headings only start earning their space once something has been
+ * filed, which is exactly when a host has enough boards to want them.
+ */
+export function groupBoards(boards) {
+  const groups = new Map([["", []]])
+  for (const b of boards) {
+    const key = (b.folder ?? "").trim()
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(b)
+  }
+  const unfiled = groups.get("") ?? []
+  groups.delete("")
+  const filed = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))
+  return unfiled.length ? [["", unfiled], ...filed] : filed
+}

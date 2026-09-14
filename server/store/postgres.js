@@ -21,7 +21,8 @@ export async function createPostgresStore(url) {
        AND to_regclass('public.noggin_rooms')    IS NOT NULL
        AND to_regclass('public.noggin_users')    IS NOT NULL
        AND to_regclass('public.noggin_sessions') IS NOT NULL
-       AND to_regclass('public.noggin_results')  IS NOT NULL AS ok
+       AND to_regclass('public.noggin_results')  IS NOT NULL
+       AND to_regclass('public.noggin_clues')    IS NOT NULL AS ok
   `
   if (!ok) {
     await sql.end({ timeout: 5 }).catch(() => {})
@@ -110,6 +111,33 @@ export async function createPostgresStore(url) {
     },
 
     /** Delete saved games older than `cutoff` (epoch ms). One statement. */
+    // ── The clue bank ────────────────────────────────────────────────────────
+
+    async saveClue(clue) {
+      await sql`
+        INSERT INTO noggin_clues (id, owner_id, category, prompt, answer, data, saved_at)
+        VALUES (${clue.id}, ${clue.ownerId ?? null}, ${clue.category ?? ""}, ${clue.prompt ?? ""},
+                ${clue.answer ?? ""}, ${sql.json(clue)}, now())
+        ON CONFLICT (id) DO UPDATE SET
+          category = EXCLUDED.category, prompt = EXCLUDED.prompt,
+          answer = EXCLUDED.answer, data = EXCLUDED.data, saved_at = now()
+      `
+      return clue
+    },
+
+    async listClues(ownerId) {
+      if (!ownerId) return []
+      const rows = await sql`
+        SELECT data FROM noggin_clues WHERE owner_id = ${ownerId} ORDER BY saved_at DESC LIMIT 500
+      `
+      return rows.map((r) => r.data)
+    },
+
+    async deleteClue(id) {
+      const rows = await sql`DELETE FROM noggin_clues WHERE id = ${id} RETURNING id`
+      return rows.length > 0
+    },
+
     // ── Results ──────────────────────────────────────────────────────────────
 
     async saveResult(summary) {

@@ -351,6 +351,9 @@ export function normaliseBoard(raw) {
     is lost — it simply becomes tie-break one.
   */
   const rawTiebreaks = Array.isArray(raw.tiebreaks) ? raw.tiebreaks : raw.tiebreak ? [raw.tiebreak] : []
+  /** Optional grouping for the board list. Free text, because a host's
+   *  categories for their own quizzes are not ours to enumerate. */
+  board.folder = str(raw.folder, 40)
   board.tiebreaks = rawTiebreaks.slice(0, MAX_TIEBREAKS).map((t) => ({
     prompt: str(t?.prompt, 600),
     media: media(t?.media),
@@ -2189,6 +2192,46 @@ export function summariseGame(room) {
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
     /** Clues taken, clues missed, and clues nobody took. In order. */
     log: (room.log ?? []).map((e) => ({ ...e })),
+  }
+}
+
+/**
+ * A clue, ready to be kept for reuse.
+ *
+ * Copied, not referenced: the bank is a source, and a board that pulls from it
+ * takes its own copy with its own id. Everything else here treats a board as a
+ * self-contained document — duplicate deep-copies, export is one file, a room
+ * snapshots the whole thing — and results now name the clues that were played.
+ * Referencing would mean a typo fixed tonight silently rewrote a board somebody
+ * ran last month.
+ */
+export function bankClue(clue, { category = "", ownerId = null } = {}) {
+  const text = str(clue?.prompt, 600).trim()
+  if (!text) return null
+  return {
+    id: uid("bc"),
+    ownerId,
+    category: str(category, 40),
+    prompt: text,
+    answer: str(clue?.answer, 300),
+    media: clue?.media ?? null,
+    answerMedia: clue?.answerMedia ?? null,
+    value: num(clue?.value, 0),
+    savedAt: Date.now(),
+  }
+}
+
+/** The other direction: a bank entry as a fresh clue for a tile. */
+export function clueFromBank(entry, value) {
+  return {
+    id: uid("c"),
+    value: num(value, entry?.value ?? 200),
+    prompt: str(entry?.prompt, 600),
+    answer: str(entry?.answer, 300),
+    media: entry?.media ?? null,
+    answerMedia: entry?.answerMedia ?? null,
+    nitro: false,
+    status: CLUE_STATUS.OPEN,
   }
 }
 

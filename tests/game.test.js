@@ -2120,3 +2120,42 @@ test("a tie-break slot is labelled by what it is for, not just its number", asyn
   // Past the named ones everything is a spare rather than undefined.
   assert.match(tiebreakRole(withSurvey, 9), /spare/)
 })
+
+/**
+ * The clue bank.
+ *
+ * A source, not a dependency. Boards are self-contained documents everywhere
+ * else here and results name the clues that were played, so a bank entry must
+ * never reach backwards into a board somebody already ran.
+ */
+test("a clue taken from the bank is a copy, not a reference", () => {
+  const entry = G.bankClue(
+    { prompt: "Black, veined with gold", answer: "marble", value: 400, media: null, answerMedia: null },
+    { category: "STONE", ownerId: "u1" },
+  )
+  assert.equal(entry.category, "STONE")
+  assert.equal(entry.ownerId, "u1")
+
+  const clue = G.clueFromBank(entry, 600)
+  assert.notEqual(clue.id, entry.id, "its own identity, or editing one would edit both")
+  assert.equal(clue.value, 600, "the tile's value wins over the one it was saved at")
+  assert.equal(clue.status, "open")
+  assert.equal(clue.nitro, false, "nitro belongs to the board's shape, not the question")
+
+  // Editing the copy leaves the bank alone, which is the whole point.
+  clue.prompt = "Something else entirely"
+  assert.equal(entry.prompt, "Black, veined with gold")
+})
+
+test("a clue with no question is not worth keeping", () => {
+  assert.equal(G.bankClue({ prompt: "   ", answer: "marble" }), null)
+  assert.equal(G.bankClue(null), null)
+  assert.equal(G.bankClue(undefined, { category: "STONE" }), null)
+})
+
+test("a board remembers which shelf it is on", () => {
+  const board = G.normaliseBoard({ id: "b", title: "Pub night", folder: "The Crown", rounds: [] })
+  assert.equal(board.folder, "The Crown")
+  // Unfiled is the default, not an error.
+  assert.equal(G.normaliseBoard({ id: "b", title: "t", rounds: [] }).folder, "")
+})

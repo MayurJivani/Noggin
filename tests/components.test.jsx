@@ -313,3 +313,39 @@ test("the desk offers a link for the next room", async () => {
   assert.equal(typeof net.watchUrl, "function", "there is a spectator link to hand out")
   assert.match(await net.watchUrl("ABCD"), /\/watch\?code=ABCD$/)
 })
+
+// ── The board library ────────────────────────────────────────────────────────
+
+test("boards group by shelf, with the unfiled ones first and unlabelled", async () => {
+  const { groupBoards } = await import("../src/lib/board.js")
+
+  const grouped = groupBoards([
+    { id: "1", title: "Loose one", folder: "" },
+    { id: "2", title: "Quiz night 3", folder: "The Crown" },
+    { id: "3", title: "Away day", folder: "Anchor" },
+    { id: "4", title: "Quiz night 4", folder: "The Crown" },
+  ])
+
+  assert.deepEqual(
+    grouped.map(([folder, list]) => [folder, list.length]),
+    [["", 1], ["Anchor", 1], ["The Crown", 2]],
+    "unfiled first, then shelves in name order",
+  )
+
+  // A library with nothing filed gets no headings at all: "Uncategorised" over
+  // every row is a heading that says nothing.
+  const flat = groupBoards([{ id: "1", title: "a" }, { id: "2", title: "b" }])
+  assert.deepEqual(flat.map(([f]) => f), [""])
+})
+
+test("pulling a clue from the bank keeps the tile's own value", async () => {
+  const { clueFromBankShape } = await import("../src/lib/board.js")
+  const patch = clueFromBankShape(
+    { prompt: "Au", answer: "gold", media: null, answerMedia: null, value: 200 },
+    800,
+  )
+  assert.equal(patch.value, 800, "the tile it lands on decides what it is worth")
+  assert.equal(patch.prompt, "Au")
+  // Everything the question owns is replaced, so no half of the old one is left.
+  assert.deepEqual(Object.keys(patch).sort(), ["answer", "answerMedia", "media", "prompt", "value"])
+})
