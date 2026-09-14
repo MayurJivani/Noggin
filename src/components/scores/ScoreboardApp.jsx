@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useEffect, useCallback, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { holdsBuzz, isCalling, isSpent, nameOf, raceOf, rows as sideRows, wagerOf } from "../../lib/sides"
 import { scoreSize, useRolling } from "../../lib/useRolling"
@@ -20,9 +20,15 @@ import { VeinLine } from "../ui/Vein"
  * a blind final wager stays blind here too.
  */
 export function ScoreboardApp() {
-  const [code] = useState(() => new URLSearchParams(location.search).get("code")?.toUpperCase() ?? "")
+  const [code] = useState(() => openedWith())
   const [error, setError] = useState(null)
   const { state, connected } = useRoom({ role: "display", code, onError: setError })
+
+  // Same rule as the big screen: once the relay says the code is hidden, this
+  // page stops carrying it in its own address bar. See `scrubCodeFromUrl`.
+  useEffect(() => {
+    if (state?.codeHidden) scrubCodeFromUrl(code)
+  }, [state?.codeHidden, code])
   const now = useCallback(() => Date.now(), [])
 
   // A booth tablet that sleeps stops being a scoreboard.

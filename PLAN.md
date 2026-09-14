@@ -57,6 +57,16 @@ What exists, and what is deliberately left for later.
   render `state.code` leaks it again. The QR goes too — a QR on a stream is
   *easier* to use than one in the room, because a viewer can pause the video.
 
+  The address bar counts as a screen. Every one of those pages is opened with
+  `?code=XXXX`, which a fullscreen projector or an OBS window capture never
+  shows — the usual setup, and why this shipped without it — but a desktop
+  capture does. So once the relay reports the code hidden, `src/lib/roomCode.js`
+  remembers it per page and strips it from the URL with `replaceState`. The
+  remembering is the part that matters: a projector that reloads mid-round must
+  come back to the room, not to the code prompt. What stays exposed, and is not
+  claimed otherwise: the host's own desk, browser history, and anyone reading
+  over a shoulder.
+
   It pairs with joining by sound, and that pairing is the point: the tone is the
   way in that a hidden code leaves open. It does not survive a stream nearly as
   well as a QR does, and it expires in seconds regardless.

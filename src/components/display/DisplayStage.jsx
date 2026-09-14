@@ -4,6 +4,7 @@ import { playForEffect, unlock, isUnlocked, music } from "../../lib/sfx"
 import { announceRoom } from "../../lib/knockJoin"
 import { nameOf, rows as sideRows } from "../../lib/sides"
 import { useWakeLock } from "../../lib/useWakeLock"
+import { openedWith, scrubCodeFromUrl } from "../../lib/roomCode"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
@@ -25,7 +26,9 @@ import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, TimerRing } fr
  *   rather than the screen the room is playing on.
  */
 export function DisplayStage({ code: initialCode, spectator = false }) {
-  const [code] = useState(() => initialCode || new URLSearchParams(location.search).get("code")?.toUpperCase() || "")
+  // The URL first, then what this page was last opened with — a projector that
+  // has scrubbed its address bar still has to survive a reload.
+  const [code] = useState(() => initialCode || openedWith())
   const [error, setError] = useState(null)
   const [audioOn, setAudioOn] = useState(false)
 
@@ -127,6 +130,18 @@ export function DisplayStage({ code: initialCode, spectator = false }) {
       stop()
     }
   }, [connected, audioOn, state?.phase, code, spectator])
+
+  /*
+    Streamer mode, applied to the address bar as well as the screen.
+
+    Withholding the code from the projection while leaving `?code=XXXX` in the
+    URL protects it from a window capture and not from a desktop one. Scrubbed
+    once the relay says it is hidden, and only then: a host who has not asked
+    for this keeps an address they can bookmark and send to a second machine.
+  */
+  useEffect(() => {
+    if (state?.codeHidden) scrubCodeFromUrl(code)
+  }, [state?.codeHidden, code])
 
   /*
     A projector that sleeps mid-round is the worst failure mode there is — but
