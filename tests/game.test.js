@@ -2052,6 +2052,34 @@ test("hideOnBuzz takes the clue off the phones, and only the phones", () => {
   assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0", "back for the rebound")
 })
 
+test("with no TV the phone keeps the clue, whatever the phone settings say", () => {
+  // The two settings that take the clue off a phone both assume the big screen
+  // still has it. With no big screen, obeying them would leave the words
+  // nowhere at all — so they are overridden rather than combined.
+  const room = setup(2, { noScreen: true, mirrorClue: false, hideOnBuzz: true })
+  G.selectClue(room, 0, 0)
+  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
+
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 10)
+  assert.equal(G.projectState(room, "player", "p1").clue.prompt, "prompt 0-0", "answering from memory needs a memory")
+  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
+
+  G.revealAnswer(room)
+  assert.equal(G.projectState(room, "player", "p0").clue.answer, "answer 0-0", "and the answer has nowhere else to appear")
+})
+
+test("the board reaches a phone without leaking what is on the tiles", () => {
+  // Drawing the board on a phone is a client-side change resting on this: the
+  // grid was always sent, and it must stay as redacted as it was on the TV.
+  const room = setup(2, { noScreen: true })
+  const mine = G.projectState(room, "player", "p0")
+  assert.ok(mine.board.round.categories.length >= 2)
+  assert.equal(mine.board.round.categories[0].clues[0].value, 200)
+  assert.equal(mine.board.round.categories[0].clues[0].prompt, undefined, "an unplayed tile keeps its contents")
+  assert.ok(!JSON.stringify(mine.board).includes("prompt 0-0"))
+})
+
 test("hideOnBuzz is off unless asked for", () => {
   const room = setup(2)
   G.selectClue(room, 0, 0)

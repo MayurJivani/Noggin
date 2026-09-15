@@ -160,30 +160,57 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
             gets its own drawer rather than being buried under "Joining".
           */}
           <Drawer title="Players' phones">
+            {/*
+              First, because it decides whether the two below it mean anything.
+              A host without a TV is not configuring a mirror — they are telling
+              the room where the game is, and everything else follows from that.
+            */}
             <Toggle
-              on={state.settings.mirrorClue !== false}
-              onClick={() => send("settings:set", { settings: { mirrorClue: state.settings.mirrorClue === false } })}
-              label={state.settings.mirrorClue !== false ? "Clue is on phones" : "Clue is hidden"}
+              on={!!state.settings.noScreen}
+              onClick={() => send("settings:set", { settings: { noScreen: !state.settings.noScreen } })}
+              label={state.settings.noScreen ? "No TV — phones are the board" : "Big screen in the room"}
               hint={
-                state.settings.mirrorClue !== false
-                  ? "Anyone who can't see the TV can read along."
-                  : "Never sent to them — and their buzzer is bigger for it."
+                state.settings.noScreen
+                  ? "Each phone draws the board, the standings and every clue."
+                  : "Phones are buzzers; the board lives on the big screen."
               }
             />
-            {/* Only worth offering when there is a clue on the phones to take
-                away. With mirroring off it would toggle nothing. */}
-            {state.settings.mirrorClue !== false && (
-              <Toggle
-                className="mt-2"
-                on={!!state.settings.hideOnBuzz}
-                onClick={() => send("settings:set", { settings: { hideOnBuzz: !state.settings.hideOnBuzz } })}
-                label={state.settings.hideOnBuzz ? "Hidden once buzzed" : "Stays up when buzzed"}
-                hint={
-                  state.settings.hideOnBuzz
-                    ? "Buzz and the words go — you answer from memory. The big screen keeps it."
-                    : "Whoever buzzed can keep reading it while they think."
-                }
-              />
+            {/*
+              Hidden rather than disabled while there is no TV. Both of these
+              take the clue off the phones on the grounds that the big screen
+              still has it, which is exactly the assumption that has just been
+              removed — the relay ignores them there, and a toggle that does
+              nothing is worse than one that is not offered.
+            */}
+            {!state.settings.noScreen && (
+              <>
+                <Toggle
+                  className="mt-2"
+                  on={state.settings.mirrorClue !== false}
+                  onClick={() => send("settings:set", { settings: { mirrorClue: state.settings.mirrorClue === false } })}
+                  label={state.settings.mirrorClue !== false ? "Clue is on phones" : "Clue is hidden"}
+                  hint={
+                    state.settings.mirrorClue !== false
+                      ? "Anyone who can't see the TV can read along."
+                      : "Never sent to them — and their buzzer is bigger for it."
+                  }
+                />
+                {/* Only worth offering when there is a clue on the phones to
+                    take away. With mirroring off it would toggle nothing. */}
+                {state.settings.mirrorClue !== false && (
+                  <Toggle
+                    className="mt-2"
+                    on={!!state.settings.hideOnBuzz}
+                    onClick={() => send("settings:set", { settings: { hideOnBuzz: !state.settings.hideOnBuzz } })}
+                    label={state.settings.hideOnBuzz ? "Hidden once buzzed" : "Stays up when buzzed"}
+                    hint={
+                      state.settings.hideOnBuzz
+                        ? "Buzz and the words go — you answer from memory. The big screen keeps it."
+                        : "Whoever buzzed can keep reading it while they think."
+                    }
+                  />
+                )}
+              </>
             )}
           </Drawer>
 

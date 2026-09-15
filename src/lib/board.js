@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS = {
   teams: false,
   mirrorClue: true,
   hideOnBuzz: false,
+  noScreen: false,
   pingCorrection: false,
   streamer: false,
 }

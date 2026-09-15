@@ -80,6 +80,23 @@ export const DEFAULTS = {
    */
   hideOnBuzz: false,
   /**
+   * No TV. The phones are the board.
+   *
+   * A kitchen table, a pub without a screen, a car — the game works fine with
+   * nothing but the host's laptop and everyone's phone, and until now the
+   * phones showed a buzzer and nothing to buzz *at*. On, each phone draws the
+   * board between clues, the standings with it, and the round it is in.
+   *
+   * It overrides the two settings that take the clue off the phones, rather
+   * than sitting alongside them: both are written assuming the big screen still
+   * has it — "you answer from memory, the room keeps reading" — and with no big
+   * screen they do not withhold the clue from a player, they withhold it from
+   * everybody. That is not a mode anyone would choose on purpose, so it is not
+   * one the host can assemble by accident. Enforced in `projectState` with the
+   * rest of the redaction; the toggles hide themselves while it is on.
+   */
+  noScreen: false,
+  /**
    * Several phones sharing one score and one buzz. See the Teams section.
    * Off by default: a party of five plays as five, and turning this on when
    * nobody asked for it would silently merge everyone's scores.
@@ -2407,13 +2424,19 @@ export function projectState(room, role, viewerId = null) {
     an answer, so withholding the clue there would not hide it — it would end
     the round. See `projectFinal`.
   */
-  const mirrored = privileged || role !== "player" || room.settings.mirrorClue !== false
+  /*
+    With no big screen, the phone *is* the screen. Both settings that take the
+    clue off a phone assume the room can still read it somewhere; here it
+    cannot, so they are overridden rather than obeyed. See `noScreen`.
+  */
+  const noScreen = !!room.settings.noScreen
+  const mirrored = privileged || role !== "player" || noScreen || room.settings.mirrorClue !== false
   /*
     Withheld while somebody holds the buzz — see `hideOnBuzz`. Enforced here
     rather than by the phone hiding what it was sent, for the same reason
     `mirrorClue` is: "hidden" that is one devtools panel away is not hidden.
   */
-  const buzzedOut = !privileged && role === "player" && !!room.settings.hideOnBuzz && !!room.buzzer.winner
+  const buzzedOut = !privileged && role === "player" && !noScreen && !!room.settings.hideOnBuzz && !!room.buzzer.winner
   const hidden = !mirrored || buzzedOut || (room.phase === PHASE.WAGER && !privileged)
   const clue = tb
     ? {

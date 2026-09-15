@@ -349,3 +349,103 @@ test("pulling a clue from the bank keeps the tile's own value", async () => {
   // Everything the question owns is replaced, so no half of the old one is left.
   assert.deepEqual(Object.keys(patch).sort(), ["answer", "answerMedia", "media", "prompt", "value"])
 })
+
+// ── A game with no television in the room ────────────────────────────────────
+
+/** A joined phone, mid-game, with only the fields this screen reads. */
+const phone = (over = {}) => {
+  const players = over.players ?? [
+    { id: "p0", name: "Ann", score: 600, connected: true, lifelines: { phone: 1 }, history: [] },
+    { id: "p1", name: "Ben", score: 200, connected: true, lifelines: { phone: 1 }, history: [] },
+  ]
+  return {
+    state: {
+      phase: "board",
+      settings: { noScreen: true, lifelines: { phone: 1 } },
+      buzzer: { armed: false, winner: null, spent: [], lockedUntil: {} },
+      clue: null,
+      lifeline: null,
+      players,
+      teams: null,
+      stake: 0,
+      code: "ABCD",
+      board: {
+        roundCount: 2,
+        round: {
+          name: "Round 1",
+          values: [200, 400],
+          categories: [
+            { id: "c0", title: "CATTLE", clues: [{ id: "q0", value: 200, status: "played" }, { id: "q1", value: 400, status: "open" }] },
+            { id: "c1", title: "KETTLE", clues: [{ id: "q2", value: 200, status: "open" }, { id: "q3", value: 400, status: "open" }] },
+          ],
+        },
+      },
+      ...over,
+    },
+    me: players[0],
+    connected: true,
+    rtt: 20,
+    send: () => {},
+    pressed: false,
+    setPressed: () => {},
+    onLeave: () => {},
+  }
+}
+
+test("with no TV the phone draws the board between clues", async () => {
+  const { Board } = await import("../src/components/play/PlayerApp.jsx")
+  const out = text(<Board {...phone()} />)
+
+  // The tiles themselves, categories and all: this is the board, not a summary
+  // of it. A phone-only game has nowhere else to show what is left to play for.
+  assert.ok(out.includes("CATTLE") && out.includes("KETTLE"), "the categories are there")
+  assert.ok(out.includes("400"), "and the values")
+  assert.ok(out.includes("Round 1"), "and which round it is — nothing else says so")
+
+  // Standings, because there is no scoreboard on a wall either.
+  assert.ok(out.includes("Ann") && out.includes("Ben") && out.includes("600"))
+
+  // The buzzer is not drawn over it. Between clues there is nothing to buzz at,
+  // which is the whole reason the board can have the space.
+  assert.ok(!out.includes("BUZZ"), "the idle buzzer gives up its space")
+})
+
+test("the board on the phone is opt-in — a room with a TV is unchanged", async () => {
+  const { Board } = await import("../src/components/play/PlayerApp.jsx")
+  const props = phone()
+  props.state.settings = { noScreen: false, lifelines: { phone: 1 } }
+  const out = text(<Board {...props} />)
+
+  assert.ok(out.includes("BUZZ"), "the button keeps the screen")
+  assert.ok(!out.includes("CATTLE"), "and the board stays on the television")
+  assert.ok(out.includes("Watch the screen"))
+})
+
+test("the clue comes back up the moment one is picked", async () => {
+  const { Board } = await import("../src/components/play/PlayerApp.jsx")
+  const out = text(
+    <Board
+      {...phone({
+        phase: "clue",
+        stake: 400,
+        clue: { id: "q1", value: 400, prompt: "A cow, but larger", category: "CATTLE", media: null, answer: null },
+      })}
+    />,
+  )
+  assert.ok(out.includes("A cow, but larger"))
+  assert.ok(out.includes("BUZZ"), "and the thumb finds the button where it left it")
+  assert.ok(!out.includes("KETTLE"), "the board is out of the way")
+})
+
+test("the desk stops offering the two toggles that a room with no TV cannot obey", () => {
+  const withTv = text(desk({}))
+  assert.ok(withTv.includes("Clue is on phones"), "both are offered in the usual setup")
+  assert.ok(withTv.includes("Stays up when buzzed"))
+
+  // The relay overrides both while there is no big screen, so a desk that kept
+  // offering them would be offering controls that do nothing.
+  const without = text(desk({ settings: { mirrorClue: true, hideOnBuzz: false, streamer: false, teams: false, pingCorrection: false, noScreen: true } }))
+  assert.ok(without.includes("No TV"), "and the mode says so plainly")
+  assert.ok(!without.includes("Clue is on phones"))
+  assert.ok(!without.includes("Stays up when buzzed"))
+})

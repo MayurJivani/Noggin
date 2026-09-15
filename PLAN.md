@@ -46,6 +46,22 @@ What exists, and what is deliberately left for later.
   setup Noggin is usually played on made a working feature look broken. Every
   path falls back to typing the code, including browsers that resample the
   microphone below the band and can never hear it.
+- **No TV** — a room setting for a game with no big screen at all. The phones
+  draw the board between clues, the standings under it, and every clue as it
+  goes up; the host's laptop is the only other screen involved.
+
+  The board was always on the wire — a phone has had the grid, the values and
+  which tiles are spent since the scoreboard was written — so this is mostly the
+  big screen's own `BoardGrid`, reused. Its tiles size their numbers from their
+  own dimensions, which is exactly what makes a 5x5 grid legible in a 327px box
+  and precisely what a hand-rolled phone version would have had to reinvent.
+
+  It is drawn in the buzzer's space, and only between clues: there is nothing to
+  buzz at while the host is picking a tile, and the thumb finds the button in
+  the same place the moment one goes up. The one rule it enforces upward is that
+  it overrides `mirrorClue` and `hideOnBuzz` — both withhold the clue from a
+  phone on the grounds that the room can still read it off the TV, and with no
+  TV they would withhold it from everybody. The desk stops offering them.
 - **Streamer mode** — a room setting that keeps the code and the join QR off
   every screen a camera can see: the big screen, the scoreboard, the podiums and
   the players' own phones. The host desk, the cue cards and the controller keep

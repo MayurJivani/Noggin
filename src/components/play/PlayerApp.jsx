@@ -7,6 +7,7 @@ import { readJson, removeStore, writeJson } from "../../lib/storage"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
+import { BoardGrid } from "../display/BoardGrid"
 import { Diagnostics } from "./Diagnostics"
 import { FinalPanel } from "./FinalPanel"
 import { VeinLine } from "../ui/Vein"
@@ -271,7 +272,7 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
   )
 }
 
-function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, debug = false }) {
+export function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, debug = false }) {
   const { phase, buzzer, clue, lifeline } = state
   const now = useCallback(() => Date.now(), [])
 
@@ -306,7 +307,22 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
     room, and the first thing anyone does about that is press the button again.
     Better to keep the frame and say what happened inside it.
   */
-  const clueHidden = !!state.settings?.hideOnBuzz && !!buzzer.winner && phase === "clue"
+  /*
+    No TV: this phone is the board.
+
+    Drawn in the buzzer's own space, between clues, because that is the only
+    stretch of the game where the button has nothing to do — there is no clue
+    to buzz at while the host is picking a tile. Nothing moves and nothing
+    shrinks, so the thumb finds the buzzer in the same place it always was the
+    moment a clue goes up.
+  */
+  const noScreen = !!state.settings?.noScreen
+  const showBoard = noScreen && (phase === "board" || phase === "intermission")
+  // Standings go with it, and outlast it: at the end of the night there is no
+  // big screen to read the result off either.
+  const showStanding = noScreen && (showBoard || phase === "lobby" || phase === "ended")
+
+  const clueHidden = !noScreen && !!state.settings?.hideOnBuzz && !!buzzer.winner && phase === "clue"
   const showClue = clue && phase !== "board" && (!!(clue.prompt || clue.media) || clueHidden)
 
   const iHoldIt = buzzer.winner === me?.id
@@ -387,7 +403,11 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
                 ? { text: "Waiting to start", tone: "dim" }
                 : phase === "ended"
                   ? { text: "That's the game", tone: "dim" }
-                  : { text: "Watch the screen", tone: "dim" }
+                  // "Watch the screen" is a lie in a room without one, and the
+                  // phone it is written on is the screen being talked about.
+                  : noScreen
+                    ? { text: "The host is picking", tone: "dim" }
+                    : { text: "Watch the screen", tone: "dim" }
 
   const tone = {
     live: "text-live",
@@ -511,7 +531,10 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
         </div>
       )}
 
-      <div className={`relative z-10 flex min-h-0 flex-1 items-center justify-center px-6 py-3 ${phase === "final" ? "hidden" : ""}`}>
+      <div className={`relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-3 ${phase === "final" ? "hidden" : ""}`}>
+        {showBoard ? (
+          <PhoneBoard board={state.board} />
+        ) : (
         <BuzzerButton
           canBuzz={canBuzz && connected}
           iHoldIt={iHoldIt || heard}
@@ -524,7 +547,10 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
           offline={!connected}
           roomy={!showClue}
         />
+        )}
       </div>
+
+      {showStanding && <Standing players={state.players} teams={state.teams} me={me} />}
 
       {debug && <Diagnostics log={log} state={state} me={me} connected={connected} rtt={rtt} wake={wake} />}
 
@@ -552,6 +578,67 @@ function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, 
           </button>
         </div>
       </footer>
+    </div>
+  )
+}
+
+/**
+ * The board, on a phone, when there is no screen to put it on.
+ *
+ * The big screen's own grid, reused as-is rather than rewritten smaller. Its
+ * tiles size their numbers from their own dimensions — which is the property
+ * that makes a 6x5 grid legible in a 340px-wide box and is precisely what a
+ * hand-rolled phone version would have had to reinvent. The round's name goes
+ * above it because a player with no TV has nothing else to tell them the game
+ * has moved on.
+ */
+function PhoneBoard({ board }) {
+  const round = board?.round
+  if (!round) return null
+  return (
+    <div className="flex h-full w-full min-h-0 flex-col">
+      <div className="mb-1 shrink-0 text-center label">
+        {round.name || "The board"}
+        {board.roundCount > 1 && <span className="ml-1.5 opacity-60">· of {board.roundCount}</span>}
+      </div>
+      <div className="min-h-0 flex-1">
+        <BoardGrid round={round} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Who is winning, for a room that cannot look up at a scoreboard.
+ *
+ * One line, scrolled sideways rather than wrapped: this sits above the footer
+ * on a screen whose height is already spoken for, and a standings block that
+ * grows with the guest list is a standings block that eventually pushes the
+ * buzzer off the bottom. Ten players scroll; they do not reflow.
+ */
+function Standing({ players, teams, me }) {
+  // In team mode the number on the board is the side's, so show sides — a
+  // player's own row would repeat their team's score once per member.
+  const rows = teams?.length ? teams : (players ?? [])
+  if (!rows.length) return null
+  const mine = teams?.length ? teams.find((t) => t.members.includes(me?.id))?.id : me?.id
+
+  return (
+    <div className="relative z-10 shrink-0 overflow-x-auto px-4 pb-1">
+      <div className="flex w-max gap-1.5">
+        {rows.map((row, i) => (
+          <div
+            key={row.id}
+            className={`flex shrink-0 items-baseline gap-1.5 rounded-lg border px-2 py-1 ${
+              row.id === mine ? "border-gold-dim/60 bg-gold/10" : "border-edge bg-black/25"
+            }`}
+          >
+            <span className="text-[10px] tabular-nums text-faint">{i + 1}</span>
+            <span className="max-w-[9ch] truncate text-[11px] text-ink">{row.name}</span>
+            <span className={`font-value text-[13px] tabular-nums ${row.score < 0 ? "text-bad" : "text-gold"}`}>{row.score}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
