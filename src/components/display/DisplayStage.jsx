@@ -337,7 +337,7 @@ function Stage({ code, state, connected, error, audioOn, spectator, broadcasting
  * pause is that nobody should be reading the clue or eyeing the grid while the
  * host is away from the desk.
  */
-function PausedCard() {
+export function PausedCard() {
   return (
     <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[2vmin] bg-void/85 backdrop-blur-sm animate-rise">
       <div className="flex items-center gap-[2.5vmin]">
@@ -580,7 +580,7 @@ function Tiebreak({ state, rows }) {
  * who is deciding. That last line is the useful one, because until the host
  * picks a side there is nobody to look at.
  */
-function NitroWait({ clue, name, stake }) {
+export function NitroWait({ clue, name, stake }) {
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-[2.5vmin] bg-void/92 px-[6vmin] text-center animate-slam">
       <div className="font-display uppercase tracking-[0.2em] text-live animate-glow" style={{ fontSize: "max(26px, calc(var(--stage) * 5.5))" }}>

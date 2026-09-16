@@ -62,6 +62,15 @@ What exists, and what is deliberately left for later.
   it overrides `mirrorClue` and `hideOnBuzz` — both withhold the clue from a
   phone on the grounds that the room can still read it off the TV, and with no
   TV they would withhold it from everybody. The desk stops offering them.
+
+  The screen's moments come with it: the Nitro splash and the wait while a
+  wager is set, Phone a Friend with its draining ring, who just buzzed and how
+  it was ruled, the answer clock, and the paused card. They are the big
+  screen's own components, unchanged — every one was written with a
+  `max(…px, …)` floor so it survives a small panel, which is exactly what was
+  needed. The "buzzers open" banner is the one deliberate omission: the status
+  line already says it in words. The clock moves to the bottom corner, because
+  the screen's top-right is the player's own name and score.
 - **Streamer mode** — a room setting that keeps the code and the join QR off
   every screen a camera can see: the big screen, the scoreboard, the podiums and
   the players' own phones. The host desk, the cue cards and the controller keep

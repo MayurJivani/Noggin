@@ -415,6 +415,38 @@
   */
   .board-category {
     font-size: max(11px, calc(var(--stage) * (2.4 - var(--cols, 5) * 0.08)));
+
+    /*
+      A title longer than its column breaks, rather than running out of it.
+
+      Wrapping only happens at spaces by default, so a single long word —
+      TRANSPORTATION in a 59px column on a phone — has nowhere to break and
+      spills 36px into the category beside it. Two headers printed over each
+      other is the one failure worse than a small heading.
+
+      `break-word` rather than `anywhere`: it breaks a word only when the word
+      cannot fit a line of its own, so "BEFORE & AFTER" still wraps at the
+      space it already had and only the genuinely oversized word is cut into.
+      `hyphens` marks that break where the language has a rule for it, so it
+      reads as a hyphenated word rather than a typo.
+
+      Nothing is clipped: the header row is auto-height, so it takes the lines
+      it needs and the tiles below give up the difference.
+    */
+    overflow-wrap: break-word;
+    hyphens: auto;
+
+    /*
+      And the line has to be allowed to be narrow enough to break on.
+
+      `break-word` breaks a word that will not fit its line, and this is a flex
+      item, whose automatic minimum size is its longest word — so the line was
+      always exactly wide enough for TRANSPORTATION and the break never fired.
+      Measured before and after: 36px of spill into the next category, then
+      none. This pair is the fix; either half alone does nothing.
+    */
+    min-width: 0;
+    max-width: 100%;
   }
 
   @supports not (container-type: size) {

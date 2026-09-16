@@ -94,7 +94,14 @@ export function LifelineOverlay({ lifeline, playerName, now }) {
 }
 
 /** The host's read/discussion clock, parked top-right so it never covers a clue. */
-export function TimerRing({ timer, now }) {
+/**
+ * @param {object} props
+ * @param {string} [props.className] – where it sits. The default is the big
+ *   screen's top-right corner, which on a phone is occupied by the player's own
+ *   name and score; that is the only reason this is a prop.
+ * @param {string} [props.size] – edge length, as any CSS length.
+ */
+export function TimerRing({ timer, now, className = "absolute right-[2.5vmin] top-[2.5vmin] z-20", size = "11vmin" }) {
   const left = useCountdown(timer?.endsAt, now)
   if (!timer || timer.kind === "lifeline" || left == null) return null
 
@@ -104,7 +111,7 @@ export function TimerRing({ timer, now }) {
   const circ = 2 * Math.PI * r
 
   return (
-    <div className="absolute right-[2.5vmin] top-[2.5vmin] z-20" style={{ width: "11vmin", height: "11vmin" }}>
+    <div className={className} style={{ width: size, height: size }}>
       <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
         <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(43,39,51,0.8)" strokeWidth="7" />
         <circle
@@ -121,7 +128,7 @@ export function TimerRing({ timer, now }) {
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className={`font-value tabular-nums ${seconds <= 5 ? "text-bad" : "text-gold"}`} style={{ fontSize: "3.6vmin" }}>
+        <span className={`font-value tabular-nums ${seconds <= 5 ? "text-bad" : "text-gold"}`} style={{ fontSize: "max(13px, 3.6vmin)" }}>
           {seconds}
         </span>
       </div>

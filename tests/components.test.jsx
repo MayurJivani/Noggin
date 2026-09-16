@@ -449,3 +449,45 @@ test("the desk stops offering the two toggles that a room with no TV cannot obey
   assert.ok(!without.includes("Clue is on phones"))
   assert.ok(!without.includes("Stays up when buzzed"))
 })
+
+test("a nitro reaches the phone when there is no screen to put it on", async () => {
+  const { Board } = await import("../src/components/play/PlayerApp.jsx")
+  const wager = {
+    phase: "wager", stake: 800,
+    wager: { playerId: "p1", amount: null },
+    clue: { id: "q9", value: 800, prompt: "", nitro: true, category: "TRANSPORTATION", media: null, answer: null },
+  }
+
+  // The clue is deliberately not sent during a wager — the bet is made before
+  // the words — so without this the phone showed a live-looking buzzer and no
+  // sign the game had stopped for somebody's bet.
+  const out = text(<Board {...phone(wager)} />)
+  assert.ok(out.includes("Nitro"), "the phone says what is happening")
+  assert.ok(out.includes("Ben"), "and who is deciding")
+  assert.ok(out.includes("800"), "and what the tile is worth")
+
+  const props = phone(wager)
+  props.state.settings = { noScreen: false, lifelines: { phone: 1 } }
+  assert.ok(!text(<Board {...props} />).includes("Nitro"), "with a TV it stays on the TV")
+})
+
+test("the screen's own moments play on the phone when it is the only screen", async () => {
+  const { Board } = await import("../src/components/play/PlayerApp.jsx")
+  const clue = { id: "q1", value: 600, prompt: "A cow, but larger", category: "CATTLE", media: null, answer: null }
+
+  const paused = text(<Board {...phone({ phase: "clue", clue, paused: true })} />)
+  assert.ok(paused.includes("Back in a moment"), "the room is told why nothing is happening")
+
+  const ringing = text(<Board {...phone({ phase: "clue", clue, lifeline: { playerId: "p1", endsAt: Date.now() + 20000 } })} />)
+  assert.ok(ringing.includes("Phone a Friend") && ringing.includes("Ben"), "and whose call it is")
+
+  // Who got there first, which on a phone was only ever known to the winner.
+  const buzzed = text(<Board {...phone({ phase: "clue", clue })} flash={{ name: "Cal", verdict: "wrong" }} />)
+  assert.ok(buzzed.includes("Cal"))
+
+  // None of it on a night with a television, where it would be a second copy
+  // of what the room is already looking at.
+  const props = phone({ phase: "clue", clue, paused: true })
+  props.state.settings = { noScreen: false, lifelines: { phone: 1 } }
+  assert.ok(!text(<Board {...props} />).includes("Back in a moment"))
+})

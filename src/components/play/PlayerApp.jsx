@@ -7,7 +7,10 @@ import { readJson, removeStore, writeJson } from "../../lib/storage"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
+import { nameOf } from "../../lib/sides"
 import { BoardGrid } from "../display/BoardGrid"
+import { NitroWait, PausedCard } from "../display/DisplayStage"
+import { BuzzOverlay, LifelineOverlay, NitroSplash, TimerRing } from "../display/Overlays"
 import { Diagnostics } from "./Diagnostics"
 import { FinalPanel } from "./FinalPanel"
 import { VeinLine } from "../ui/Vein"
@@ -34,10 +37,45 @@ export function PlayerApp() {
   /** Local echo so the button reacts on touch, not on the round trip. */
   const [pressed, setPressed] = useState(false)
 
+  /*
+    The moments the big screen would have shown, for a room that has no big
+    screen. Transient by nature — state says who holds the buzzer, this says
+    somebody *just* took it, which is what an animation needs. Kept whatever
+    the setting says, because the setting can be turned on mid-game and a
+    handful of bytes is cheaper than a second effects path.
+  */
+  const [flash, setFlash] = useState(null)
+  const [splash, setSplash] = useState(false)
+  const flashTimer = useRef(0)
+
   const onEffects = useCallback(
     (effects, next) => {
       const me = identityRef.current?.playerId
       for (const fx of effects) {
+        /*
+          Everyone's moments, not just this phone's.
+
+          The buzz, haptics and verdict sounds below are deliberately about
+          *you* — a phone that buzzed in someone else's hand should not shake in
+          yours. What the television showed the room is the opposite: it is
+          about whoever it happened to, and with no television this is where it
+          has to appear.
+        */
+        if (fx.kind === "nitro") {
+          setSplash(true)
+          setTimeout(() => setSplash(false), 2000)
+        }
+        if (fx.kind === "buzz-in" || fx.kind === "correct" || fx.kind === "wrong") {
+          // On team night a ruling names the side, not the phone. Resolve either.
+          const who = nameOf(next, fx.playerId ?? fx.unitId)
+          if (who) {
+            clearTimeout(flashTimer.current)
+            const verdict = fx.kind === "buzz-in" ? null : fx.kind
+            setFlash({ name: who, verdict })
+            flashTimer.current = setTimeout(() => setFlash(null), verdict ? 1400 : 1100)
+          }
+        }
+
         if (fx.playerId && fx.playerId !== me) continue
         if (fx.kind === "buzz-in") {
           sfx.buzz()
@@ -53,7 +91,6 @@ export function PlayerApp() {
           buzz(200)
         }
       }
-      void next
     },
     [],
   )
@@ -107,6 +144,8 @@ export function PlayerApp() {
       send={send}
       pressed={pressed}
       setPressed={setPressed}
+      flash={flash}
+      splash={splash}
       onLeave={() => {
         removeStore(STORAGE)
         setJoined(false)
@@ -272,7 +311,7 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
   )
 }
 
-export function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, debug = false }) {
+export function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, flash = null, splash = false, debug = false }) {
   const { phase, buzzer, clue, lifeline } = state
   const now = useCallback(() => Date.now(), [])
 
@@ -321,6 +360,16 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
   // Standings go with it, and outlast it: at the end of the night there is no
   // big screen to read the result off either.
   const showStanding = noScreen && (showBoard || phase === "lobby" || phase === "ended")
+
+  /*
+    A nitro, on a phone.
+
+    The clue is deliberately not sent during a wager — the bet is made before
+    the words — so with no big screen the phone showed a live-looking buzzer
+    and no hint that the game had stopped for somebody's bet. This is the
+    screen's own panel, which already carries that beat.
+  */
+  const showNitro = noScreen && phase === "wager" && !!clue
 
   const clueHidden = !noScreen && !!state.settings?.hideOnBuzz && !!buzzer.winner && phase === "clue"
   const showClue = clue && phase !== "board" && (!!(clue.prompt || clue.media) || clueHidden)
@@ -534,6 +583,12 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
       <div className={`relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center px-6 py-3 ${phase === "final" ? "hidden" : ""}`}>
         {showBoard ? (
           <PhoneBoard board={state.board} />
+        ) : showNitro ? (
+          /* The nitro's own wait, in the buzzer's space: nobody may buzz until
+             the wager is locked, so the button has nothing to do here either. */
+          <div className="relative h-full w-full">
+            <NitroWait clue={clue} name={nameOf(state, state.wager?.teamId ?? state.wager?.playerId)} stake={state.stake} />
+          </div>
         ) : (
         <BuzzerButton
           canBuzz={canBuzz && connected}
@@ -551,6 +606,28 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
       </div>
 
       {showStanding && <Standing players={state.players} teams={state.teams} me={me} />}
+
+      {/*
+        What the television would have been doing.
+
+        The overlays are the big screen's own, unchanged: every one of them was
+        written with a `max(…px, …)` floor so it stays legible on a small panel,
+        which is exactly the property needed here. The "buzzers open" banner is
+        the one deliberate omission — the status line above already says it in
+        words, and a second announcement of the same fact is noise on a screen
+        this size.
+      */}
+      {noScreen && (
+        <>
+          <NitroSplash show={splash} />
+          <LifelineOverlay lifeline={lifeline} playerName={nameOf(state, lifeline?.playerId)} now={now} />
+          <BuzzOverlay name={flash?.name} verdict={flash?.verdict} />
+          {/* Bottom corner rather than the screen's top-right, which on a phone
+              is the player's own name and score. */}
+          <TimerRing timer={state.timer} now={now} className="pointer-events-none absolute bottom-[108px] right-3 z-20" size="58px" />
+          {state.paused && <PausedCard />}
+        </>
+      )}
 
       {debug && <Diagnostics log={log} state={state} me={me} connected={connected} rtt={rtt} wake={wake} />}
 
