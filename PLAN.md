@@ -209,6 +209,16 @@ What exists, and what is deliberately left for later.
 - **Tie-break** — sudden death when the game ends level: the tied sides only,
   first correct answer wins, nothing scored. Optional clue written beside the
   final; the host can rerun it or award it by hand if nobody takes it.
+
+  "Nothing scored" is the default rather than the rule. A night that ends
+  4200-4200 with the winner recorded in a field nobody can see reads, on the
+  results screen and in the export, as a tie that was never settled — so the
+  desk can choose **Winner takes 100** before ruling, and the ruling buttons
+  say so while it is on. The amount is the relay's: the desk asks for a bonus,
+  it does not name a figure. A run-off for a survey seat can never pay —
+  `takeTiebreak` leaves down that branch before anything is awarded, because
+  buying the right to play a separately scored round should not move the quiz
+  scoreboard.
 - **The final clue** — blind wagers, written answers against a clock, and a
   reveal that turns players over poorest first. Wagers and answers are projected
   per viewer, so no player sees another's before the host opens it.

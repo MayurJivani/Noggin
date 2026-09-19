@@ -491,3 +491,37 @@ test("the screen's own moments play on the phone when it is the only screen", as
   props.state.settings = { noScreen: false, lifelines: { phone: 1 } }
   assert.ok(!text(<Board {...props} />).includes("Back in a moment"))
 })
+
+// ── Making the play-off pay ──────────────────────────────────────────────────
+
+const tiebreakDesk = (over = {}) =>
+  desk({
+    phase: "tiebreak",
+    players: [player("p0", "Ann", 500), player("p1", "Ben", 500)],
+    clue: { id: "tiebreak", value: 0, prompt: "Name it", answer: "This", category: "Tie-break", media: null, answerMedia: null, catIndex: -1, clueIndex: -1, nitro: false },
+    tiebreak: { contenders: ["p0", "p1"], spent: [], round: 1, purpose: "winner", seats: 1, hasClue: true, clueIndex: 0, spare: 1 },
+    ...over,
+  })
+
+test("the desk can choose whether winning the play-off pays, before ruling on it", () => {
+  const out = text(tiebreakDesk())
+
+  // Off by default: the sides were level and a buzzer race is not worth the
+  // same as a clue. The offer is what is new, not the behaviour.
+  assert.ok(out.includes("Winner takes nothing"), "the default says what it will do")
+  assert.ok(!out.includes("+100"), "and no button promises a hundred points")
+
+  // A run-off for a survey seat is not the game, and the relay refuses to pay
+  // for one — so the desk must not offer it either.
+  const cut = text(tiebreakDesk({ tiebreak: { contenders: ["p0", "p1"], spent: [], round: 1, purpose: "cut", seats: 1, hasClue: true, clueIndex: 0, spare: 1 } }))
+  assert.ok(!cut.includes("Winner takes"), "a seat is not worth a hundred points")
+})
+
+test("the ruling buttons say whether they are about to pay", () => {
+  // Static rendering cannot click the toggle, so this asserts the wiring the
+  // click drives: with the buzz held, the two rulings are on screen and say
+  // plainly what they do. The toggled-on wording is covered by the label above.
+  const held = text(tiebreakDesk({ buzzer: { armed: false, winner: "p0", spent: [], order: [], lockedUntil: {} } }))
+  assert.ok(held.includes("Correct — wins"))
+  assert.ok(held.includes("Wrong — out"))
+})

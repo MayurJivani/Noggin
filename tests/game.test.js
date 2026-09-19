@@ -1210,6 +1210,61 @@ test("the winner is recorded as a winner, not as a point", () => {
   assert.equal(G.projectState(room, "display").tied, null, "settled, so no longer offered")
 })
 
+test("the host can make the play-off pay, so the result reads as a result", () => {
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  const fx = G.judgeTiebreak(room, true, undefined, true)
+
+  assert.equal(room.players.get("p0").score, 600, "a game that ends 500-500 with a hidden winner reads as a tie")
+  assert.equal(room.players.get("p1").score, 500, "and only the winner is paid")
+  assert.equal(room.winner, "p0", "still recorded as a win as well as a score")
+  assert.equal(room.phase, G.PHASE.ENDED)
+  assert.equal(fx.find((f) => f.kind === "tiebreak-won").bonus, 100)
+
+  // And it is in the working, so the scoreboard can say where it came from.
+  const last = room.players.get("p0").history.at(-1)
+  assert.equal(last.delta, 100)
+  assert.equal(last.detail, "Tie-break")
+})
+
+test("awarding it by hand can pay too, and paying is never the default", () => {
+  const paid = ended([500, 500])
+  G.openTiebreak(paid)
+  G.awardTiebreak(paid, "p1", true)
+  assert.equal(paid.players.get("p1").score, 600)
+
+  const unpaid = ended([500, 500])
+  G.openTiebreak(unpaid)
+  G.awardTiebreak(unpaid, "p1")
+  assert.equal(unpaid.players.get("p1").score, 500, "a play-off still decides an order, not an amount")
+  assert.equal(unpaid.winner, "p1")
+})
+
+test("the amount is the relay's, not the caller's", () => {
+  // The desk asks for a bonus; it does not name a figure. A client that sends
+  // one gets the house number or nothing.
+  const room = ended([500, 500])
+  G.openTiebreak(room)
+  G.awardTiebreak(room, "p0", 999999)
+  assert.equal(room.players.get("p0").score, 500 + G.TIEBREAK_BONUS)
+})
+
+test("a run-off for a survey seat never pays", () => {
+  // It buys the right to play a round that is scored separately. Moving the
+  // quiz scoreboard on the strength of that race is not what was agreed.
+  const room = ended([800, 500, 500])
+  room.board.survey = { ...room.board.survey, enabled: true }
+  const fx = G.openTiebreak(room, "cut")
+  assert.equal(room.tiebreak.purpose, "cut", "this is the cut, not the game")
+
+  G.awardTiebreak(room, "p1", true)
+  assert.equal(room.players.get("p1").score, 500, "a seat, not a hundred points")
+  assert.ok(room.qualified.includes("p1"))
+  void fx
+})
+
 test("a wrong answer puts that side out and leaves it to the other", () => {
   const room = ended([500, 500])
   G.openTiebreak(room)

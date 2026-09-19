@@ -1657,11 +1657,11 @@ function handleHostMessage(room, meta, ws, msg) {
     case "tiebreak:open":
       return apply(room, G.openTiebreak(room))
     case "tiebreak:judge":
-      return apply(room, G.judgeTiebreak(room, !!msg.correct, msg.unitId))
+      return apply(room, G.judgeTiebreak(room, !!msg.correct, msg.unitId, !!msg.bonus))
     case "tiebreak:again":
       return apply(room, G.tiebreakAgain(room))
     case "tiebreak:award":
-      return apply(room, G.awardTiebreak(room, msg.unitId))
+      return apply(room, G.awardTiebreak(room, msg.unitId, !!msg.bonus))
     case "clue:reveal":
       return apply(room, G.revealAnswer(room))
     case "clue:close":

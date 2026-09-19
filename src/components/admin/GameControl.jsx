@@ -815,6 +815,23 @@ function TiebreakControls({ state, send }) {
   const holder = nameOf(state, state.buzzer.winner)
   const exhausted = left.length === 0
 
+  /*
+    Whether winning this pays.
+
+    Set before the ruling rather than offered as a second pair of buttons: the
+    host decides how the night ends once, and then rules on the answer with the
+    same two buttons they have used all evening. The buttons say what they will
+    do, so the choice is never invisible at the moment it is applied.
+
+    Only on the play-off for the game itself. A cut buys a seat in the survey,
+    and paying for it would move the quiz scoreboard on a race for the right to
+    play — `takeTiebreak` leaves down that branch before anything is paid, so
+    the relay refuses it whatever this sends.
+  */
+  const [bonus, setBonus] = useState(false)
+  const payable = tb.purpose !== "cut"
+  const pays = payable && bonus
+
   return (
     <div className="panel flex min-h-0 flex-1 flex-col p-4">
       <div className="flex items-center gap-2">
@@ -829,6 +846,20 @@ function TiebreakControls({ state, send }) {
           </button>
         </div>
       </div>
+
+      {/* A game that ends level with the winner recorded in a field nobody can
+          see reads as a tie on the results screen. This is the other option. */}
+      {payable && (
+        <button
+          className={`mt-2 btn w-full py-1.5 text-[11px] ${pays ? "btn-gold" : ""}`}
+          onClick={() => setBonus(!bonus)}
+        >
+          {pays ? "Winner takes 100" : "Winner takes nothing"}
+          <span className="ml-1.5 opacity-70">
+            {pays ? "· the scores will show who won" : "· the scores stay level, as they were"}
+          </span>
+        </button>
+      )}
 
       <div className="mt-3 flex min-h-0 flex-1 flex-col justify-center overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl">
@@ -871,8 +902,8 @@ function TiebreakControls({ state, send }) {
           <span className="font-display text-xl text-live 2xl:text-2xl">{holder}</span>
           <span className="text-xs text-muted">to win it</span>
           <div className="ml-auto flex gap-2">
-            <button className="btn btn-good px-5 py-2.5 text-sm" onClick={() => send("tiebreak:judge", { correct: true })}>
-              Correct — wins
+            <button className="btn btn-good px-5 py-2.5 text-sm" onClick={() => send("tiebreak:judge", { correct: true, bonus: pays })}>
+              Correct — wins{pays ? " +100" : ""}
             </button>
             <button className="btn btn-bad px-5 py-2.5 text-sm" onClick={() => send("tiebreak:judge", { correct: false })}>
               Wrong — out
@@ -892,8 +923,9 @@ function TiebreakControls({ state, send }) {
               Go again
             </button>
             {tb.contenders.map((id) => (
-              <button key={id} className="btn px-3 py-2 text-[11px]" onClick={() => send("tiebreak:award", { unitId: id })}>
+              <button key={id} className="btn px-3 py-2 text-[11px]" onClick={() => send("tiebreak:award", { unitId: id, bonus: pays })}>
                 Award to {name(id)}
+                {pays ? " +100" : ""}
               </button>
             ))}
           </div>

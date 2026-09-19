@@ -301,6 +301,21 @@ export function makeTiebreak() {
  */
 export const MAX_TIEBREAKS = 4
 
+/**
+ * What a play-off can be made to pay, when the host wants one.
+ *
+ * Off by default, because a play-off decides an order rather than an amount and
+ * that is still the right default — the sides were level and a buzzer race is
+ * not worth the same as a clue. But a game that ends 4200-4200 with a winner
+ * marked in an invisible field reads, on the results screen and in the export,
+ * as a tie nobody settled. A host who would rather the number said it can ask
+ * for this, and then the scoreboard shows what happened.
+ *
+ * The amount lives here rather than in the message: the desk asks for the
+ * bonus, it does not name a figure, and the relay does not take one.
+ */
+export const TIEBREAK_BONUS = 100
+
 /** The sudden-death clue currently in play, or null if the board ran out. */
 export function tiebreakClue(room) {
   const list = room.board.tiebreaks ?? []
@@ -2059,7 +2074,7 @@ export function inTiebreak(room, playerId) {
  * Right takes the game. Wrong puts that side out and leaves it to the others —
  * and if it puts the last one out, nobody has won it and the host runs another.
  */
-export function judgeTiebreak(room, correct, target = judgeTarget(room)) {
+export function judgeTiebreak(room, correct, target = judgeTarget(room), bonus = false) {
   if (room.phase !== PHASE.TIEBREAK) return []
   const unit = scorer(room, target)
   if (!unit) return []
@@ -2071,7 +2086,7 @@ export function judgeTiebreak(room, correct, target = judgeTarget(room)) {
   if (correct) {
     room.revealed = true
     room.phase = PHASE.ENDED
-    return [...takeTiebreak(room, unit), { kind: "game-end" }]
+    return [...takeTiebreak(room, unit, bonus), { kind: "game-end" }]
   }
 
   if (!room.tiebreak.spent.includes(unit.id)) room.tiebreak.spent.push(unit.id)
@@ -2124,13 +2139,13 @@ export function tiebreakAgain(room, now = Date.now()) {
  * concession — and the host needs to record the outcome without pretending a
  * buzzer decided it.
  */
-export function awardTiebreak(room, unitId) {
+export function awardTiebreak(room, unitId, bonus = false) {
   if (room.phase !== PHASE.TIEBREAK) return []
   const unit = scorer(room, unitId)
   if (!unit || !room.tiebreak.contenders.includes(unit.id)) return []
   room.phase = PHASE.ENDED
   room.buzzer.armed = false
-  return [...takeTiebreak(room, unit), { kind: "game-end" }]
+  return [...takeTiebreak(room, unit, bonus), { kind: "game-end" }]
 }
 
 /**
@@ -2148,18 +2163,30 @@ function retireTiebreakClue(room) {
   room.tiebreakIndex = Math.min((room.tiebreakIndex ?? 0) + 1, Math.max(list.length - 1, 0))
 }
 
-function takeTiebreak(room, unit) {
+function takeTiebreak(room, unit, bonus = false) {
   // Whoever won it, that question is spent — the next play-off needs a fresh
   // one, and this game can have two.
   retireTiebreakClue(room)
+  /*
+    The cut leaves before any of this, which is what keeps it from ever paying:
+    it buys a seat in a round that is scored separately, and moving the quiz
+    scoreboard on the strength of a race for the right to play is not what
+    anybody agreed to. Anything that pays belongs below this branch.
+  */
   if (room.tiebreak.purpose === "cut") {
     if (!room.qualified.includes(unit.id)) room.qualified.push(unit.id)
     record(unit, 0, "tiebreak-through", "Play-off")
     return [{ kind: "tiebreak-through", unitId: unit.id }]
   }
   room.winner = unit.id
-  record(unit, 0, "tiebreak-win", "Tie-break")
-  return [{ kind: "tiebreak-won", unitId: unit.id }]
+  /*
+    `record` ignores a zero delta, so the default is exactly what it always was:
+    a winner marked, and not a point moved.
+  */
+  const paid = bonus ? TIEBREAK_BONUS : 0
+  unit.score += paid
+  record(unit, paid, "tiebreak-win", "Tie-break")
+  return [{ kind: "tiebreak-won", unitId: unit.id, bonus: paid }]
 }
 
 // ── Save / resume ────────────────────────────────────────────────────────────
