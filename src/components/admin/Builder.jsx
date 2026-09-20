@@ -453,6 +453,25 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 </span>
               </span>
             </label>
+            {/* Only under teams: with them off, every player is already their
+                own side and the two modes describe the same game. */}
+            {!!settings.teams && (
+              <label className="flex cursor-pointer items-start gap-2 pl-6 text-[12px] text-muted">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={settings.teamBuzz === "seat"}
+                  onChange={(e) => onSettings({ teamBuzz: e.target.checked ? "seat" : "side" })}
+                />
+                <span>
+                  A buzzer each
+                  <span className="block text-[10px] text-faint">
+                    Everyone presses for themselves and a miss only puts that person out, so a team-mate can take the
+                    rebound. Points still go to the side. Off, the team shares one buzz and one shot.
+                  </span>
+                </span>
+              </label>
+            )}
             <Rule
               label="Answer clock"
               hint="seconds once someone buzzes in · 0 = untimed"
@@ -746,6 +765,52 @@ function SurveyEditor({ board, setBoard, survey: live, code }) {
       </p>
 
       <div className={`mt-4 space-y-3 ${survey.enabled ? "" : "pointer-events-none opacity-40"}`}>
+        {/*
+          How the round is played, which changes the whole shape of it — so it
+          sits above the link rather than among the questions.
+        */}
+        <div className="rounded-lg border border-edge bg-black/20 px-3 py-2.5">
+          <div className="label mb-1.5">How it is played</div>
+          <div className="flex gap-1.5">
+            <button
+              className={`btn flex-1 py-1.5 text-[11px] ${survey.mode !== "turns" ? "btn-gold" : ""}`}
+              onClick={() => patch({ mode: "buzz" })}
+            >
+              On the buzzer
+            </button>
+            <button
+              className={`btn flex-1 py-1.5 text-[11px] ${survey.mode === "turns" ? "btn-gold" : ""}`}
+              onClick={() => patch({ mode: "turns" })}
+            >
+              One side at a time
+            </button>
+          </div>
+          <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+            {survey.mode === "turns" ? (
+              <>
+                One side answers every question against a clock, then the other does. No buzzer. You mark what they say as
+                they say it — the room sees none of it until you open the board at the end.
+              </>
+            ) : (
+              <>Both sides on the buzzer, racing for each slot, strikes for a miss.</>
+            )}
+          </p>
+          {survey.mode === "turns" && (
+            <label className="mt-2 flex items-center gap-2 text-[11px] text-muted">
+              <span>Clock per side</span>
+              <input
+                type="number"
+                min={5}
+                max={300}
+                className="field w-20 py-1 text-center text-[12px]"
+                value={survey.seconds ?? 30}
+                onChange={(e) => patch({ seconds: Math.min(300, Math.max(5, Number(e.target.value) || 30)) })}
+              />
+              <span className="text-faint">seconds for the whole run, not per question</span>
+            </label>
+          )}
+        </div>
+
         {/* The link. This is the point of the round. */}
         <div className="rounded-lg border border-gold-deep/40 bg-royal/20 px-3 py-2.5">
           <div className="flex items-baseline gap-2">

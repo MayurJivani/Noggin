@@ -1465,6 +1465,10 @@ const ACTION_LABELS = {
   "survey:next": "moved to the next survey question",
   "survey:reveal": "opened a survey answer",
   "survey:strike": "gave a strike",
+  "survey:turn": "started a survey run",
+  "survey:mark": "marked a survey answer",
+  "survey:endturn": "ended a survey run",
+  "survey:show": "opened the survey board",
   "survey:close": "ended the survey round",
   "tiebreak:open": "started a tie-break",
   "tiebreak:judge": "ruled on the tie-break",
@@ -1561,6 +1565,9 @@ function handleHostMessage(room, meta, ws, msg) {
       // being written straight into settings like a number of seconds.
       const wantsTeams = "teams" in next ? !!next.teams : null
       delete next.teams
+      // A setting with a fixed vocabulary, arriving from a client. Anything
+      // that is not the one alternative is the default.
+      if ("teamBuzz" in next) next.teamBuzz = next.teamBuzz === "seat" ? "seat" : "side"
       room.settings = { ...room.settings, ...next }
       const fx = wantsTeams == null ? [] : G.setTeamMode(room, wantsTeams)
       return apply(room, [{ kind: "settings" }, ...fx])
@@ -1645,11 +1652,19 @@ function handleHostMessage(room, meta, ws, msg) {
     case "survey:open":
       return apply(room, G.openSurvey(room))
     case "survey:next":
-      return apply(room, G.nextQuestion(room))
+      return apply(room, G.nextQuestion(room, msg.delta))
     case "survey:reveal":
       return apply(room, G.revealSurvey(room, Number(msg.index), msg.unitId))
     case "survey:strike":
       return apply(room, G.strikeSurvey(room, msg.unitId))
+    case "survey:turn":
+      return apply(room, G.startSurveyTurn(room, msg.unitId))
+    case "survey:mark":
+      return apply(room, G.markSurvey(room, msg.q, msg.index, msg.unitId))
+    case "survey:endturn":
+      return apply(room, G.endSurveyTurn(room))
+    case "survey:show":
+      return apply(room, G.showSurvey(room))
     case "survey:close":
       return apply(room, G.closeSurvey(room))
 

@@ -520,7 +520,12 @@ function StagePanel({ state, send, now }) {
   if (phase === "final") return <FinalControls state={state} send={send} />
 
   if (phase === "tiebreak") return <TiebreakControls state={state} send={send} />
-  if (phase === "survey") return <SurveyControls state={state} send={send} f={state.survey} />
+  if (phase === "survey")
+    return state.survey?.mode === "turns" ? (
+      <SurveyTurnControls state={state} send={send} f={state.survey} now={now} />
+    ) : (
+      <SurveyControls state={state} send={send} f={state.survey} />
+    )
 
   if (phase === "intermission" || phase === "ended") {
     const top = contenders[0]
@@ -1432,7 +1437,8 @@ function TimerControls({ send, timer, now }) {
 function FinalControls({ state, send }) {
   const f = state.final
   if (!f) return null
-  if (f.kind === "survey") return <SurveyControls state={state} send={send} f={f} />
+  if (f.kind === "survey")
+    return f.mode === "turns" ? <SurveyTurnControls state={state} send={send} f={f} /> : <SurveyControls state={state} send={send} f={f} />
   const waiting = (f.players ?? []).filter((p) => !p.wagered).length
   const unanswered = (f.players ?? []).filter((p) => !p.answered).length
   const current = (f.players ?? []).find((p) => p.id === f.current)
@@ -1526,6 +1532,135 @@ function FinalControls({ state, send }) {
  * either on this list or it is not — so the list *is* the control. Click the
  * slot to open it and pay whoever buzzed; if it is not there, Strike.
  */
+/**
+ * The survey, played in runs.
+ *
+ * A different round from the buzz version rather than the same one with a flag,
+ * so it gets its own panel: there is no race to arm, no strike to give and
+ * nothing to reveal one slot at a time. What the host does here is start a
+ * clock, mark what a side says as they say it, and open the whole board at the
+ * end — and every one of those is a control the other panel does not have.
+ */
+function SurveyTurnControls({ state, send, f, now = () => Date.now() }) {
+  const rows = sideRows(state)
+  const name = (id) => rows.find((r) => r.id === id)?.name ?? "?"
+  const waiting = (f.contenders ?? []).filter((id) => !f.done.includes(id))
+  const left = useCountdown(f.turn ? state.timer?.endsAt : null, now)
+  const answers = f.answers ?? []
+  const marked = answers.filter((a) => a.by).length
+
+  return (
+    <div className="panel flex min-h-0 flex-1 flex-col p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="label">Survey · runs</span>
+        {f.count > 1 && (
+          <span className="text-[11px] text-muted">
+            question {f.index + 1} of {f.count}
+          </span>
+        )}
+        {f.turn && (
+          <span className="rounded-full border border-live bg-live/10 px-2 py-0.5 text-[11px] text-live">
+            {name(f.turn)} playing
+            {left != null && <span className="ml-1.5 tabular-nums">{Math.ceil(left / 1000)}s</span>}
+          </span>
+        )}
+        <div className="ml-auto flex flex-wrap gap-1.5">
+          {f.turn ? (
+            <>
+              <button className="btn" disabled={f.index === 0} onClick={() => send("survey:next", { delta: -1 })}>
+                ‹ Back
+              </button>
+              <button className={`btn ${f.last ? "" : "btn-gold"}`} disabled={f.last} onClick={() => send("survey:next", { delta: 1 })}>
+                Next ›
+              </button>
+              <button className="btn hover:border-bad hover:text-bad" onClick={() => send("survey:endturn")}>
+                End {name(f.turn)}&rsquo;s run
+              </button>
+            </>
+          ) : (
+            waiting.map((id) => (
+              <button key={id} className="btn btn-gold px-4 py-2 animate-pop" onClick={() => send("survey:turn", { unitId: id })}>
+                Start {name(id)} · {f.seconds}s
+              </button>
+            ))
+          )}
+          <button className="btn hover:border-bad hover:text-bad" onClick={() => confirm("End the survey round?") && send("survey:close")}>
+            End round
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-2 font-display text-lg leading-snug text-ink">{f.prompt}</div>
+
+      {/*
+        The marks, and the thing this panel exists for: they are on the host's
+        screen and nowhere else until the board is opened. Saying so beats a
+        host wondering whether the room can see what they are clicking.
+      */}
+      <div className="mt-1 text-[11px] text-faint">
+        {f.shown ? "The board is open — the room can see these." : "Marks are yours alone until you open the board."}
+      </div>
+
+      <div className="mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+        {answers.map((a) => {
+          const by = a.by ?? null
+          return (
+            <div
+              key={a.index}
+              className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+                by ? "border-good/50 bg-good/10" : "border-edge"
+              }`}
+            >
+              <span className="w-5 shrink-0 text-center font-value text-[13px] text-gold-dim">{a.index + 1}</span>
+              <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{a.text}</span>
+              <span className="shrink-0 font-value text-[15px] text-gold">{a.points}</span>
+              {/*
+                One button per side rather than a single toggle: with two runs
+                in the round the question is never "did somebody get this", it
+                is "which of them did" — and after the fact the host has to be
+                able to move a mark without clearing it first.
+              */}
+              <div className="flex shrink-0 gap-1">
+                {(f.contenders ?? []).map((id) => (
+                  <button
+                    key={id}
+                    onClick={() => send("survey:mark", { q: f.index, index: a.index, unitId: id })}
+                    className={`rounded-md border px-2 py-1 text-[10px] ${
+                      by === id ? "border-good bg-good/20 text-good" : "border-edge text-muted hover:border-gold hover:text-gold"
+                    }`}
+                  >
+                    {name(id)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="text-faint">
+          {marked} of {answers.length} marked on this question
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {(f.contenders ?? []).map((id) => (
+            <span key={id} className="text-muted">
+              {name(id)} <span className="font-value text-gold">{f.points?.[id] ?? 0}</span>
+            </span>
+          ))}
+          {/* Only once both have been: opening it early would show the second
+              side what the first one found. */}
+          {!f.shown && waiting.length === 0 && !f.turn && (
+            <button className="btn btn-gold px-4 py-2 animate-pop" onClick={() => send("survey:show")}>
+              Open the board
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SurveyControls({ state, send, f }) {
   const holder = nameOf(state, state.buzzer.winner)
   const rows = sideRows(state)

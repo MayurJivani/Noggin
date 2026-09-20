@@ -389,8 +389,14 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
   const inTiebreak = !!tb && tb.contenders.includes(myUnit)
   const tbOut = !!tb && tb.spent.includes(myUnit)
 
-  /** The survey round is raced on the buzzer, then typed. */
-  const survey = phase === "survey"
+  /*
+    The survey round is raced on the buzzer, then typed — unless it is being
+    played in runs, where there is no race at all. The relay refuses presses in
+    that round, so this is the phone agreeing with it rather than the phone
+    deciding: a live-looking button nobody may press is worse than no button.
+  */
+  const surveyTurns = phase === "survey" && state.survey?.mode === "turns"
+  const survey = phase === "survey" && !surveyTurns
 
   const live = (phase === "clue" || survey || (phase === "tiebreak" && inTiebreak && !tbOut)) && !!me && !state.paused
   const team = state.teams?.find((t) => t.members.includes(me?.id))
@@ -412,7 +418,13 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
   // visibly been pressed and a screen that says nothing happened.
   const settling = !!buzzer.settleUntil && buzzer.order?.some((e) => e.playerId === me?.id)
 
-  const status = survey
+  const status = surveyTurns
+    ? state.survey?.turn
+      ? { text: `${nameOf(state, state.survey.turn) || "They"} are playing`, tone: "live" }
+      : state.survey?.shown
+        ? { text: "Survey — that's the round", tone: "dim" }
+        : { text: "Survey — next side up", tone: "dim" }
+    : survey
     ? iHoldIt
       ? { text: "You're in — type it", tone: "live" }
       : buzzer.armed

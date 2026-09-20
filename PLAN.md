@@ -219,6 +219,31 @@ What exists, and what is deliberately left for later.
   `takeTiebreak` leaves down that branch before anything is awarded, because
   buying the right to play a separately scored round should not move the quiz
   scoreboard.
+- **A buzzer each, or one per team** — `teamBuzz`. The default is one entry in
+  the race per side, because otherwise the biggest team wins on thumbs. Set to
+  `"seat"` everyone presses for themselves and a miss only puts *that person*
+  out, so a team-mate can take the rebound — a numbers advantage traded
+  knowingly for getting everybody pressing something. Scoring is unchanged
+  either way: the points belong to the side. Ignored with teams off, where
+  every player is already their own side.
+- **The survey, played in runs** — the round has two shapes now, chosen on the
+  board. `"buzz"` is the original race. `"turns"` is one side answering every
+  question against a single clock, then the other, with no buzzer at all — the
+  relay refuses presses in that round rather than trusting a hidden button.
+
+  The host marks what a side says as they say it, and none of it leaves the
+  desk: marks, the answers they belong to, and the points they are worth are
+  all withheld in `projectSurvey` until the board is opened. The room sees the
+  question, whose run it is and the clock, and a row of numbered boxes. The
+  tally is dashes rather than zeroes, because a zero reads as a score and this
+  is a number nobody is allowed yet.
+
+  Marks are per question and kept for the whole run, so the host can page back
+  and fix one — the buzz round's per-question reset is exactly what a run must
+  not do. A mark can be moved to the other side after the fact, which is what
+  makes it safe to mark at speed. Points are tallied on every mark rather than
+  at the reveal, so a host who simply closes the round still ends the night on
+  what was played.
 - **The final clue** — blind wagers, written answers against a clock, and a
   reveal that turns players over poorest first. Wagers and answers are projected
   per viewer, so no player sees another's before the host opens it.

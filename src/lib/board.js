@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   lifelines: { phone: 1 },
   penaltyForWrong: true,
   teams: false,
+  teamBuzz: "side",
   mirrorClue: true,
   hideOnBuzz: false,
   noScreen: false,
@@ -57,7 +58,7 @@ export const makeRound = (name, values = DEFAULT_VALUES, categories = 5) => ({
 export const MAX_SURVEY_QUESTIONS = 5
 export const makeSurveyAnswer = () => ({ text: "", points: 0 })
 export const makeSurveyQuestion = () => ({ id: uid("sq"), category: "", prompt: "", answers: [] })
-export const makeSurvey = () => ({ enabled: false, collecting: true, questions: [makeSurveyQuestion()] })
+export const makeSurvey = () => ({ enabled: false, collecting: true, mode: "buzz", seconds: 30, questions: [makeSurveyQuestion()] })
 
 export const MAX_TIEBREAKS = 4
 export const makeTiebreak = () => ({ prompt: "", media: null, answer: "", answerMedia: null })

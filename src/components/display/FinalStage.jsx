@@ -206,6 +206,28 @@ export function SurveyBoard({ state, rows = [] }) {
       </p>
 
       {/*
+        Whose run it is.
+
+        In a turns round nothing on this screen moves while a side plays — the
+        marks are the host's until the board is opened — so without this the
+        room would be watching a still question and a clock with no idea who
+        was on it. The clock itself is the ring in the corner, which the screen
+        already draws for any running timer.
+      */}
+      {f.mode === "turns" && !f.shown && (
+        <div className="flex items-center gap-[1.5vmin] rounded-full border-[0.3vmin] border-live bg-live/10 px-[3vmin] py-[0.8vmin]">
+          <span className="font-display uppercase tracking-[0.3em] text-live animate-glow" style={{ fontSize: "max(11px, calc(var(--stage) * 1.6))" }}>
+            {f.turn ? `${name(f.turn)} playing` : f.done?.length >= (f.contenders?.length ?? 2) ? "Both runs played" : "Next side to play"}
+          </span>
+          {f.count > 1 && f.turn && (
+            <span className="font-value tabular-nums text-gold" style={{ fontSize: "max(12px, calc(var(--stage) * 1.8))" }}>
+              {f.index + 1}/{f.count}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/*
         The round's own scoreboard.
 
         The bar along the bottom of the screen is the quiz total, which this
@@ -216,9 +238,10 @@ export function SurveyBoard({ state, rows = [] }) {
       {f.contenders?.length > 0 && (
         <div className="flex items-stretch gap-[1.5vmin]">
           {f.contenders.map((id) => {
+            const hidden = f.mode === "turns" && !f.shown
             const points = f.points?.[id] ?? 0
             const best = Math.max(...f.contenders.map((c) => f.points?.[c] ?? 0))
-            const leading = points === best && points > 0
+            const leading = !hidden && points === best && points > 0
             return (
               <div
                 key={id}
@@ -233,7 +256,10 @@ export function SurveyBoard({ state, rows = [] }) {
                   className={`font-value tabular-nums ${leading ? "text-gold brass-sm" : "text-ink"}`}
                   style={{ fontSize: "max(18px, calc(var(--stage) * 3))" }}
                 >
-                  {points}
+                  {/* Dashes while the marks are still the host's. A zero here
+                      would be read as a score, and it is not one — it is a
+                      number nobody is allowed to know yet. */}
+                  {hidden ? "—" : points}
                 </div>
               </div>
             )

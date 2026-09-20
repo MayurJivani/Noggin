@@ -781,6 +781,48 @@ test("a wrong answer puts the whole team out of the clue", () => {
   assert.deepEqual(G.buzz(room, mates[1], 30), [], "and cannot have another go at it")
 })
 
+test("with a buzzer each, a team-mate can take the rebound", () => {
+  const { room } = teamed(4, { teamBuzz: "seat" })
+  const team = G.teamOf(room, "p0")
+  const mates = G.membersOf(room, team.id).map((p) => p.id)
+  G.selectClue(room, 0, 1) // 400
+  G.armBuzzer(room, 0)
+
+  assert.deepEqual(kinds(G.buzz(room, mates[0], 10)), ["buzz-in"])
+  G.judge(room, false)
+  assert.ok(room.buzzer.spent.includes(mates[0]))
+  assert.ok(!room.buzzer.spent.includes(mates[1]), "only the phone that answered is out")
+
+  assert.deepEqual(kinds(G.buzz(room, mates[1], 30)), ["buzz-in"], "their team-mate is still in it")
+  G.judge(room, true)
+
+  // The trade is about who may press, not about who is playing for what.
+  assert.equal(team.score, 0, "docked 400 and paid 400, on the same side")
+  assert.equal(room.players.get(mates[1]).score, 0, "the points never belonged to the seat")
+})
+
+test("a buzzer each also means a place each in the race", () => {
+  const { room } = teamed(4, { teamBuzz: "seat" })
+  const mates = G.membersOf(room, G.teamOf(room, "p0").id).map((p) => p.id)
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+
+  assert.deepEqual(kinds(G.buzz(room, mates[0], 10)), ["buzz-in"])
+  assert.deepEqual(kinds(G.buzz(room, mates[1], 20)), ["buzz-late"], "behind their own side, but in the order")
+  assert.deepEqual(G.buzz(room, mates[0], 30), [], "and still only once each")
+})
+
+test("sharing the buzzer is what a team does unless it says otherwise", () => {
+  const { room } = teamed(4)
+  assert.equal(room.settings.teamBuzz, "side")
+  assert.equal(G.perSeatBuzzers(room), false)
+
+  // Off team night the two modes describe the same game, so the setting is
+  // ignored rather than quietly changing how singles play.
+  const solo = setup(2, { teamBuzz: "seat" })
+  assert.equal(G.perSeatBuzzers(solo), false)
+})
+
 test("a team shares one lifeline purse", () => {
   const { room } = teamed(4, { lifelines: { phone: 1 } })
   const team = G.teamOf(room, "p0")
@@ -1375,11 +1417,14 @@ test("resetting the game forgets who won", () => {
 // ── The survey round ─────────────────────────────────────────────────────────
 
 /** A room with a survey board waiting at the end. */
-function surveyed(n = 3) {
+function surveyed(n = 3, survey = {}) {
   const room = setup(n)
   room.board.survey = {
     enabled: true,
     collecting: true,
+    mode: "buzz",
+    seconds: 30,
+    ...survey,
     questions: [
       {
         id: "q1",
@@ -1448,6 +1493,164 @@ test("the buzzer races for it, and finding one pays", () => {
   const seen = G.projectState(room, "display").survey
   assert.equal(seen.answers[1].text, "Bin bags", "open to everyone now")
   assert.equal(seen.answers[0].text, null, "the rest stay hidden")
+})
+
+// ── The survey, played in runs ───────────────────────────────────────────────
+
+/** A turns-mode survey, opened, with the two contenders resolved. */
+function runs(n = 3, survey = {}) {
+  const room = surveyed(n, { mode: "turns", seconds: 30, ...survey })
+  G.openSurvey(room)
+  const [a, b] = room.survey.contenders
+  return { room, a, b }
+}
+
+test("a turns round is played one side at a time, not raced", () => {
+  const { room, a, b } = runs()
+  assert.equal(room.survey.mode, "turns")
+  assert.equal(room.survey.turn, null, "nobody is on the clock until the host starts one")
+
+  // No buzzer in this round at all — refused on the relay rather than by
+  // hiding a button, because a phone can press whatever it likes.
+  G.armBuzzer(room, 0)
+  assert.deepEqual(G.buzz(room, a === "p0" ? "p0" : "p1", 10), [], "there is nothing to race for")
+
+  const fx = G.startSurveyTurn(room, a, 1000)
+  assert.deepEqual(kinds(fx), ["survey-turn"])
+  assert.equal(room.survey.turn, a)
+  assert.equal(room.timer.kind, "survey")
+  assert.equal(room.timer.endsAt, 1000 + 30_000, "one clock for the whole run")
+
+  // And the second side cannot be started over the top of the first.
+  assert.deepEqual(G.startSurveyTurn(room, b, 2000), [], "one at a time is the whole round")
+})
+
+test("the host marks what a side says, and the room cannot see it", () => {
+  const { room, a } = runs()
+  G.startSurveyTurn(room, a)
+  assert.deepEqual(kinds(G.markSurvey(room, 0, 0)), ["survey-mark"])
+
+  const seen = G.projectState(room, "display").survey
+  assert.equal(seen.answers[0].open, false)
+  assert.equal(seen.answers[0].text, null, "a marked slot that shipped its answer would give the round away")
+  assert.equal(seen.answers[0].by, null, "and so would shipping who got it")
+  assert.deepEqual(seen.points, {}, "including the score it is worth")
+  assert.ok(!JSON.stringify(seen).includes("Milk"))
+
+  // The desk sees all of it, because the desk is doing it.
+  const desk = G.projectState(room, "host").survey
+  assert.equal(desk.answers[0].by, a)
+  assert.equal(desk.points[a], 400)
+})
+
+test("marking again takes the mark back, and marking the other side moves it", () => {
+  const { room, a, b } = runs()
+  G.startSurveyTurn(room, a)
+  G.markSurvey(room, 0, 0)
+  G.markSurvey(room, 0, 0)
+  assert.deepEqual(room.survey.marks, {}, "the fix for a misheard answer is the same click again")
+  assert.deepEqual(room.survey.points, {})
+
+  G.markSurvey(room, 0, 0)
+  G.markSurvey(room, 0, 0, b)
+  assert.equal(room.survey.marks["0:0"], b, "a mark can be moved to the side it belonged to")
+  assert.equal(room.survey.points[b], 400)
+  assert.equal(room.survey.points[a], undefined)
+})
+
+test("a run goes through every question, in both directions", () => {
+  const { room, a } = runs()
+  G.startSurveyTurn(room, a)
+  assert.equal(room.survey.index, 0)
+
+  assert.deepEqual(kinds(G.nextQuestion(room)), ["survey-next"])
+  assert.equal(room.survey.index, 1)
+  assert.deepEqual(G.nextQuestion(room), [], "and stops at the last one")
+
+  // Back is the only way to fix a slot marked against the wrong question.
+  assert.deepEqual(kinds(G.nextQuestion(room, -1)), ["survey-next"])
+  assert.equal(room.survey.index, 0)
+  assert.deepEqual(G.nextQuestion(room, -1), [])
+})
+
+test("marks are kept per question across a whole run", () => {
+  const { room, a } = runs()
+  G.startSurveyTurn(room, a)
+  G.markSurvey(room, 0, 0) // 400
+  G.nextQuestion(room)
+  G.markSurvey(room, 1, 0) // 500
+
+  assert.equal(room.survey.points[a], 900, "the run is the unit, not the question")
+  // Moving back does not clear what was marked — the buzz round's reset is
+  // exactly what a run must not do.
+  G.nextQuestion(room, -1)
+  assert.equal(room.survey.marks["0:0"], a)
+})
+
+test("the second side plays after the first, and only once each", () => {
+  const { room, a, b } = runs()
+  G.startSurveyTurn(room, a)
+  assert.deepEqual(kinds(G.endSurveyTurn(room)), ["survey-turn-end"])
+  assert.equal(room.survey.turn, null)
+  assert.equal(room.timer, null, "the clock stops with the run")
+
+  // Asked for nobody in particular, it is whoever has not been.
+  G.startSurveyTurn(room)
+  assert.equal(room.survey.turn, b)
+  G.endSurveyTurn(room)
+
+  assert.deepEqual(G.startSurveyTurn(room, a), [], "a side does not get a second run")
+  assert.deepEqual(G.startSurveyTurn(room), [])
+})
+
+test("opening the board is what makes the round public", () => {
+  const { room, a, b } = runs()
+  G.startSurveyTurn(room, a)
+  G.markSurvey(room, 0, 0) // 400
+  G.endSurveyTurn(room)
+  G.startSurveyTurn(room, b)
+  G.markSurvey(room, 0, 1) // 300
+  G.endSurveyTurn(room)
+
+  const before = G.projectState(room, "display").survey
+  assert.deepEqual(before.points, {})
+  assert.equal(before.answers[0].text, null)
+
+  assert.deepEqual(kinds(G.showSurvey(room)), ["survey-shown"])
+  const after = G.projectState(room, "display").survey
+  assert.equal(after.shown, true)
+  assert.equal(after.answers[0].text, "Milk")
+  assert.equal(after.answers[0].by, a)
+  assert.equal(after.answers[1].by, b)
+  assert.equal(after.points[a], 400)
+  assert.equal(after.points[b], 300)
+
+  assert.deepEqual(G.showSurvey(room), [], "and only once")
+})
+
+test("a round nobody opened still decides the night", () => {
+  // The host may simply close the round. The marks were still the round, and
+  // the game has to end on them rather than on a tie nobody played for.
+  const { room, a } = runs()
+  G.startSurveyTurn(room, a)
+  G.markSurvey(room, 0, 0)
+  G.endSurveyTurn(room)
+  G.closeSurvey(room)
+
+  assert.equal(room.phase, G.PHASE.ENDED)
+  assert.equal(G.projectState(room, "display").champion, a, "the survey decided it, opened or not")
+})
+
+test("a buzz round is untouched by any of this", () => {
+  const room = surveyed()
+  G.openSurvey(room)
+  assert.equal(room.survey.mode, "buzz")
+  assert.deepEqual(G.startSurveyTurn(room, room.survey.contenders[0]), [])
+  assert.deepEqual(G.markSurvey(room, 0, 0), [])
+  assert.deepEqual(G.showSurvey(room), [])
+
+  G.armBuzzer(room, 0)
+  assert.deepEqual(kinds(G.buzz(room, room.survey.contenders[0] === "p0" ? "p0" : "p1", 10)), ["buzz-in"])
 })
 
 test("whoever buzzed types what they said, and only they can", () => {

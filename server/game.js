@@ -97,6 +97,24 @@ export const DEFAULTS = {
    */
   noScreen: false,
   /**
+   * Whether a team shares one buzzer or carries one each.
+   *
+   * `"side"` is the default and the classic reading: five phones on one team
+   * are one entry in the race, one shot at the clue, one lockout — otherwise
+   * the biggest team simply wins by having the most thumbs.
+   *
+   * `"seat"` is the other way a room plays it. Everyone presses for themselves
+   * and a wrong answer only puts *that person* out, so a team-mate can take the
+   * rebound. It suits a room where the teams are uneven or the point is to get
+   * everybody pressing something; it does hand a numbers advantage to the big
+   * team, which is the trade being made knowingly.
+   *
+   * Scoring is unchanged either way: the points belong to the side, because
+   * that is what a team is. Ignored entirely while `teams` is off, where every
+   * player is already their own side.
+   */
+  teamBuzz: "side",
+  /**
    * Several phones sharing one score and one buzz. See the Teams section.
    * Off by default: a party of five plays as five, and turning this on when
    * nobody asked for it would silently merge everyone's scores.
@@ -356,6 +374,17 @@ export function normaliseBoard(raw) {
   board.survey = {
     enabled: !!raw.survey?.enabled,
     collecting: raw.survey?.collecting !== false,
+    /*
+      How the round is played. See `openSurvey`.
+
+      `"buzz"` is the original: both sides on the buzzer, racing for each slot.
+      `"turns"` is the other shape the round takes — one side answers every
+      question against a clock, then the other does, and nothing is shown until
+      both have been.
+    */
+    mode: raw.survey?.mode === "turns" ? "turns" : "buzz",
+    /** How long a side gets for its whole run. Only used by `"turns"`. */
+    seconds: Math.min(300, Math.max(5, num(raw.survey?.seconds, 30))),
     questions: (Array.isArray(raw.survey?.questions) ? raw.survey.questions : []).slice(0, MAX_SURVEY_QUESTIONS).map((q) => ({
       id: typeof q?.id === "string" ? q.id : uid("sq"),
       category: str(q?.category, 60),
@@ -678,6 +707,14 @@ export function sideIds(room, playerId) {
   const team = teamOf(room, playerId)
   return team ? membersOf(room, team.id).map((p) => p.id) : [playerId]
 }
+
+/**
+ * Whether each phone races for itself, rather than for its team.
+ *
+ * Only ever true on team night: with `teams` off every player is already their
+ * own side, and the two modes describe the same game.
+ */
+export const perSeatBuzzers = (room) => !!room.settings.teams && room.settings.teamBuzz === "seat"
 
 /** Do these two players share a side? True for a player and themselves. */
 export function sameSide(room, a, b) {
@@ -1048,6 +1085,9 @@ export function buzz(room, playerId, now = Date.now()) {
     // decide the game by accident.
     if (!inTiebreak(room, playerId)) return []
   } else if (room.phase === PHASE.SURVEY) {
+    // A turns round is not raced. Nobody's press means anything, including the
+    // side at the table — they are answering out loud against a clock.
+    if (surveyTurns(room)) return []
     // The survey is a two-hander. Same reasoning as the play-off: a phone that
     // still worked for a knocked-out side would win points in a round it is
     // not in.
@@ -1057,11 +1097,19 @@ export function buzz(room, playerId, now = Date.now()) {
   // is still under a thumb, so this has to be refused here rather than trusted
   // to every client remembering to grey itself out.
   if (room.paused) return []
-  // Side, not seat. Five phones on one team is one entry in the race, one shot
-  // at the clue and one lockout — otherwise the biggest team simply wins.
-  if (sideIds(room, playerId).some((id) => room.buzzer.spent.includes(id))) return []
+  /*
+    Side, not seat — unless the room has asked for seats.
+
+    By default five phones on one team are one entry in the race, one shot at
+    the clue and one lockout, because otherwise the biggest team simply wins.
+    Under `teamBuzz: "seat"` each phone is in for itself and only its own
+    presses count against it. See `perSeatBuzzers`.
+  */
+  const seats = perSeatBuzzers(room)
+  const mine = seats ? [playerId] : sideIds(room, playerId)
+  if (mine.some((id) => room.buzzer.spent.includes(id))) return []
   if ((room.buzzer.lockedUntil[playerId] ?? 0) > now) return []
-  if (room.buzzer.order.some((e) => sameSide(room, e.playerId, playerId))) return []
+  if (room.buzzer.order.some((e) => (seats ? e.playerId === playerId : sameSide(room, e.playerId, playerId)))) return []
 
   // Never opened on this clue — this is a genuine jump, and it costs.
   if (!room.buzzer.opened) {
@@ -1225,8 +1273,17 @@ export function judge(room, correct, target = judgeTarget(room)) {
 export const judgeTarget = (room) => room.buzzer.winner ?? room.wager?.teamId ?? room.wager?.playerId ?? null
 
 /** Every seat that is out of the clue once this target has answered wrong. */
+/**
+ * Who a miss puts out.
+ *
+ * The whole side by default, so a team cannot work through its members until
+ * one of them guesses right. With per-seat buzzers that is exactly what the
+ * room has asked for, so only the phone that answered is spent — but a ruling
+ * aimed at a *team* still spends the team, because there is no one seat it
+ * could have meant.
+ */
 function spentSide(room, target) {
-  if (room.players.has(target)) return sideIds(room, target)
+  if (room.players.has(target)) return perSeatBuzzers(room) ? [target] : sideIds(room, target)
   return room.settings.teams ? membersOf(room, target).map((p) => p.id) : []
 }
 
@@ -1871,6 +1928,7 @@ export function openSurvey(room) {
   room.wager = null
   room.revealed = false
   resetBuzzerState(room)
+  const contenders = surveyCut(room).through
   room.survey = {
     index: 0,
     revealed: [],
@@ -1878,7 +1936,30 @@ export function openSurvey(room) {
     strikes: [],
     said: null,
     /** The two sides playing it. See `surveyCut`. */
-    contenders: surveyCut(room).through,
+    contenders,
+    /*
+      Which of the two shapes this round takes, fixed when it opens.
+
+      Read off the board rather than off the room, and copied here so a board
+      edited mid-round cannot change the rules of a round already running.
+    */
+    mode: room.board.survey.mode === "turns" ? "turns" : "buzz",
+    /** Whose run it is, in turns. Null between runs and once both are done. */
+    turn: null,
+    /** Sides that have had their run. */
+    done: [],
+    /*
+      The host's private record: `"question:answer" -> side`.
+
+      Kept apart from `revealed`/`awards`, which are the buzz round's and are
+      public the moment they change. The whole point of a turns round is that
+      the host marks what each side said while nobody watching can see it, and
+      the board is opened afterwards — so these are withheld in `projectSurvey`
+      until `shown`.
+    */
+    marks: {},
+    /** Whether the marks are public yet. */
+    shown: false,
     /**
      * The survey's own scoreboard, kept apart from the game's.
      *
@@ -1889,7 +1970,113 @@ export function openSurvey(room) {
      */
     points: {},
   }
-  return [{ kind: "survey-open", contenders: room.survey.contenders }]
+  return [{ kind: "survey-open", contenders: room.survey.contenders, mode: room.survey.mode }]
+}
+
+/** Whether this round is being played in runs rather than on the buzzer. */
+export const surveyTurns = (room) => room.phase === PHASE.SURVEY && room.survey?.mode === "turns"
+
+/** A mark's key. One string, so the record is a plain object that can be saved. */
+const markKey = (qi, ai) => `${qi}:${ai}`
+
+/**
+ * Start a side's run: every question, against one clock.
+ *
+ * One clock for the whole run rather than one per question, because that is
+ * what the round is — a side racing through as many as it can, with the host
+ * moving on the moment they answer. The length is the board's, and the host
+ * starts it by hand so a side is never on the clock while somebody is still
+ * finding their chair.
+ */
+export function startSurveyTurn(room, unitId = null, now = Date.now()) {
+  if (!surveyTurns(room)) return []
+  /*
+    Not over the top of a run already going.
+
+    Starting the second side would silently end the first one mid-clock and
+    take their remaining questions with it. Ending a run is a decision with a
+    button of its own, and it should stay one.
+  */
+  if (room.survey.turn) return []
+  const order = room.survey.contenders ?? []
+  const next = unitId && order.includes(unitId) ? unitId : order.find((id) => !room.survey.done.includes(id))
+  // Nobody left to play, or a side asked for that has already had its run.
+  if (!next || room.survey.done.includes(next)) return []
+
+  room.survey.turn = next
+  room.survey.index = 0
+  room.survey.said = null
+  resetBuzzerState(room)
+  const seconds = room.board.survey.seconds ?? 30
+  room.timer = { kind: "survey", duration: seconds, endsAt: now + seconds * 1000 }
+  return [{ kind: "survey-turn", unitId: next, seconds }]
+}
+
+/**
+ * Mark a slot for whoever is playing, or take the mark back.
+ *
+ * Toggling rather than setting: the host is marking at speed while somebody
+ * talks, and the fix for a misheard answer has to be the same click again
+ * rather than a second control. Nothing here is visible to the room — see
+ * `projectSurvey`.
+ */
+export function markSurvey(room, questionIndex, answerIndex, unitId = null) {
+  if (!surveyTurns(room)) return []
+  const qi = Math.trunc(num(questionIndex, -1))
+  const ai = Math.trunc(num(answerIndex, -1))
+  const slot = room.board.survey.questions?.[qi]?.answers?.[ai]
+  if (!slot) return []
+
+  // Whoever is at the table, unless the host names a side — which they need to
+  // be able to do afterwards, when a mark turns out to belong to the other run.
+  const who = unitId && room.survey.contenders.includes(unitId) ? unitId : room.survey.turn
+  if (!who) return []
+
+  const key = markKey(qi, ai)
+  if (room.survey.marks[key] === who) delete room.survey.marks[key]
+  else room.survey.marks[key] = who
+
+  // Tallied as we go rather than at the reveal, so the round's points are
+  // right even if the host never opens the board — the game still has to end.
+  room.survey.points = tallySurvey(room)
+  return [{ kind: "survey-mark", index: ai, questionIndex: qi, unitId: who }]
+}
+
+/** Add up what the marks are worth. The slots carry the values; this counts. */
+function tallySurvey(room) {
+  const points = {}
+  for (const [key, unitId] of Object.entries(room.survey?.marks ?? {})) {
+    if (!unitId) continue
+    const [qi, ai] = key.split(":").map(Number)
+    const slot = room.board.survey.questions?.[qi]?.answers?.[ai]
+    if (slot) points[unitId] = (points[unitId] ?? 0) + slot.points
+  }
+  return points
+}
+
+/** That side's run is over: stop the clock and hand the table back. */
+export function endSurveyTurn(room) {
+  if (!surveyTurns(room) || !room.survey.turn) return []
+  const was = room.survey.turn
+  if (!room.survey.done.includes(was)) room.survey.done.push(was)
+  room.survey.turn = null
+  room.survey.index = 0
+  room.timer = null
+  return [{ kind: "survey-turn-end", unitId: was, remaining: room.survey.contenders.filter((id) => !room.survey.done.includes(id)) }]
+}
+
+/**
+ * Open the board.
+ *
+ * The moment the round is played for: both runs are done, nobody has seen a
+ * mark, and now the whole thing goes up at once with the points attached.
+ */
+export function showSurvey(room) {
+  if (!surveyTurns(room) || room.survey.shown) return []
+  room.survey.shown = true
+  room.survey.points = tallySurvey(room)
+  room.timer = null
+  return [{ kind: "survey-shown", points: room.survey.points }]
 }
 
 /**
@@ -1966,9 +2153,25 @@ export function strikeSurvey(room, target = room.buzzer.winner, now = Date.now()
  * Points already won stay won — each question is its own board, not its own
  * game.
  */
-export function nextQuestion(room) {
+export function nextQuestion(room, delta = 1) {
   if (room.phase !== PHASE.SURVEY) return []
   const last = (room.board.survey?.questions?.length ?? 0) - 1
+  const step = Math.trunc(num(delta, 1)) || 1
+
+  /*
+    In a run the host is just turning pages, in both directions.
+
+    Nothing resets: the marks are kept per question for the whole round, so
+    going back to check one costs nothing and is the only way to fix a slot
+    marked against the wrong question while somebody was still talking.
+  */
+  if (surveyTurns(room)) {
+    const next = room.survey.index + step
+    if (next < 0 || next > last) return []
+    room.survey.index = next
+    return [{ kind: "survey-next", index: next }]
+  }
+
   if (room.survey.index >= last) return []
 
   // The board resets; the points and the field carry across questions.
@@ -2699,18 +2902,43 @@ function projectSurvey(room, privileged) {
      * Sent as its own column so no screen is tempted to add it to a score. The
      * quiz total is what got you into this round; these points are what win it.
      */
-    points: room.survey?.points ?? {},
+    points: room.survey?.mode === "turns" && !room.survey.shown && !privileged ? {} : (room.survey?.points ?? {}),
     slots: q?.answers.length ?? 0,
     cleared: !!q && room.survey.revealed.length >= q.answers.length,
     last: live && room.survey.index >= questions.length - 1,
+    /*
+      The turns round, and the reason it needs its own fields.
+
+      `mode` decides which set of controls the desk draws and what the big
+      screen is waiting for. `turn`, `done` and `seconds` are the run: whose it
+      is, whose are finished, how long one lasts. None of it is secret — the
+      room is watching a side play — so all of it goes to everyone.
+    */
+    mode: live ? room.survey.mode : (survey.mode === "turns" ? "turns" : "buzz"),
+    seconds: survey.seconds ?? 30,
+    turn: live ? (room.survey.turn ?? null) : null,
+    done: live ? [...(room.survey.done ?? [])] : [],
+    shown: live ? !!room.survey.shown : false,
     answers: (q?.answers ?? []).map((a, i) => {
-      const open = privileged || !!room.survey?.revealed.includes(i)
+      /*
+        What a slot gives away, which is the whole round in a turns game.
+
+        In a buzz round a slot opens the moment it is won, and that is the
+        game. In a turns round nothing opens until both runs are done and the
+        host opens the board — so until `shown`, everyone but the desk gets a
+        numbered box with nothing in it, and the mark that decides the round is
+        not on the wire at all.
+      */
+      const turns = live && room.survey.mode === "turns"
+      const opened = turns ? !!room.survey.shown : !!room.survey?.revealed.includes(i)
+      const open = privileged || opened
+      const by = turns ? (room.survey.marks?.[`${room.survey.index}:${i}`] ?? null) : (room.survey?.awards[i] ?? null)
       return {
         index: i,
-        open: !!room.survey?.revealed.includes(i),
+        open: opened,
         text: open ? a.text : null,
         points: open ? a.points : null,
-        by: room.survey?.awards[i] ?? null,
+        by: open ? by : null,
       }
     }),
     // The builder needs every question, its answers, and what came back for
