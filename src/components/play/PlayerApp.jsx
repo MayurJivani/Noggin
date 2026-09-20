@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
-import { resolveMediaUrl } from "../../lib/mediaUrl"
+import { getRelayOrigin, resolveMediaUrl } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
 import { listenForRoom } from "../../lib/knockJoin"
 import { readJson, removeStore, writeJson } from "../../lib/storage"
@@ -32,6 +32,8 @@ export function PlayerApp() {
   const [debug] = useState(() => params.get("debug") === "1")
   const [code, setCode] = useState((params.get("code") ?? saved.code ?? "").toUpperCase())
   const [name, setName] = useState(saved.name ?? "")
+  /** The side this phone asked for, on team night. "" = let the host place me. */
+  const [teamId, setTeamId] = useState(saved.teamId ?? "")
   const [joined, setJoined] = useState(false)
   const [error, setError] = useState(null)
   /** Local echo so the button reacts on touch, not on the round trip. */
@@ -99,6 +101,7 @@ export function PlayerApp() {
     role: "player",
     code,
     name,
+    teamId,
     playerId: saved.playerId,
     enabled: joined,
     onEffects,
@@ -112,8 +115,8 @@ export function PlayerApp() {
   identityRef.current = identity
 
   useEffect(() => {
-    if (identity?.playerId) writeJson(STORAGE, { playerId: identity.playerId, name, code: identity.code })
-  }, [identity, name])
+    if (identity?.playerId) writeJson(STORAGE, { playerId: identity.playerId, name, code: identity.code, teamId })
+  }, [identity, name, teamId])
 
   if (!joined || !state) {
     return (
@@ -122,6 +125,8 @@ export function PlayerApp() {
         setCode={setCode}
         name={name}
         setName={setName}
+        teamId={teamId}
+        setTeamId={setTeamId}
         error={error}
         connecting={joined && !state}
         onJoin={() => {
@@ -157,8 +162,46 @@ export function PlayerApp() {
 /** Haptics where they exist; a no-op everywhere else. */
 const buzz = (pattern) => navigator.vibrate?.(pattern)
 
-function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
+function Join({ code, setCode, name, setName, teamId, setTeamId, onJoin, error, connecting }) {
   const ready = code.trim().length >= 3 && name.trim().length > 0
+  /*
+    The sides, fetched before joining rather than after.
+
+    There is no socket yet — that is the point of this screen — so the teams
+    come over HTTP from `/api/lobby`. Being dealt a side and then having to
+    catch the host's eye to be moved is the thing this avoids; four people who
+    came together can sit together without anyone at the desk being asked.
+  */
+  const [lobby, setLobby] = useState(null)
+  useEffect(() => {
+    const wanted = code.trim().toUpperCase()
+    if (wanted.length < 3) {
+      setLobby(null)
+      return
+    }
+    // A typed code arrives one character at a time, and every prefix is a
+    // plausible room. Settle before asking, and ignore an answer that comes
+    // back after the code has moved on.
+    let live = true
+    const t = setTimeout(() => {
+      fetch(`${getRelayOrigin()}/api/lobby?code=${encodeURIComponent(wanted)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => live && setLobby(data))
+        .catch(() => live && setLobby(null))
+    }, 250)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [code])
+
+  const teams = lobby?.teams ?? []
+  // A side that filled up or was deleted while this screen was open is not a
+  // choice any more, and a phone must not join asking for one that is gone.
+  useEffect(() => {
+    if (teamId && !teams.some((t) => t.id === teamId)) setTeamId("")
+  }, [teams, teamId, setTeamId])
+
   const [listening, setListening] = useState(false)
   const [soundMsg, setSoundMsg] = useState(null)
   const rxRef = useRef(null)
@@ -298,6 +341,31 @@ function Join({ code, setCode, name, setName, onJoin, error, connecting }) {
             onChange={(e) => setName(e.target.value)}
           />
         </div>
+        {/* Only on team night, and only once the code has found a room —
+            otherwise this is a row of buttons for a game nobody is in. */}
+        {teams.length > 0 && (
+          <div>
+            <div className="label mb-1">Your team</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {teams.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTeamId(teamId === t.id ? "" : t.id)}
+                  className={`btn flex items-center justify-center gap-1.5 py-2.5 text-[12px] ${teamId === t.id ? "btn-gold" : ""}`}
+                >
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: t.color }} />
+                  <span className="min-w-0 truncate">{t.name}</span>
+                  <span className="shrink-0 text-[10px] opacity-60">{t.size}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-1 text-center text-[10px] text-faint">
+              {teamId ? "Tap again to let the host place you." : "Pick one, or leave it and you'll go to the smallest."}
+            </div>
+          </div>
+        )}
+
         <button className="btn btn-gold w-full py-3.5 text-base" disabled={!ready || connecting}>
           {connecting ? "Joining…" : "Join the game"}
         </button>

@@ -1880,3 +1880,76 @@ test("the clue bank keeps clues, finds them, and keeps them to their owner", asy
     assert.equal(res.status, 401)
   })
 })
+
+test("a phone picks its own side on the way in", async (t) => {
+  const host = client("host")
+  await host.ready
+  const code = host.identity.code
+  t.after(() => host.ws.close())
+
+  host.send("settings:set", { settings: { teams: true } })
+  await settle()
+  const teams = host.state.teams
+  assert.equal(teams.length, 2, "team mode opens with two sides to choose between")
+
+  await t.test("the sides are readable before anyone takes a seat", async () => {
+    // There is no socket on the join screen, so this is the only way the
+    // picker could know what to offer.
+    const res = await fetch(`http://127.0.0.1:${PORT}/api/lobby?code=${code}`)
+    assert.equal(res.status, 200)
+    const lobby = await res.json()
+    assert.deepEqual(lobby.teams.map((t2) => t2.name).sort(), teams.map((t2) => t2.name).sort())
+    assert.equal(lobby.teams[0].size, 0)
+    // Thin on purpose: the code buys the sides, not the game.
+    assert.equal(lobby.board, undefined)
+    assert.equal(lobby.players, undefined)
+
+    const missing = await fetch(`http://127.0.0.1:${PORT}/api/lobby?code=ZZZZ`)
+    assert.equal(missing.status, 404)
+  })
+
+  const second = teams[1].id
+  const ann = client("player", { code, name: "Ann", teamId: second })
+  await ann.ready
+
+  await t.test("and is seated where it asked, not where the count fell", async () => {
+    await settle()
+    const seat = host.state.players.find((p) => p.id === ann.identity.playerId)
+    assert.equal(seat.teamId, second, "an empty room would otherwise have dealt them the first side")
+    ann.ws.close()
+  })
+
+  await t.test("a side that no longer exists falls back to the smallest", async () => {
+    const ghost = client("player", { code, name: "Ghost", teamId: "t_nonexistent" })
+    await ghost.ready
+    await settle()
+    const seat = host.state.players.find((p) => p.id === ghost.identity.playerId)
+    assert.ok(teams.some((t2) => t2.id === seat.teamId), "nobody is left unseated by a stale pick")
+    ghost.ws.close()
+  })
+
+  await t.test("the desk outranks a phone that reloads with an old pick", async () => {
+    const bob = client("player", { code, name: "Bob", teamId: teams[0].id })
+    await bob.ready
+    await settle()
+    const id = bob.identity.playerId
+
+    // The host moves them, as hosts do.
+    host.send("team:assign", { playerId: id, teamId: second })
+    await settle()
+    assert.equal(host.state.players.find((p) => p.id === id).teamId, second)
+
+    // Then the phone reloads, still remembering the side it chose.
+    bob.ws.close()
+    await settle(250)
+    const back = client("player", { code, name: "Bob", playerId: id, teamId: teams[0].id })
+    await back.ready
+    await settle()
+    assert.equal(
+      host.state.players.find((p) => p.id === id).teamId,
+      second,
+      "a reload must not quietly undo the host",
+    )
+    back.ws.close()
+  })
+})

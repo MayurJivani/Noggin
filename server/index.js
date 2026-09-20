@@ -612,6 +612,36 @@ async function handleRequest(req, res) {
     }
   }
 
+  /*
+    What a phone needs to know before it takes a seat.
+
+    On team night a player should be able to pick their side as they join
+    rather than be dealt one and have to ask the host to move them — and the
+    join screen has no socket yet, so there is nowhere else this could come
+    from. Deliberately thin: the sides and how full they are, which is what
+    choosing between them needs, and nothing about the board or the scores.
+
+    Anyone typing a code here could simply join the room and read the same
+    names off the big screen, so this gives nothing away that holding the code
+    did not already give.
+  */
+  if (req.method === "GET" && url.pathname === "/api/lobby") {
+    const code = String(url.searchParams.get("code") ?? "").toUpperCase()
+    const room = rooms.get(code) ?? (await resumeRoom(code))
+    if (!room) return json(res, 404, { error: "No game with that code." })
+    return json(res, 200, {
+      title: room.board.title,
+      teams: room.settings.teams
+        ? [...room.teams.values()].map((t) => ({
+            id: t.id,
+            name: t.name,
+            color: t.color,
+            size: G.membersOf(room, t.id).length,
+          }))
+        : [],
+    })
+  }
+
   if (req.method === "GET" && url.pathname.startsWith("/files/")) {
     let raw
     try {
@@ -1363,6 +1393,18 @@ async function handleJoin(ws, meta, msg, req) {
       clearTimeout(seat.expire)
       seat.connected = true
       seat.name = name || seat.name
+      /*
+        A returning phone keeps the side it is on.
+
+        Only an unseated one is placed by what it asked for. The host can move
+        people, and a reload carrying a stale choice would quietly undo that —
+        the desk is the authority on who is on which team once the game is
+        running, not a phone remembering what it picked twenty minutes ago.
+      */
+      if (room.settings.teams && !seat.teamId) {
+        const wanted = String(msg.teamId ?? "")
+        if (wanted && room.teams.has(wanted)) seat.teamId = wanted
+      }
       meta.playerId = seat.id
       // Whose socket this seat now belongs to. See the close handler: a reload
       // opens the new connection before the old one reports itself shut.
@@ -1381,10 +1423,21 @@ async function handleJoin(ws, meta, msg, req) {
       player.socket = ws
       room.players.set(id, player)
       meta.playerId = id
-      // Somewhere to sit. A phone arriving on team night with no side can't
-      // buzz for anyone, and the host is busy — the smallest team is both the
-      // fair answer and the one they'd have picked.
-      if (room.settings.teams) G.seatStragglers(room)
+      /*
+        Somewhere to sit.
+
+        Where they asked, if they asked and the side still exists — the join
+        screen offers the teams, so a phone that picked one has already made
+        this decision and the host should not have to redo it. Otherwise the
+        smallest team, which is both the fair answer and the one they would
+        have picked: a phone arriving on team night with no side cannot buzz
+        for anyone, and the host is busy.
+      */
+      if (room.settings.teams) {
+        const wanted = String(msg.teamId ?? "")
+        if (wanted && room.teams.has(wanted)) player.teamId = wanted
+        G.seatStragglers(room)
+      }
     }
     send(ws, { type: "joined", playerId: meta.playerId, code: room.code, role })
     console.log(`[ws] player ${meta.playerId} joined ${room.code} (${room.players.size} seated)`)

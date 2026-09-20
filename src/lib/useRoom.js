@@ -22,6 +22,7 @@ const SILENCE_LIMIT_MS = 12_000
  * @param {'host'|'display'|'player'|'controller'} opts.role
  * @param {string} [opts.code]      – room code; host may omit to open a new room
  * @param {string} [opts.name]      – player display name
+ * @param {string} [opts.teamId]    – the side a joining player picked, if any
  * @param {string} [opts.playerId]  – stable id so a reload keeps its score
  * @param {string} [opts.key]       – controller key, for driving without an account
  * @param {'desk'|'cards'|'control'} [opts.surface] – which privileged screen this is
@@ -30,7 +31,7 @@ const SILENCE_LIMIT_MS = 12_000
  * @param {(msg: any) => void} [opts.onMessage] – anything this hook doesn't model
  * @param {boolean} [opts.enabled]  – hold off connecting until the user is ready
  */
-export function useRoom({ role, code, name, playerId, key, surface, onEffects, onError, onMessage, enabled = true }) {
+export function useRoom({ role, code, name, teamId, playerId, key, surface, onEffects, onError, onMessage, enabled = true }) {
   const [state, setState] = useState(null)
   const [connected, setConnected] = useState(false)
   const [identity, setIdentity] = useState(null)
@@ -55,8 +56,8 @@ export function useRoom({ role, code, name, playerId, key, surface, onEffects, o
 
   const handlers = useRef({})
   handlers.current = { onEffects, onError, onMessage }
-  const joinRef = useRef({ role, code, name, playerId, key, surface })
-  joinRef.current = { role, code, name, playerId, key, surface }
+  const joinRef = useRef({ role, code, name, teamId, playerId, key, surface })
+  joinRef.current = { role, code, name, teamId, playerId, key, surface }
 
   useEffect(() => {
     if (!enabled) return
@@ -82,7 +83,7 @@ export function useRoom({ role, code, name, playerId, key, surface, onEffects, o
         lastSeen = Date.now()
         setConnected(true)
         const j = joinRef.current
-        ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, playerId: j.playerId, key: j.key, surface: j.surface }))
+        ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, teamId: j.teamId, playerId: j.playerId, key: j.key, surface: j.surface }))
 
         // Anything the player did while we were away, if it is still worth
         // saying. Sent after the join so the relay knows who is speaking.

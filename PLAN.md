@@ -219,6 +219,19 @@ What exists, and what is deliberately left for later.
   `takeTiebreak` leaves down that branch before anything is awarded, because
   buying the right to play a separately scored round should not move the quiz
   scoreboard.
+- **Picking a side on the way in** — teams can be built before anyone arrives
+  (turn team mode on and the two sides exist; add, rename and colour them on
+  the Run tab), and the join screen then offers them. A phone that picks one is
+  seated there; one that does not goes to the smallest side, as before.
+
+  The join screen has no socket yet — that is what it is for — so the sides
+  come over HTTP from `/api/lobby`, which answers with the names, colours and
+  head counts and nothing else. Anyone typing a code there could join the room
+  and read the same names off the big screen, so it gives away nothing that
+  holding the code did not.
+
+  A pick only ever seats an *unseated* phone. The desk can move people, and a
+  reload carrying a twenty-minute-old choice must not quietly undo that.
 - **A buzzer each, or one per team** — `teamBuzz`. The default is one entry in
   the race per side, because otherwise the biggest team wins on thumbs. Set to
   `"seat"` everyone presses for themselves and a miss only puts *that person*
