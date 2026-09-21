@@ -1,13 +1,13 @@
 # Sounds
 
 Empty on purpose. The soundboard and the music bed are **off** until someone
-chooses what they should sound like — see `SAMPLES_ENABLED` at the top of
+chooses what they should sound like. See `SAMPLES_ENABLED` at the top of
 `src/lib/sfx.js`.
 
 Nothing is broken in the meantime. Every sample has a synthesised stand-in, so
 the game still makes its own noises: the buzz-in, the early-press reject, the
 verdict, the countdown, the Nitro. Those are oscillators and always were, and
-the fast ones will stay that way — a buzz-in has to land *with* the press, and a
+the fast ones will stay that way, because a buzz-in has to land *with* the press, and a
 decode is a risk not worth taking there.
 
 ## Turning it on
@@ -35,13 +35,13 @@ controller, and the ♪ bed becomes available.
 | `crickets` | soundboard |
 | `whoosh` | soundboard · board opening, round starting |
 | `buzzer` | soundboard · wrong answer |
-| `music` | the bed — loops, ducks under a clue, fetched only when turned on |
+| `music` | the bed: loops, ducks under a clue, fetched only when turned on |
 
 Ids are the keys of `SAMPLES` in `src/lib/sfx.js`, which is also the soundboard
 roster. Adding a row there and a matching file is enough to add a button.
 
 A missing file is not an error: it falls back to the stand-in, and is only asked
-for once. So a partial set is fine — ship the four you care about and leave the
+for once. So a partial set is fine: ship the four you care about and leave the
 rest synthesised.
 
 ## Licensing

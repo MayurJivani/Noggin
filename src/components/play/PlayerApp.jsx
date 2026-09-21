@@ -500,20 +500,20 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
         : { text: "Survey — wait for it", tone: "dim" }
     : tb
     ? !inTiebreak
-      ? { text: "Tie-break — watch", tone: "dim" }
+      ? { text: "Tie-break: watch", tone: "dim" }
       : tbOut
         ? { text: "Out of the tie-break", tone: "dim" }
         : iHoldIt
           ? { text: "You're in — to win it", tone: "live" }
           : buzzer.armed
             ? { text: "Sudden death — buzz!", tone: "live" }
-            : { text: "Tie-break — wait for it", tone: "good" }
+            : { text: "Tie-break: wait for it", tone: "good" }
     : testing
     ? heard
       ? { text: "Buzzer works ✓", tone: "good" }
       : { text: "Buzzer test — press it", tone: "live" }
     : settling
-    ? { text: "In — settling the race", tone: "live" }
+    ? { text: "In: settling the race", tone: "live" }
     : state.paused
     ? { text: "Paused", tone: "dim" }
     : iHoldIt
