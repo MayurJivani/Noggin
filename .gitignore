@@ -32,3 +32,6 @@ data/
 # codegraph
 .codegraph/
 
+
+# Claude Code and local tooling
+.claude/
