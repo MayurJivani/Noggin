@@ -10,6 +10,9 @@
 [![Issues](https://img.shields.io/github/issues/MayurJivani/Noggin?style=flat-square)](https://github.com/MayurJivani/Noggin/issues)
 ![Code size](https://img.shields.io/github/languages/code-size/MayurJivani/Noggin?style=flat-square)
 [![Last commit](https://img.shields.io/github/last-commit/MayurJivani/Noggin?style=flat-square)](https://github.com/MayurJivani/Noggin/commits/main)
+![buzzer](https://img.shields.io/badge/buzzer-millisecond%20ordered-e6b800?style=flat-square)
+![arguments](https://img.shields.io/badge/arguments-settled%20by%20undo-8e44ad?style=flat-square)
+![host hands](https://img.shields.io/badge/host%20hands-one%2C%20holding%20a%20mic-16a085?style=flat-square)
 
 A quiz-board game show for a room with a TV and a pile of phones.
 
