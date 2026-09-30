@@ -6,9 +6,6 @@
 ![Postgres](https://img.shields.io/badge/Postgres-optional-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-345%20passing-success?style=flat-square)
-[![Stars](https://img.shields.io/github/stars/MayurJivani/Noggin?style=flat-square)](https://github.com/MayurJivani/Noggin/stargazers)
-[![Issues](https://img.shields.io/github/issues/MayurJivani/Noggin?style=flat-square)](https://github.com/MayurJivani/Noggin/issues)
-![Code size](https://img.shields.io/github/languages/code-size/MayurJivani/Noggin?style=flat-square)
 [![Last commit](https://img.shields.io/github/last-commit/MayurJivani/Noggin?style=flat-square)](https://github.com/MayurJivani/Noggin/commits/main)
 
 A quiz-board game show for a room with a TV and a pile of phones.
