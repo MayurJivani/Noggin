@@ -219,6 +219,24 @@ What exists, and what is deliberately left for later.
   `takeTiebreak` leaves down that branch before anything is awarded, because
   buying the right to play a separately scored round should not move the quiz
   scoreboard.
+- **Who got the last one right** — a line above the podiums on the big screen,
+  and a chip on all three driving surfaces. The room asks this out loud more
+  than anything else and the only answer used to be somebody's memory: the
+  board goes back up and whoever just took a tile looks like everyone else on
+  it.
+
+  Read off `room.log` in the projection rather than tracked separately, because
+  the log already records every ruling and a second copy is a second thing to
+  keep in step. Writing it that way turned up a real bug: `undoJudgement`
+  restored the score, the history and the board and left its log entry behind,
+  so a mis-tapped ✓ stayed in the night's record for ever — harmless while only
+  the end-of-game summary read the log, and not harmless at all once a screen
+  shows the last entry. Undo pops it now, but only when the ruling actually
+  wrote one: a miss with penalties off writes nothing, and popping then would
+  have eaten the correct answer before it.
+
+  The final and the play-off log their rulings too, so the line does not go
+  stale in the rounds the game is decided in.
 - **Picking a side on the way in** — teams can be built before anyone arrives
   (turn team mode on and the two sides exist; add, rename and colour them on
   the Run tab), and the join screen then offers them. A phone that picks one is

@@ -43,6 +43,31 @@ export function Operators({ state, className = "" }) {
 }
 
 /**
+ * Who got the last one right, for the people driving.
+ *
+ * The room sees this on the big screen; the desk needs it for a different
+ * reason. A host is asked "who had the last one?" while they are reading the
+ * next clue, and the only answer available was to open a player's history one
+ * row at a time and compare timestamps. Per-player history is still the full
+ * account — this is the single line that answers the question out loud.
+ *
+ * Unlike the line below it this does not fade: it stays true until somebody
+ * else gets one, which is exactly as long as it is useful.
+ */
+export function LastCorrect({ state, className = "" }) {
+  const entry = state?.lastCorrect
+  if (!entry?.by) return null
+  return (
+    <span className={`flex items-center gap-1 rounded-md border border-good/40 bg-good/10 px-1.5 py-0.5 text-[10px] ${className}`} title="The last answer ruled correct">
+      <span className="text-good">✓</span>
+      <span className="max-w-[9rem] truncate text-muted">{entry.by}</span>
+      {entry.clue && <span className="max-w-[10rem] truncate text-faint">{entry.clue}</span>}
+      {entry.amount > 0 && <span className="font-value tabular-nums text-gold-dim">+{entry.amount}</span>}
+    </span>
+  )
+}
+
+/**
  * The last move, and who made it.
  *
  * It fades after a minute rather than persisting: "Alice armed the buzzer" is

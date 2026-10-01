@@ -319,7 +319,7 @@ function Stage({ code, state, connected, error, audioOn, spectator, broadcasting
         {state.paused && <PausedCard />}
       </main>
 
-      {phase !== "lobby" && <ScoreBar rows={rows} buzzer={buzzer} lifeline={lifeline} />}
+      {phase !== "lobby" && <ScoreBar rows={rows} buzzer={buzzer} lifeline={lifeline} lastCorrect={state.lastCorrect} />}
 
       {!audioOn && (
         <div className="pointer-events-none absolute bottom-[1vmin] left-1/2 z-40 -translate-x-1/2 rounded-full border border-edge bg-void/80 px-4 py-1.5 text-[11px] text-muted">

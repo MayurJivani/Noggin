@@ -6,7 +6,7 @@ import { resolveMediaUrl } from "../../lib/mediaUrl"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
-import { Operators } from "../ui/Operators"
+import { LastCorrect, Operators } from "../ui/Operators"
 import { useWakeLock } from "../../lib/useWakeLock"
 
 /**
@@ -90,6 +90,7 @@ function CueCards({ state, send, connected }) {
         <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} />
         {state.paused && <span className="label text-gold">paused</span>}
         <Operators state={state} className="hidden sm:flex" />
+        <LastCorrect state={state} className="hidden sm:flex" />
         <div className="ml-auto flex items-center gap-3">
           {clue && (
             <button

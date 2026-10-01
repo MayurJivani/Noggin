@@ -1209,6 +1209,10 @@ export function judge(room, correct, target = judgeTarget(room)) {
     active: room.active && { ...room.active },
     buzzer: cloneBuzzer(room.buzzer),
     timer: room.timer,
+    // Whether there will be a log entry to take back. A wrong answer with
+    // penalties off writes nothing, and popping then would eat the ruling
+    // before it.
+    logged: correct || !!room.settings.penaltyForWrong,
   })
 
   room.timer = null
@@ -1217,7 +1221,7 @@ export function judge(room, correct, target = judgeTarget(room)) {
     unit.score += amount
     record(unit, amount, room.wager ? "nitro" : "correct", clueLabel(room))
     room.activeWon = true
-    logEvent(room, { kind: "clue", clue: clueLabel(room), by: unit.name, unitId: unit.id, amount, nitro: !!room.wager })
+    logEvent(room, { kind: "clue", correct: true, clue: clueLabel(room), by: unit.name, unitId: unit.id, amount, nitro: !!room.wager })
     room.buzzer.armed = false
     room.buzzer.winner = playerId
     room.phase = PHASE.REVEAL
@@ -1229,7 +1233,7 @@ export function judge(room, correct, target = judgeTarget(room)) {
   if (room.settings.penaltyForWrong) {
     unit.score -= amount
     record(unit, -amount, "wrong", clueLabel(room))
-    logEvent(room, { kind: "miss", clue: clueLabel(room), by: unit.name, unitId: unit.id, amount })
+    logEvent(room, { kind: "miss", correct: false, clue: clueLabel(room), by: unit.name, unitId: unit.id, amount })
   }
   // The whole side is out, not just the phone that answered — otherwise a team
   // works through its members until one of them guesses right.
@@ -1338,6 +1342,16 @@ export function undoJudgement(room) {
 
   unit.score = last.score
   if (unit.history?.length) unit.history.pop()
+  /*
+    And the log entry the ruling wrote.
+
+    Undo restores the score, the history and the board; the log was the one
+    thing it left behind, so a mis-tapped ✓ stayed in the night's record for
+    ever. Harmless while the log was only read by the end-of-game summary, and
+    not harmless at all now that the big screen reads the last entry off it:
+    the room would be looking at a correct answer that had been taken back.
+  */
+  if (last.logged && room.log?.length) room.log.pop()
   room.phase = last.phase
   room.revealed = last.revealed
   room.active = last.active
@@ -1793,6 +1807,10 @@ export function judgeFinal(room, correct) {
   unit.score += correct ? wager : -wager
   record(unit, correct ? wager : -wager, correct ? "final-correct" : "final-wrong", "Final")
   room.final.judged[unitId] = correct
+  // In the log with the rest. Without this the night's record stopped at the
+  // last tile, and "who got the last one right" went stale precisely when the
+  // game was being decided.
+  logEvent(room, { kind: correct ? "clue" : "miss", correct, clue: "Final", by: unit.name, unitId: unit.id, amount: wager })
 
   const effects = [{ kind: correct ? "final-correct" : "final-wrong", playerId: unitId, unitId, wager, score: unit.score }]
 
@@ -2379,6 +2397,7 @@ function takeTiebreak(room, unit, bonus = false) {
   if (room.tiebreak.purpose === "cut") {
     if (!room.qualified.includes(unit.id)) room.qualified.push(unit.id)
     record(unit, 0, "tiebreak-through", "Play-off")
+    logEvent(room, { kind: "clue", correct: true, clue: "Play-off", by: unit.name, unitId: unit.id, amount: 0 })
     return [{ kind: "tiebreak-through", unitId: unit.id }]
   }
   room.winner = unit.id
@@ -2389,6 +2408,7 @@ function takeTiebreak(room, unit, bonus = false) {
   const paid = bonus ? TIEBREAK_BONUS : 0
   unit.score += paid
   record(unit, paid, "tiebreak-win", "Tie-break")
+  logEvent(room, { kind: "clue", correct: true, clue: "Tie-break", by: unit.name, unitId: unit.id, amount: paid })
   return [{ kind: "tiebreak-won", unitId: unit.id, bonus: paid }]
 }
 
@@ -2736,6 +2756,16 @@ export function projectState(room, role, viewerId = null) {
     canUndo: privileged && room.judgements.length > 0,
     /** How many rulings deep the host can still go. */
     undoDepth: privileged ? room.judgements.length : undefined,
+    /*
+      Who got the last one right, for everybody.
+
+      Read off the log rather than tracked separately, because the log already
+      records every ruling and a second copy is a second thing to keep in step
+      — `undoJudgement` would have had to remember to roll back both. Public on
+      purpose: the room asks "who got that?" out loud, and the big screen
+      answering it is the point.
+    */
+    lastCorrect: (room.log ?? []).findLast((e) => e.correct) ?? null,
     everyoneSpent: everyoneSpent(room),
     // The buzzer sound-check. Everyone sees it: a player needs to know their
     // press landed, and the big screen showing "testing" beats it showing a

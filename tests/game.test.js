@@ -706,6 +706,125 @@ test("undoing a ruling takes its history entry with it", () => {
   assert.equal(room.players.get("p0").score, 0)
 })
 
+// ── Who got the last one right ───────────────────────────────────────────────
+
+test("the last correct answer is named, to everyone", () => {
+  const room = setup(2)
+  assert.equal(G.projectState(room, "display").lastCorrect, null, "nothing has been got yet")
+
+  G.selectClue(room, 0, 1) // 400
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judge(room, true)
+
+  // Public on purpose: the room asks this out loud, and the big screen
+  // answering it is the point.
+  for (const role of ["display", "player", "host"]) {
+    const seen = G.projectState(room, role, "p1").lastCorrect
+    assert.equal(seen.by, room.players.get("p0").name, `${role} is told who`)
+    assert.equal(seen.amount, 400)
+    assert.equal(seen.unitId, "p0")
+    assert.ok(seen.clue, "and what for")
+  }
+})
+
+test("a wrong answer does not become the last correct one", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judge(room, true)
+  G.closeClue(room)
+
+  G.selectClue(room, 1, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 10)
+  G.judge(room, false)
+
+  const seen = G.projectState(room, "display").lastCorrect
+  assert.equal(seen.unitId, "p0", "the miss does not displace the last person who got one")
+})
+
+test("taking a ruling back takes its record with it", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 0) // 200
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judge(room, true)
+  assert.equal(G.projectState(room, "display").lastCorrect.unitId, "p0")
+
+  /*
+    The bug this found. Undo restored the score, the history and the board and
+    left the log entry behind — harmless while only the end-of-game summary
+    read it, and not harmless at all once the big screen shows the last one:
+    the room would be looking at a correct answer that had been taken back.
+  */
+  G.undoJudgement(room)
+  assert.equal(G.projectState(room, "display").lastCorrect, null)
+  assert.deepEqual(room.log, [], "and the night's record agrees")
+})
+
+test("undo after a miss does not eat the ruling before it", () => {
+  const room = setup(2)
+  G.selectClue(room, 0, 1) // 400 to p0
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judge(room, true)
+  G.closeClue(room)
+
+  G.selectClue(room, 1, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 10)
+  G.judge(room, false)
+  G.undoJudgement(room)
+
+  assert.equal(G.projectState(room, "display").lastCorrect.unitId, "p0", "p0 still got the one before")
+  assert.equal(room.log.length, 1)
+})
+
+test("a miss with penalties off logs nothing, and undo pops nothing", () => {
+  // The entry that is never written. Popping on this undo would have eaten
+  // the correct answer before it.
+  const room = setup(2, { penaltyForWrong: false })
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+  G.judge(room, true)
+  G.closeClue(room)
+
+  G.selectClue(room, 1, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p1", 10)
+  G.judge(room, false)
+  G.undoJudgement(room)
+
+  assert.equal(G.projectState(room, "display").lastCorrect.unitId, "p0")
+  assert.equal(room.log.length, 1)
+})
+
+test("the final and the play-off keep it up to date", () => {
+  const room = setup(2)
+  room.roundIndex = room.board.rounds.length - 1
+  room.board.final = { ...G.makeFinal(), enabled: true, category: "LAST", prompt: "the final clue", answer: "!" }
+  room.players.get("p0").score = 500
+  room.players.get("p1").score = 400
+  G.openFinal(room)
+  // Wagers go in blind, before the clue is started. See the final's own tests.
+  G.setFinalWager(room, "p0", 100)
+  G.setFinalWager(room, "p1", 100)
+  G.startFinal(room, 0)
+  G.setFinalAnswer(room, "p0", "a")
+  G.setFinalAnswer(room, "p1", "b")
+  G.revealFinal(room)
+
+  // Poorest first, so p1 is up.
+  G.judgeFinal(room, true)
+  const seen = G.projectState(room, "display").lastCorrect
+  assert.equal(seen.unitId, "p1")
+  assert.equal(seen.clue, "Final", "named by the round, since there is no tile")
+  assert.equal(seen.amount, 100, "what the bet paid")
+})
+
 // ── Teams ────────────────────────────────────────────────────────────────────
 
 /** A room in team mode. Returns the room and its two teams, in order. */

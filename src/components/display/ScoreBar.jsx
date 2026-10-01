@@ -8,10 +8,12 @@ import { scoreSize, useRolling } from "../../lib/useRolling"
  * only difference a team makes here is that it carries a colour and says how
  * many phones are behind it.
  */
-export function ScoreBar({ rows, buzzer, lifeline }) {
+export function ScoreBar({ rows, buzzer, lifeline, lastCorrect = null }) {
   if (!rows.length) return null
   return (
-    <div className="flex shrink-0 items-end justify-center gap-[1vmin] px-[2vmin] pb-[1.5vmin]">
+    <div className="shrink-0">
+      <LastCorrect entry={lastCorrect} />
+      <div className="flex items-end justify-center gap-[1vmin] px-[2vmin] pb-[1.5vmin]">
       {rows.map((row) => {
         const holds = holdsBuzz(row, buzzer)
         const spent = isSpent(row, buzzer)
@@ -48,8 +50,44 @@ export function ScoreBar({ rows, buzzer, lifeline }) {
               </div>
             )}
           </div>
-        )
-      })}
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Who got the last one right.
+ *
+ * The question a room asks out loud more than any other, and until now the
+ * only answer was somebody's memory — the board goes back up and whoever just
+ * won a tile is indistinguishable from everyone else on it. One line above the
+ * podiums, in the smallest type that can be read from the back: it is a
+ * reminder, not a result, and it must never compete with the scores under it.
+ */
+function LastCorrect({ entry }) {
+  if (!entry?.by) return null
+  return (
+    <div className="flex items-baseline justify-center gap-[0.8vmin] pb-[0.6vmin] text-center">
+      <span className="font-display uppercase tracking-[0.25em] text-faint" style={{ fontSize: "max(7px, calc(var(--stage) * 0.95))" }}>
+        last correct
+      </span>
+      <span className="truncate font-display uppercase text-muted" style={{ fontSize: "max(9px, calc(var(--stage) * 1.2))" }}>
+        {entry.by}
+      </span>
+      {entry.clue && (
+        <span className="truncate text-faint" style={{ fontSize: "max(7px, calc(var(--stage) * 0.95))" }}>
+          {entry.clue}
+        </span>
+      )}
+      {/* A play-off seat pays nothing, so a "+0" would be a lie about what
+          happened rather than a detail. */}
+      {entry.amount > 0 && (
+        <span className="font-value tabular-nums text-gold-dim" style={{ fontSize: "max(9px, calc(var(--stage) * 1.2))" }}>
+          +{entry.amount}
+        </span>
+      )}
     </div>
   )
 }

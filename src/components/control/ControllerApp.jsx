@@ -3,7 +3,7 @@ import { useCountdown, useRoom } from "../../lib/useRoom"
 import { useAuth } from "../../lib/useAuth"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
 import { holdsBuzz, isSpent, nameOf, rows as sideRows } from "../../lib/sides"
-import { Operators } from "../ui/Operators"
+import { LastCorrect, Operators } from "../ui/Operators"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { AuthLoading, SignIn } from "../auth/SignIn"
 import { Backdrop } from "../ui/Backdrop"
@@ -120,6 +120,7 @@ function Console({ state, send, connected, auth, viaKey }) {
         <span className="label">controller</span>
         <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-bad animate-glow"}`} />
         <Operators state={state} className="hidden sm:flex" />
+        <LastCorrect state={state} className="hidden sm:flex" />
         <div className="ml-auto flex items-center gap-3">
           <span className="font-display brass-sm text-lg tracking-[0.2em]">{state.code}</span>
           {!viaKey && auth.user && (
