@@ -75,3 +75,57 @@ test("a duplicated board shares no ids with its original", () => {
   const ids = (b) => b.rounds.flatMap((r) => [r.id, ...r.categories.flatMap((c) => [c.id, ...c.clues.map((cl) => cl.id)])])
   assert.equal(ids(copy).filter((id) => ids(board).includes(id)).length, 0, "nothing would overwrite the original")
 })
+
+// ── Saving a board ───────────────────────────────────────────────────────────
+
+/**
+ * The bug that cost a host their board.
+ *
+ * `fetch` resolves for 401, 403 and 400 — it only rejects when the request
+ * never completed. Both the builder's autosave and the desk's push read a
+ * resolved promise as "stored", so an expired session returned
+ * `{"error":"sign in"}`, the dot went green, and the board existed nowhere but
+ * that browser tab. `putBoard` is the single answer to "did it land".
+ */
+test("a refused save is reported, not rounded up to success", async () => {
+  const { putBoard } = await import("../src/lib/net.js")
+  const board = { id: "b_test", title: "Quiz" }
+
+  const ok = (status, body) => async () => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  })
+
+  assert.equal(await putBoard("http://relay", board, ok(200, { board })), null, "a stored board reports nothing wrong")
+
+  // The one that actually happened: a session that expired overnight.
+  assert.equal(await putBoard("http://relay", board, ok(401, { error: "sign in" })), "401 sign in")
+  assert.equal(await putBoard("http://relay", board, ok(403, { error: "not yours" })), "403 not yours")
+  assert.equal(await putBoard("http://relay", board, ok(400, { error: "bad board id" })), "400 bad board id")
+
+  // A refusal with no JSON body still has to be a refusal rather than a pass.
+  assert.equal(
+    await putBoard("http://relay", board, async () => ({ ok: false, status: 502, json: async () => { throw new Error("not json") } })),
+    "HTTP 502",
+  )
+
+  // And a genuinely dead network, which was being swallowed by `.catch(() => {})`.
+  assert.equal(
+    await putBoard("http://relay", board, async () => { throw new Error("Failed to fetch") }),
+    "Failed to fetch",
+  )
+})
+
+test("a board save goes to the board's own id, as a PUT with credentials", async () => {
+  const { putBoard } = await import("../src/lib/net.js")
+  let seen = null
+  await putBoard("http://relay", { id: "b_abc", title: "Quiz" }, async (url, init) => {
+    seen = { url, init }
+    return { ok: true, status: 200, json: async () => ({}) }
+  })
+  assert.equal(seen.url, "http://relay/boards/b_abc")
+  assert.equal(seen.init.method, "PUT")
+  assert.equal(seen.init.credentials, "include", "without the cookie every save is a 401")
+  assert.equal(JSON.parse(seen.init.body).title, "Quiz")
+})

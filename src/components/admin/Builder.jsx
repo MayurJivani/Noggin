@@ -23,7 +23,7 @@ import {
   tiebreaksOf,
 } from "../../lib/board"
 import { getRelayOrigin } from "../../lib/mediaUrl"
-import { surveyUrl } from "../../lib/net"
+import { putBoard, surveyUrl } from "../../lib/net"
 import { MediaField } from "../ui/MediaField"
 import { ImportCsv } from "./ImportCsv"
 
@@ -31,12 +31,16 @@ import { ImportCsv } from "./ImportCsv"
  * Part one of the host's night: writing the game.
  *
  * The grid on the left is the board as the room will see it; clicking a tile
- * opens it in the inspector on the right. Everything autosaves to the relay, so
- * closing the tab at 1am doesn't cost you the quiz.
+ * opens it in the inspector on the right. Edits autosave to the relay, debounced,
+ * and the dot by the title says whether the last one landed — a board is only in
+ * this tab's `localStorage` until it does, so a refused save is reported rather
+ * than rounded up to "saved". See `SaveDot`.
  */
 export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, onSettings, onPush, pushState, state }) {
   const [selected, setSelected] = useState(null) // { catIndex, clueIndex }
   const [saved, setSaved] = useState("idle")
+  /** Why the last save was refused, if it was. Shown rather than swallowed. */
+  const [saveError, setSaveError] = useState(null)
   const [boards, setBoards] = useState([])
   const [importing, setImporting] = useState(false)
   /** The board whose name is being changed, if any. */
@@ -56,17 +60,11 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
     }
     setSaved("saving")
     const id = setTimeout(async () => {
-      try {
-        await fetch(`${getRelayOrigin()}/boards/${board.id}`, {
-          method: "PUT",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...board, updatedAt: Date.now() }),
-        })
-        setSaved("saved")
-      } catch {
-        setSaved("error")
-      }
+      // `putBoard` is the one place that decides whether a save landed — it
+      // exists because this line used to treat a 401 as a success. See net.js.
+      const failed = await putBoard(getRelayOrigin(), board)
+      setSaved(failed ? "error" : "saved")
+      setSaveError(failed)
     }, 700)
     return () => clearTimeout(id)
   }, [board])
@@ -226,7 +224,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <SaveDot state={saved} />
+              <SaveDot state={saved} why={saveError} />
               <button className="btn" onClick={() => downloadBoard(board)}>
                 Export
               </button>
@@ -1322,7 +1320,16 @@ function Rule({ label, hint, value, onChange, min, max, step = 1 }) {
   )
 }
 
-function SaveDot({ state }) {
+/**
+ * Whether the board is on the relay.
+ *
+ * The failure state is deliberately loud. A board lives in this tab's
+ * `localStorage` until a save lands, so "not saved" means the only copy is in a
+ * browser — one cleared cache or one other device and an evening's work is
+ * gone. That is what happened, and it happened behind a 1.5px grey dot, so this
+ * says what went wrong and what to do about it rather than tinting a circle.
+ */
+function SaveDot({ state, why = null }) {
   const map = {
     idle: ["bg-faint", "ready"],
     saving: ["bg-live animate-glow", "saving…"],
@@ -1330,6 +1337,19 @@ function SaveDot({ state }) {
     error: ["bg-bad", "not saved"],
   }
   const [dot, text] = map[state] ?? map.idle
+
+  if (state === "error") {
+    return (
+      <span
+        className="flex items-center gap-1.5 rounded border border-bad bg-bad/15 px-2 py-0.5 text-[11px] text-bad animate-pop"
+        title={why ? `The relay refused the save: ${why}` : undefined}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-bad" />
+        Not saved{why?.startsWith("401") ? " — sign in again" : ""}
+      </span>
+    )
+  }
+
   return (
     <span className="flex items-center gap-1.5 text-[11px] text-faint">
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />

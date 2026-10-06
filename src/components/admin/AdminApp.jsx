@@ -5,7 +5,7 @@ import { AuthLoading, SignIn } from "../auth/SignIn"
 import { DEFAULT_SETTINGS, makeBoard } from "../../lib/board"
 import { readJson, readStore, removeStore, writeJson, writeStore } from "../../lib/storage"
 import { getRelayOrigin } from "../../lib/mediaUrl"
-import { displayUrl, podiumsUrl, scoresUrl, watchUrl } from "../../lib/net"
+import { displayUrl, podiumsUrl, putBoard, scoresUrl, watchUrl } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { JoinCard } from "../ui/JoinCard"
@@ -197,15 +197,34 @@ function HostDesk({ auth }) {
 
   const push = async () => {
     setPushState("pushing")
-    await fetch(`${getRelayOrigin()}/boards/${board.id}`, {
-      method: "PUT",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...board, updatedAt: Date.now() }),
-    }).catch(() => {})
+    /*
+      The save and the room are two different things, and only one of them was
+      being checked — neither, in fact.
+
+      `.catch(() => {})` swallowed a dead network and, worse, a completed
+      request was never looked at: `fetch` resolves on 401, 403 and 400 alike,
+      so an expired session returned `{"error":"sign in"}` and this went
+      straight on to report "Board is live ✓". The board did reach the room over
+      the socket, so the quiz ran perfectly and the host had every reason to
+      believe it was stored. It was not, and they found out the next day.
+
+      The push still goes to the room even when the save fails — tonight's quiz
+      should not be held hostage to storage — but it says so.
+    */
+    const failed = await putBoard(getRelayOrigin(), board)
+
     send("board:set", { board })
-    setPushState("pushed")
     setTab("run")
+
+    if (failed) {
+      setPushState("idle")
+      setBanner(
+        `The board is live in the room, but it was NOT saved (${failed}). ` +
+          `The only copy is in this browser — sign in again and edit anything to retry the save before you close this tab.`,
+      )
+      return
+    }
+    setPushState("pushed")
     setTimeout(() => setPushState("idle"), 2500)
   }
 

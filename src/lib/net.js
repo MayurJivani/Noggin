@@ -26,6 +26,40 @@ export function lanHost() {
   return lanPromise
 }
 
+/**
+ * Write a board to the relay, and say honestly whether it landed.
+ *
+ * This exists because both callers got the same thing wrong in the same way.
+ * `fetch` rejects only when the request never completed, so a 401 from an
+ * expired session, a 403 on somebody else's board id and a 400 on a malformed
+ * one all *resolve* — and both the builder's autosave and the desk's push read
+ * that as success. A host wrote a board over an evening, watched the dot say
+ * "saved" after every keystroke, and came back the next day to nothing.
+ *
+ * One function, because "did it save" is one question and two screens were
+ * answering it differently. `fetchImpl` is injectable so the answer can be
+ * tested without a relay.
+ *
+ * @returns {Promise<string|null>} null when stored, else why not.
+ */
+export async function putBoard(origin, board, fetchImpl = fetch) {
+  try {
+    const res = await fetchImpl(`${origin}/boards/${board.id}`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...board, updatedAt: Date.now() }),
+    })
+    if (res.ok) return null
+    // The relay says why in a JSON body. Worth repeating: "401 sign in" tells a
+    // host what to do, where "could not save" leaves them guessing.
+    const why = await res.json().catch(() => null)
+    return why?.error ? `${res.status} ${why.error}` : `HTTP ${res.status}`
+  } catch (err) {
+    return err?.message || "the relay could not be reached"
+  }
+}
+
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"])
 
 export function isLoopbackPage() {
