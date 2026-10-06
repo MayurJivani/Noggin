@@ -51,6 +51,21 @@ export const DEFAULTS = {
   /** A wrong answer subtracts the clue value as well as failing to add it. */
   penaltyForWrong: true,
   /**
+   * Put a missed clue straight back out to everyone, including whoever missed it.
+   *
+   * Off by default, because being spent for the rest of a clue is what makes a
+   * buzz cost something. With this on a player can press, guess, miss and press
+   * again, so the fastest thumb in the room gets as many attempts at a tile as
+   * it has guesses. That is the right trade at a kitchen table, where two people
+   * know the answer and neither should be shut out of a clue over one slip of
+   * the tongue, and the wrong one in a game being played for something.
+   *
+   * It is the "go on then, one more try" button applied automatically — the same
+   * rule as `reopenBuzzer`, without the host reaching for it between guesses. A
+   * nitro is untouched: that clue belongs to one side and a miss ends it.
+   */
+  autoRebound: false,
+  /**
    * Judge the race on reaction time rather than on arrival time.
    *
    * Off by default, because it changes what "first" means and a host should
@@ -1250,6 +1265,10 @@ export function judge(room, correct, target = judgeTarget(room)) {
     return effects
   }
 
+  // Everyone back in, the side that just missed included — see `autoRebound`.
+  // After the nitro return above, because a nitro has no rebound to give.
+  if (room.settings.autoRebound) room.buzzer.spent = []
+
   // Everyone else gets another shot, so re-open rather than closing out.
   const remaining = [...room.players.keys()].filter((id) => !room.buzzer.spent.includes(id))
   if (remaining.length) {
@@ -1575,8 +1594,16 @@ export function stopTimer(room) {
 /**
  * Phone a friend. The clock is the point of the lifeline, so it takes over the
  * room's single timer slot and the buzzer stays shut until it's done.
+ *
+ * Granting and starting are two steps, because in the room they are two
+ * moments: the lifeline is awarded, and then somebody finds a number, dials it
+ * and waits for a friend who may be doing the shopping. Starting the clock on
+ * the grant spent that whole gap — a player could lose ten of their thirty
+ * seconds to a phone ringing, which is not what they were given. So the grant
+ * only takes it out of their purse and shuts the buzzer; the host starts the
+ * clock when the friend actually picks up.
  */
-export function grantLifeline(room, playerId, type = "phone", now = Date.now()) {
+export function grantLifeline(room, playerId, type = "phone") {
   const player = room.players.get(playerId)
   const spec = LIFELINES[type]
   if (!player || !spec) return []
@@ -1585,10 +1612,27 @@ export function grantLifeline(room, playerId, type = "phone", now = Date.now()) 
   if ((purse.lifelines[type] ?? 0) <= 0) return []
 
   purse.lifelines[type] -= 1
-  room.lifeline = { type, playerId, teamId: teamOf(room, playerId)?.id ?? null, endsAt: now + spec.seconds * 1000 }
-  room.timer = { kind: "lifeline", duration: spec.seconds, endsAt: room.lifeline.endsAt }
+  /*
+    `endsAt: null` is the whole of "granted but not running", and every screen
+    keys off it. `seconds` rides along so the ring can draw itself full before
+    it has anything to count down — the overlay used to hard-code thirty, which
+    was right only for as long as `LIFELINES` had one entry in it.
+  */
+  room.lifeline = { type, playerId, teamId: teamOf(room, playerId)?.id ?? null, seconds: spec.seconds, endsAt: null }
   room.buzzer.armed = false
-  return [{ kind: "lifeline-start", type, playerId, seconds: spec.seconds }]
+  return [{ kind: "lifeline-grant", type, playerId, seconds: spec.seconds }]
+}
+
+/** The friend picked up. Now the clock runs. */
+export function startLifeline(room, now = Date.now()) {
+  const live = room.lifeline
+  if (!live || live.endsAt) return []
+  const spec = LIFELINES[live.type]
+  if (!spec) return []
+  live.endsAt = now + spec.seconds * 1000
+  room.timer = { kind: "lifeline", duration: spec.seconds, endsAt: live.endsAt }
+  room.buzzer.armed = false
+  return [{ kind: "lifeline-start", type: live.type, playerId: live.playerId, seconds: spec.seconds }]
 }
 
 export function endLifeline(room) {
@@ -1769,7 +1813,11 @@ export function startFinal(room, now = Date.now()) {
 export function setFinalAnswer(room, playerId, text) {
   if (room.phase !== PHASE.FINAL || room.final?.stage !== "clue") return []
   const unit = scorer(room, playerId)
-  if (!unit || unit.score <= 0) return []
+  // No score gate. This still read `unit.score <= 0` long after `finalEligible`
+  // became everyone, so a side on nothing — or in the red after a bad round —
+  // could place a bet, be handed the clue, type an answer, and have the relay
+  // drop it without a word. They are exactly who the wager floor exists for.
+  if (!unit) return []
   if (room.final.answers[unit.id]?.locked) return []
   room.final.answers[unit.id] = { text: str(text, 200), at: Date.now(), locked: false, by: playerId }
   return [{ kind: "final-answer", playerId, unitId: unit.id }]
@@ -1794,6 +1842,30 @@ export function revealFinal(room) {
     .map((u) => u.id)
   room.final.revealIndex = 0
   return [{ kind: "final-reveal", playerId: room.final.order[0] ?? null }]
+}
+
+/**
+ * Turn over whoever the host names, instead of whoever was next in line.
+ *
+ * Poorest-first is the right *default* and a poor rule: the host is standing in
+ * the room and knows things the scoreboard does not — somebody has to leave,
+ * two people are level so the order between them is arbitrary, the one with the
+ * funny answer should go last. The order was computed once at the reveal and
+ * then walked, so none of that was expressible.
+ *
+ * The named side is moved to the pointer rather than swapped with whoever is
+ * there, so everyone else keeps their relative order and the host can nudge one
+ * name forward without reshuffling the rest. Anyone already turned over stays
+ * turned over: their card is face-up and their ruling is in the scores.
+ */
+export function setFinalUp(room, unitId) {
+  if (room.phase !== PHASE.FINAL || room.final?.stage !== "reveal") return []
+  const at = room.final.order.indexOf(unitId)
+  // Not in the final, already face-up, or already the one up: nothing to do.
+  if (at <= room.final.revealIndex) return []
+  room.final.order.splice(at, 1)
+  room.final.order.splice(room.final.revealIndex, 0, unitId)
+  return [{ kind: "final-reveal", playerId: unitId }]
 }
 
 /** Rule on whoever is currently up, pay or dock the bet, and move along. */
@@ -3011,14 +3083,28 @@ function projectFinal(room, privileged, viewerId) {
   const revealedIds = room.final.order.slice(0, room.final.revealIndex + 1)
   const isUp = (id) => room.final.stage === "reveal" && revealedIds.includes(id)
 
+  /*
+    The answer waits for somebody to have got it.
+
+    Putting it up with the first slip was the whole reveal spoiled on its first
+    second: the room reads it off the screen, and every side still face-down is
+    being turned over for a question whose answer everyone can already see —
+    including the players, whose own panel carries it. So it holds until a
+    ruling has gone the right way, or until every side has been turned over and
+    nobody got it, which is the other time the room is owed it.
+
+    The desk always has it. The host is the one reading it out.
+  */
+  const judged = Object.values(room.final.judged)
+  const settled = judged.some(Boolean) || room.final.order.every((id) => room.final.judged[id] != null)
+  const showAnswer = privileged || (room.final.stage === "reveal" && settled)
+
   return {
     ...base,
     prompt: showClue ? spec.prompt : "",
     media: showClue ? spec.media : null,
-    // The answer waits for the reveal even on the big screen — it is the last
-    // secret in the game and the room is looking straight at it.
-    answer: privileged || room.final.stage === "reveal" ? spec.answer : null,
-    answerMedia: privileged || room.final.stage === "reveal" ? spec.answerMedia : null,
+    answer: showAnswer ? spec.answer : null,
+    answerMedia: showAnswer ? spec.answerMedia : null,
     revealIndex: room.final.revealIndex,
     order: room.final.order,
     /** Who is being turned over right now. */

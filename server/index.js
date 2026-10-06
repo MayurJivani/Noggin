@@ -1513,6 +1513,7 @@ const ACTION_LABELS = {
   "final:open": "opened the final",
   "final:start": "showed the final clue",
   "final:reveal": "started revealing",
+  "final:up": "chose who to turn over",
   "final:judge": "ruled on the final",
   "survey:open": "started the survey round",
   "survey:next": "moved to the next survey question",
@@ -1527,7 +1528,8 @@ const ACTION_LABELS = {
   "tiebreak:judge": "ruled on the tie-break",
   "tiebreak:again": "reran the tie-break",
   "tiebreak:award": "awarded the tie-break",
-  "lifeline:grant": "started a phone call",
+  "lifeline:grant": "granted a phone call",
+  "lifeline:start": "started the phone clock",
   "game:reset": "reset the game",
   "room:delete": "deleted the game",
 }
@@ -1698,6 +1700,8 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.lockFinal(room))
     case "final:reveal":
       return apply(room, G.revealFinal(room))
+    case "final:up":
+      return apply(room, G.setFinalUp(room, msg.unitId))
     case "final:judge":
       return apply(room, G.judgeFinal(room, !!msg.correct))
 
@@ -1746,6 +1750,8 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.stopTimer(room))
     case "lifeline:grant":
       return apply(room, G.grantLifeline(room, msg.playerId, msg.lifeline ?? "phone"))
+    case "lifeline:start":
+      return apply(room, G.startLifeline(room))
     case "lifeline:end":
       return apply(room, G.endLifeline(room))
     case "lifeline:restore":

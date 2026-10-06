@@ -506,6 +506,21 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
               <input
                 type="checkbox"
                 className="mt-0.5"
+                checked={!!settings.autoRebound}
+                onChange={(e) => onSettings({ autoRebound: e.target.checked })}
+              />
+              <span>
+                Buzzer back out to everyone after a miss
+                <span className="block text-[10px] text-faint">
+                  including whoever just missed, so nobody is shut out of a clue over one slip · off, a wrong answer puts
+                  that side out for the rest of the tile and you reopen it yourself
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-[12px] text-muted">
+              <input
+                type="checkbox"
+                className="mt-0.5"
                 checked={!!settings.pingCorrection}
                 onChange={(e) => onSettings({ pingCorrection: e.target.checked })}
               />

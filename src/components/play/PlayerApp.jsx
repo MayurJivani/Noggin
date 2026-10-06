@@ -523,7 +523,17 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
       : onPenalty
         ? { text: "Too early", tone: "bad" }
         : lifeline
-          ? { text: lifeline.playerId === me?.id ? "Your call — go" : "Someone's on the phone", tone: "amethyst" }
+          ? {
+              // "Go" would be a lie while the clock is still waiting on the
+              // friend to pick up — see `grantLifeline`.
+              text:
+                lifeline.playerId === me?.id
+                  ? lifeline.endsAt
+                    ? "Your call — go"
+                    : "Dial — your clock starts when they answer"
+                  : "Someone's on the phone",
+              tone: "amethyst",
+            }
           : buzzer.armed
             ? { text: "Buzzers open", tone: "good" }
             : phase === "clue"
@@ -700,7 +710,15 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
       {noScreen && (
         <>
           <NitroSplash show={splash} />
-          <LifelineOverlay lifeline={lifeline} playerName={nameOf(state, lifeline?.playerId)} now={now} />
+          {/* Same corner the read-clock uses on a phone, for the same reason:
+              a call is read off the clue, so the clue has to stay visible. */}
+          <LifelineOverlay
+            lifeline={lifeline}
+            playerName={nameOf(state, lifeline?.playerId)}
+            now={now}
+            className="absolute bottom-[108px] right-3 z-30"
+            size="58px"
+          />
           <BuzzOverlay name={flash?.name} verdict={flash?.verdict} />
           {/* Bottom corner rather than the screen's top-right, which on a phone
               is the player's own name and score. */}

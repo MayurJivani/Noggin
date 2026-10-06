@@ -281,6 +281,11 @@ function Stage({ code, state, connected, error, audioOn, spectator, broadcasting
             champion={state.champion}
             tied={state.tied}
             survey={state.played?.survey ? state.survey : null}
+            // Only when nobody got it. If somebody did, the reveal screen
+            // already put it up and the room has read it.
+            answer={
+              state.played?.final && !state.final?.players?.some((p) => p.judged) ? (state.final?.answer ?? null) : null
+            }
           />
         )}
         {phase === "tiebreak" && <Tiebreak state={state} rows={rows} />}
@@ -624,7 +629,7 @@ export function NitroWait({ clue, name, stake }) {
   )
 }
 
-function Interlude({ title, rows, sub, final = false, champion = null, tied = null, survey = null }) {
+function Interlude({ title, rows, sub, final = false, champion = null, tied = null, survey = null, answer = null }) {
   const medal = ["#f2c96b", "#c0c0c8", "#c08a5a"]
   /*
     Everyone, not the top eight.
@@ -644,6 +649,26 @@ function Interlude({ title, rows, sub, final = false, champion = null, tied = nu
         {title}
       </div>
       <VeinLine className="w-[40vmin]" height={18} />
+
+      {/*
+        What the final was, for the room that never found out.
+
+        The reveal screen now holds the answer back until somebody is ruled
+        correct, which leaves one case open: nobody was, the last card turns
+        over, and the game ends on a question the room watched everybody miss.
+        The relay sends the answer once every side has been turned over, so
+        this is where it lands.
+      */}
+      {answer && (
+        <div className="text-center">
+          <span className="label" style={{ letterSpacing: "0.35em" }}>
+            The final answer
+          </span>
+          <div className="font-display text-gold brass-sm" style={{ fontSize: "max(16px, calc(var(--stage) * 2.6))" }}>
+            {answer}
+          </div>
+        </div>
+      )}
 
       {tied && (
         <div className="font-display uppercase tracking-[0.25em] text-live animate-glow" style={{ fontSize: "max(13px, calc(var(--stage) * 2))" }}>

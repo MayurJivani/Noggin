@@ -1158,7 +1158,15 @@ function BuzzerPanel({ state, send, now }) {
         {lifeline && (
           <span className="ml-auto flex items-center gap-2 rounded-lg border border-amethyst bg-royal/30 px-2.5 py-1">
             <span className="text-[11px] text-amethyst">☎ {byId[lifeline.playerId]?.name}</span>
-            <span className="font-value text-base text-gold tabular-nums">{Math.ceil((lifelineLeft ?? 0) / 1000)}s</span>
+            {/* The clock waits for the friend to pick up — see `grantLifeline`.
+                Until then the host has a button, not a countdown. */}
+            {lifeline.endsAt ? (
+              <span className="font-value text-base text-gold tabular-nums">{Math.ceil((lifelineLeft ?? 0) / 1000)}s</span>
+            ) : (
+              <button className="btn btn-gold px-2 py-0.5 text-[11px] animate-pop" onClick={() => send("lifeline:start")}>
+                ▸ start {lifeline.seconds ?? 30}s
+              </button>
+            )}
             <button className="text-[10px] text-faint hover:text-ink" onClick={() => send("lifeline:end")}>
               end
             </button>
@@ -1520,6 +1528,34 @@ function FinalControls({ state, send }) {
         <div className="mt-2 text-[11px] text-faint">
           {f.revealIndex + 1} of {f.order.length}
         </div>
+
+        {/*
+          Who goes next, which is the host's call rather than the scoreboard's.
+          Only the ones still face-down: the rest have been ruled on and their
+          cards are not going back over. Poorest-first is still the order these
+          are listed in, so following it is doing nothing.
+        */}
+        {f.order.length - f.revealIndex > 1 && (
+          <div className="mt-3 border-t border-edge/60 pt-2">
+            <div className="label mb-1.5">Turn over next</div>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {f.order.slice(f.revealIndex + 1).map((id) => {
+                const who = f.players?.find((p) => p.id === id)
+                return (
+                  <button
+                    key={id}
+                    className="btn px-2.5 py-1 text-[11px]"
+                    onClick={() => send("final:up", { unitId: id })}
+                    title={`Turn ${who?.name ?? id} over instead`}
+                  >
+                    {who?.name ?? id}
+                    <span className="ml-1 font-value text-faint">{who?.score ?? 0}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </Empty>
   )

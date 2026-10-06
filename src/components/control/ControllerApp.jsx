@@ -186,6 +186,13 @@ function Console({ state, send, connected, auth, viaKey }) {
           {lifeline && (
             <div className="mt-2 flex items-center gap-2 rounded-lg border border-amethyst bg-royal/30 px-3 py-2 text-xs">
               <span className="text-amethyst">☎ {players.find((p) => p.id === lifeline.playerId)?.name}</span>
+              {/* The clock starts when the friend answers, not when the
+                  lifeline is granted — see `grantLifeline`. */}
+              {!lifeline.endsAt && (
+                <button className="btn btn-gold px-2 py-0.5 text-[11px]" onClick={() => send("lifeline:start")}>
+                  ▸ start {lifeline.seconds ?? 30}s
+                </button>
+              )}
               <button className="ml-auto text-faint hover:text-ink" onClick={() => send("lifeline:end")}>
                 end
               </button>

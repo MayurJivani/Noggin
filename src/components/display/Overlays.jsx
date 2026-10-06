@@ -47,36 +47,53 @@ export function NitroSplash({ show }) {
   )
 }
 
-/** Phone a Friend: a ring that drains, plus whose call it is. */
-export function LifelineOverlay({ lifeline, playerName, now }) {
+/**
+ * Phone a Friend: a ring that drains, plus whose call it is.
+ *
+ * Docked in a corner rather than laid over the room, which is what this was: a
+ * full-bleed `inset-0` veil with a blur behind it, covering the one thing
+ * everybody needed to be looking at. A lifeline is thirty seconds of *reading
+ * the clue to somebody*, so the clue has to stay readable — by the player
+ * phoning, by the friend being read to, and by the room following along. The
+ * same argument `TimerRing` is parked in a corner for, and the same props, so
+ * the two clocks appear in the same place and the eye learns one spot. They
+ * never collide: `TimerRing` draws nothing for a `lifeline` timer.
+ *
+ * @param {object} props
+ * @param {string} [props.className] – where it sits. Default is the big
+ *   screen's top-right, which is free for the duration of a call.
+ * @param {string} [props.size] – ring edge length, as any CSS length.
+ */
+export function LifelineOverlay({ lifeline, playerName, now, className = "absolute right-[2.5vmin] top-[2.5vmin] z-30", size = "13vmin" }) {
   const left = useCountdown(lifeline?.endsAt, now)
   if (!lifeline) return null
 
-  const total = 30_000
-  const frac = Math.max(0, Math.min(1, (left ?? 0) / total))
+  // Granted but not dialled through yet — see `grantLifeline`. The ring sits
+  // full, so what is on screen is "thirty seconds, not yet spent".
+  const waiting = !lifeline.endsAt
+  const total = (lifeline.seconds ?? 30) * 1000
+  const frac = waiting ? 1 : Math.max(0, Math.min(1, (left ?? 0) / total))
   const r = 46
   const circ = 2 * Math.PI * r
-  const seconds = Math.ceil((left ?? 0) / 1000)
+  const seconds = waiting ? (lifeline.seconds ?? 30) : Math.ceil((left ?? 0) / 1000)
+  const low = !waiting && seconds <= 5
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-center gap-[2vmin] bg-void/80 backdrop-blur-sm">
-      <div className="font-display uppercase tracking-[0.35em] text-amethyst" style={{ fontSize: "max(13px, calc(var(--stage) * 2))" }}>
-        Phone a Friend
-      </div>
-      <div className="font-display text-gold brass" style={{ fontSize: "max(26px, calc(var(--stage) * 5))" }}>
-        {playerName}
+    <div className={`pointer-events-none flex flex-col items-center gap-[0.6vmin] rounded-[1.2vmin] border border-amethyst bg-void/85 px-[1.4vmin] py-[1vmin] ${className}`}>
+      <div className="font-display uppercase leading-none tracking-[0.25em] text-amethyst" style={{ fontSize: "max(8px, calc(var(--stage) * 1.1))" }}>
+        ☎ {playerName}
       </div>
 
-      <div className="relative" style={{ width: "26vmin", height: "26vmin" }}>
+      <div className="relative" style={{ width: size, height: size }}>
         <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="#2b2733" strokeWidth="5" />
+          <circle cx="50" cy="50" r={r} fill="none" stroke="#2b2733" strokeWidth="7" />
           <circle
             cx="50"
             cy="50"
             r={r}
             fill="none"
-            stroke={seconds <= 5 ? "#ff5f7a" : "#f2c96b"}
-            strokeWidth="5"
+            stroke={low ? "#ff5f7a" : waiting ? "#8a7bb8" : "#f2c96b"}
+            strokeWidth="7"
             strokeLinecap="round"
             strokeDasharray={circ}
             strokeDashoffset={circ * (1 - frac)}
@@ -84,11 +101,22 @@ export function LifelineOverlay({ lifeline, playerName, now }) {
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`font-value tabular-nums ${seconds <= 5 ? "text-bad" : "text-gold"}`} style={{ fontSize: "max(30px, calc(var(--stage) * 7))" }}>
+          <span
+            className={`font-value tabular-nums ${low ? "text-bad" : waiting ? "text-amethyst" : "text-gold"}`}
+            style={{ fontSize: "max(13px, 3.8vmin)" }}
+          >
             {seconds}
           </span>
         </div>
       </div>
+
+      {/* Said in words, because a full ring and a running one look alike at a
+          glance and the room should not have to guess whether time is going. */}
+      {waiting && (
+        <div className="font-display uppercase leading-none tracking-[0.2em] text-faint" style={{ fontSize: "max(7px, calc(var(--stage) * 0.95))" }}>
+          dialling
+        </div>
+      )}
     </div>
   )
 }

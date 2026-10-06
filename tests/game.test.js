@@ -206,17 +206,62 @@ test("phone a friend spends a charge, holds the clock, and shuts the buzzer", ()
   G.selectClue(room, 0, 0)
   G.armBuzzer(room, 1000)
 
-  const fx = G.grantLifeline(room, "p2", "phone", 2000)
-  assert.deepEqual(kinds(fx), ["lifeline-start"])
+  const fx = G.grantLifeline(room, "p2", "phone")
+  assert.deepEqual(kinds(fx), ["lifeline-grant"])
   assert.equal(room.players.get("p2").lifelines.phone, 0)
   assert.equal(room.buzzer.armed, false)
-  assert.equal(room.timer.endsAt, 2000 + 30_000)
 
-  assert.equal(G.grantLifeline(room, "p2", "phone", 3000).length, 0, "only one charge")
+  // Granted is not running: the friend has not picked up yet, and a clock
+  // started here would be spent on a phone ringing.
+  assert.equal(room.lifeline.endsAt, null)
+  assert.equal(room.timer, null, "nothing is counting down")
+  assert.equal(room.lifeline.seconds, 30, "the ring needs to know how long a full one is")
+
+  assert.equal(G.grantLifeline(room, "p2", "phone").length, 0, "only one charge")
+
+  // The host starts it when the call connects.
+  assert.deepEqual(kinds(G.startLifeline(room, 2000)), ["lifeline-start"])
+  assert.equal(room.lifeline.endsAt, 2000 + 30_000)
+  assert.equal(room.timer.endsAt, 2000 + 30_000)
+  assert.equal(room.timer.kind, "lifeline")
+  assert.equal(G.startLifeline(room, 5000).length, 0, "and cannot be restarted to buy more time")
 
   G.endLifeline(room)
   assert.equal(room.lifeline, null)
   assert.equal(room.timer, null)
+  assert.equal(G.startLifeline(room, 6000).length, 0, "nothing to start once the call is over")
+})
+
+test("the host picks who is turned over in the final", () => {
+  const room = atFinal([1200, 800, -200])
+  G.openFinal(room)
+  G.setFinalWager(room, "p0", 1000)
+  G.setFinalWager(room, "p1", 400)
+  G.setFinalWager(room, "p2", 200)
+  G.startFinal(room)
+  G.revealFinal(room)
+
+  // Poorest first is still the default the host is handed.
+  assert.deepEqual(room.final.order, ["p2", "p1", "p0"])
+
+  // Jump the leader forward. Everyone else keeps their relative order.
+  assert.deepEqual(kinds(G.setFinalUp(room, "p0")), ["final-reveal"])
+  assert.deepEqual(room.final.order, ["p0", "p2", "p1"])
+  assert.equal(G.projectState(room, "host").final.current, "p0")
+
+  G.judgeFinal(room, true)
+  assert.equal(room.players.get("p0").score, 1200 + 1000, "the leader's bet is settled first")
+  assert.equal(room.final.revealIndex, 1)
+
+  // A card already face-up does not go back over, and neither does the one up.
+  assert.equal(G.setFinalUp(room, "p0").length, 0, "already ruled on")
+  assert.equal(G.setFinalUp(room, "p2").length, 0, "already the one up")
+  assert.equal(G.setFinalUp(room, "nobody").length, 0)
+
+  // Still ends when the last card is turned over, whatever order they came in.
+  G.judgeFinal(room, false)
+  assert.deepEqual(kinds(G.judgeFinal(room, false)), ["final-wrong", "game-end"])
+  assert.equal(room.phase, G.PHASE.ENDED)
 })
 
 test("scores can be corrected by hand", () => {
@@ -474,6 +519,91 @@ test("a player who never bets is staked at nothing rather than holding the room 
   assert.equal(room.final.wagers.p1, 0)
 })
 
+test("a side on nothing can still write an answer", () => {
+  // The relay used to drop these on a `score <= 0` gate left over from the days
+  // when a broke player was barred from the final. They could bet, be handed
+  // the clue, type an answer, and have it silently go nowhere.
+  const room = atFinal([900, 0, -400])
+  G.openFinal(room)
+  G.startFinal(room)
+
+  for (const id of ["p0", "p1", "p2"]) {
+    assert.equal(G.setFinalAnswer(room, id, "marble").length, 1, `${id} must be able to answer`)
+    assert.equal(room.final.answers[id].text, "marble")
+  }
+})
+
+test("the final answer waits for somebody to have got it", () => {
+  const room = atFinal([900, 500])
+  G.openFinal(room)
+  G.startFinal(room)
+  G.setFinalAnswer(room, "p0", "marble")
+  G.setFinalAnswer(room, "p1", "granite")
+  G.revealFinal(room)
+
+  const seen = () => G.projectState(room, "display").final.answer
+  assert.equal(seen(), null, "the reveal must not open on the answer")
+
+  // p1 is poorest, so they are up first. A miss still gives nothing away.
+  G.judgeFinal(room, false)
+  assert.equal(seen(), null, "a wrong answer is not the reveal")
+
+  G.judgeFinal(room, true)
+  assert.equal(seen(), "marble", "and now the room is owed it")
+
+  // The other way it ends: nobody got it, every card is turned over, and the
+  // room would otherwise never find out what the answer was.
+  const missed = atFinal([900, 500])
+  G.openFinal(missed)
+  G.startFinal(missed)
+  G.revealFinal(missed)
+  G.judgeFinal(missed, false)
+  assert.equal(G.projectState(missed, "display").final.answer, null)
+  G.judgeFinal(missed, false)
+  assert.equal(G.projectState(missed, "display").final.answer, "marble", "all turned over, nobody right")
+
+  // The desk has it throughout — the host is the one reading it out.
+  const desk = atFinal([900, 500])
+  G.openFinal(desk)
+  G.startFinal(desk)
+  G.revealFinal(desk)
+  assert.equal(G.projectState(desk, "host").final.answer, "marble")
+})
+
+test("autoRebound puts a missed clue back out to the side that missed it", () => {
+  const room = setup(2, { autoRebound: true })
+  G.selectClue(room, 0, 1) // 400
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 10)
+
+  assert.deepEqual(kinds(G.judge(room, false)), ["wrong", "buzzer-open"])
+  assert.equal(room.players.get("p0").score, -400, "a miss still costs what it costs")
+  assert.deepEqual(room.buzzer.spent, [], "nobody is out")
+  assert.deepEqual(kinds(G.buzz(room, "p0", 20)), ["buzz-in"], "including whoever just missed")
+
+  // Off, which is the default: the same miss puts that side out for the tile.
+  const strict = setup(2)
+  G.selectClue(strict, 0, 1)
+  G.armBuzzer(strict, 0)
+  G.buzz(strict, "p0", 10)
+  G.judge(strict, false)
+  assert.deepEqual(strict.buzzer.spent, ["p0"])
+  assert.equal(G.buzz(strict, "p0", 20).length, 0)
+})
+
+test("autoRebound does not give a nitro back after a miss", () => {
+  // A nitro is one side's clue and a solo bet. Handing it back would make the
+  // wager meaningless: guess, lose nothing, guess again.
+  const room = setup(2, { autoRebound: true })
+  G.currentRound(room).categories[0].clues[0].nitro = true
+  G.selectClue(room, 0, 0)
+  G.setWager(room, "p0", 500)
+
+  assert.deepEqual(kinds(G.judge(room, false)), ["wrong"])
+  assert.equal(room.phase, G.PHASE.REVEAL, "the clue is over")
+  assert.equal(room.buzzer.armed, false)
+})
+
 test("answers stop being accepted once the clue is locked", () => {
   const room = atFinal([500, 700])
   G.openFinal(room)
@@ -502,8 +632,11 @@ test("the final clue is not on the wire before it is shown", () => {
   assert.equal(G.projectState(room, "display").final.prompt, "Black, veined with gold")
   assert.equal(G.projectState(room, "display").final.answer, null, "the answer waits for the reveal")
 
+  // And it keeps waiting through the reveal itself: the answer is owed to the
+  // room once somebody has got it, not the moment the first card turns over.
+  // See "the final answer waits for somebody to have got it".
   G.revealFinal(room)
-  assert.equal(G.projectState(room, "display").final.answer, "marble")
+  assert.equal(G.projectState(room, "display").final.answer, null, "the reveal must not open on the answer")
 })
 
 test("a bet is blind: you see your own and nobody else's", () => {
@@ -947,10 +1080,10 @@ test("a team shares one lifeline purse", () => {
   const team = G.teamOf(room, "p0")
   const mates = G.membersOf(room, team.id).map((p) => p.id)
 
-  assert.deepEqual(kinds(G.grantLifeline(room, mates[0], "phone", 0)), ["lifeline-start"])
+  assert.deepEqual(kinds(G.grantLifeline(room, mates[0], "phone")), ["lifeline-grant"])
   G.endLifeline(room)
   assert.equal(team.lifelines.phone, 0)
-  assert.deepEqual(G.grantLifeline(room, mates[1], "phone", 0), [], "five phones is not five phone calls")
+  assert.deepEqual(G.grantLifeline(room, mates[1], "phone"), [], "five phones is not five phone calls")
 })
 
 test("a nitro is wagered and ruled on by the team", () => {
