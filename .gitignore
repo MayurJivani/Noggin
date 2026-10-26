@@ -35,3 +35,5 @@ data/
 
 # Claude Code and local tooling
 .claude/
+.impeccable
+.mcp.json
