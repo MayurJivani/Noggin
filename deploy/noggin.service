@@ -1,0 +1,22 @@
+[Unit]
+Description=noggin (quiz host and buzzer)
+After=network-online.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+User=icarusfalls
+WorkingDirectory=/opt/apps/Noggin
+EnvironmentFile=/etc/apps/noggin.env
+Environment=NODE_ENV=production NOGGIN_PORT=4332 NOGGIN_TRUST_PROXY=1
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+MemoryMax=512M
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
