@@ -14,7 +14,8 @@
     "preview": "astro preview --host",
     "start": "node scripts/dev.js",
     "test": "node --test --import ./tests/register.js \"tests/*.test.js\" \"tests/*.test.jsx\"",
-    "astro": "astro"
+    "astro": "astro",
+    "loadtest": "node scripts/loadtest.js"
   },
   "dependencies": {
     "@astrojs/react": "^7.0.1",

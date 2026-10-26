@@ -45,6 +45,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const UPLOAD_DIR = path.resolve(process.env.NOGGIN_UPLOAD_DIR ?? path.join(ROOT, "uploads"))
 /** How long a disconnected player keeps their seat and score. */
 const PLAYER_GRACE_MS = Number(process.env.NOGGIN_PLAYER_GRACE_MS ?? 5 * 60_000)
+// Joins and leaves push the roster at most this often. See `broadcastRoster`.
+const ROSTER_MS = 250
 
 /**
  * How long a saved game is kept before it is swept up.
@@ -999,6 +1001,34 @@ const send = (ws, payload) => {
  * client that can never drift out of sync is worth far more than the bytes.
  */
 function broadcast(room, effects = []) {
+  // Everything that changes in one turn of the event loop goes out as one
+  // state: a burst of buzzes is one push, not one per buzz times every phone.
+  ;(room.pendingEffects ??= []).push(...effects)
+  if (room.flushQueued) return
+  room.flushQueued = true
+  setImmediate(() => flush(room))
+}
+
+/**
+ * A join or a leave: at most one push per ROSTER_MS. A QR code going up in
+ * front of a full hall is a thousand joins, and pushing the whole room to
+ * every phone on each one is a thousand squared sends.
+ */
+function broadcastRoster(room) {
+  if (room.rosterTimer) return
+  const wait = (room.flushedAt ?? 0) + ROSTER_MS - Date.now()
+  if (wait <= 0) return broadcast(room)
+  room.rosterTimer = setTimeout(() => broadcast(room), wait)
+  room.rosterTimer.unref?.()
+}
+
+function flush(room) {
+  const effects = room.pendingEffects
+  room.pendingEffects = []
+  room.flushQueued = false
+  room.flushedAt = Date.now()
+  clearTimeout(room.rosterTimer)
+  room.rosterTimer = null
   /*
     Serialise once per distinct view, not once per socket.
 
@@ -1306,7 +1336,7 @@ wss.on("connection", (ws, req) => {
           const cur = room.players.get(meta.playerId)
           if (cur && !cur.connected) {
             room.players.delete(meta.playerId)
-            broadcast(room)
+            broadcastRoster(room)
           }
           sweep(meta.code)
         }, PLAYER_GRACE_MS)
@@ -1314,7 +1344,7 @@ wss.on("connection", (ws, req) => {
       }
       console.log(`[ws] player ${meta.playerId} left ${meta.code}`)
     }
-    broadcast(room)
+    broadcastRoster(room)
     sweep(meta.code)
   })
 })
@@ -1446,7 +1476,7 @@ async function handleJoin(ws, meta, msg, req) {
     console.log(`[ws] ${role} joined ${room.code}`)
   }
 
-  broadcast(room)
+  broadcastRoster(room)
 }
 
 const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase()

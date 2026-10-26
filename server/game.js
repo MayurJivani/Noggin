@@ -2961,9 +2961,9 @@ export function projectState(room, role, viewerId = null) {
           // choose it.
           lag: Number.isFinite(p.lag) ? p.lag : null,
           lifelines: unit.lifelines,
-          // The working behind the total. Everyone can see it — it is a
-          // scoreboard, not a secret — but it is trimmed for the wire.
-          history: (unit.history ?? []).slice(-12),
+          // The working behind the total. Not a secret, but no phone shows it,
+          // and in a 1,000-player room it was most of every broadcast.
+          history: role === "player" ? undefined : (unit.history ?? []).slice(-12),
         }
       })
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)),
