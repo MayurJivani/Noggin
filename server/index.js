@@ -129,6 +129,19 @@ const MIME = {
   ".webm": "video/webm",
 }
 
+const UPLOAD_TYPES = new Set(
+  Object.entries(MIME)
+    .filter(([, type]) => /^(image|audio|video)\//.test(type) && type !== "image/svg+xml")
+    .map(([ext]) => ext),
+)
+
+/**
+ * Sent with every uploaded file. Whatever got onto the disk before uploads were
+ * restricted, a browser renders it as an inert document: no script, no
+ * same-origin access, no sniffing a sound file into HTML.
+ */
+const UPLOAD_HEADERS = { "Content-Security-Policy": "sandbox; default-src 'none'; media-src 'self'; img-src 'self'", "X-Content-Type-Options": "nosniff" }
+
 const CORS_BASE = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
@@ -198,7 +211,7 @@ const jsonFor = (req) => (res, code, body) => {
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
-function serveFile(req, res, filePath) {
+function serveFile(req, res, filePath, extra = {}) {
   let stat
   try {
     stat = statSync(filePath)
@@ -228,6 +241,7 @@ function serveFile(req, res, filePath) {
     }
     res.writeHead(206, {
       ...CORS,
+      ...extra,
       "Content-Type": type,
       "Content-Length": end - start + 1,
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
@@ -240,6 +254,7 @@ function serveFile(req, res, filePath) {
 
   res.writeHead(200, {
     ...CORS,
+    ...extra,
     "Content-Type": type,
     "Content-Length": stat.size,
     "Accept-Ranges": "bytes",
@@ -251,6 +266,9 @@ function serveFile(req, res, filePath) {
 function handleUpload(req, res, url) {
   const json = jsonFor(req)
   const name = `${Date.now()}_${safeName(url.searchParams.get("name"))}`
+  // Pictures, sound and video only. An .html or .svg here would be served from
+  // this origin and run script as whoever opened the link.
+  if (!UPLOAD_TYPES.has(path.extname(name).toLowerCase())) return json(res, 415, { error: "not a picture, sound or video" })
   const dest = resolveUploadPath(name)
   if (!dest) return json(res, 400, { error: "bad filename" })
 
@@ -374,8 +392,6 @@ async function handleRequest(req, res) {
     return
   }
 
-  if (req.method === "POST" && url.pathname === "/upload") return handleUpload(req, res, url)
-
   /*
     Liveness, and enough to tell whether the relay is struggling.
 
@@ -412,6 +428,13 @@ async function handleRequest(req, res) {
   const me = await currentUser(req)
 
   if (url.pathname.startsWith("/auth/")) return handleAuth(req, res, url, me)
+
+  // Only the board editor uploads, and it is signed in. Open, this was free
+  // disk and free hosting on this origin for anyone.
+  if (req.method === "POST" && url.pathname === "/upload") {
+    if (!me) return json(res, 401, { error: "sign in" })
+    return handleUpload(req, res, url)
+  }
 
   // Everything below is somebody's own material. Without a session there is
   // nothing to show, and saying so plainly beats returning an empty list that
@@ -657,7 +680,7 @@ async function handleRequest(req, res) {
       res.writeHead(404, CORS).end("not found")
       return
     }
-    return serveFile(req, res, file)
+    return serveFile(req, res, file, UPLOAD_HEADERS)
   }
 
   // Last: the built site. Checked after the API routes so a page can never

@@ -1963,3 +1963,16 @@ test("a socket opened from another site is refused, cookie or not", async () => 
   })
   assert.equal(status, 401)
 })
+
+test("uploads need a session, take media only, and are served inert", async () => {
+  const up = (name, headers = {}) =>
+    fetch(`http://127.0.0.1:${PORT}/upload?name=${name}`, { method: "POST", headers, body: "<script>alert(1)</script>" })
+  assert.equal((await up("x.png")).status, 401, "anonymous upload refused")
+  assert.equal((await up("x.html", { cookie })).status, 415, "html refused")
+  assert.equal((await up("x.svg", { cookie })).status, 415, "svg refused")
+  const ok = await up("x.png", { cookie })
+  assert.equal(ok.status, 200)
+  const served = await fetch(`http://127.0.0.1:${PORT}${(await ok.json()).url}`)
+  assert.match(served.headers.get("content-security-policy") ?? "", /sandbox/)
+  assert.equal(served.headers.get("x-content-type-options"), "nosniff")
+})
