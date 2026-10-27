@@ -1981,3 +1981,10 @@ test("uploads need a session, take media only, and are served inert", async () =
   assert.match(served.headers.get("content-security-policy") ?? "", /sandbox/)
   assert.equal(served.headers.get("x-content-type-options"), "nosniff")
 })
+
+test("an oversized socket frame closes that socket, not the server", async () => {
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}`, { headers: { origin: `http://127.0.0.1:${PORT}` } })
+  ws.on("error", () => {})
+  await new Promise((r) => { ws.on("open", () => ws.send("x".repeat(8 * 1024 * 1024))); ws.on("close", r) })
+  assert.equal((await fetch(`http://127.0.0.1:${PORT}/net`)).ok, true)
+})

@@ -1275,6 +1275,8 @@ process.on("uncaughtException", (err) => console.error("[noggin] uncaught:", err
 process.on("unhandledRejection", (err) => console.error("[noggin] unhandled rejection:", err))
 
 wss.on("connection", (ws, req) => {
+  // ws reports an oversized or malformed frame as an 'error' event and closes the socket itself; unheard, that event crashes the process.
+  ws.on("error", () => {})
   /**
    * Nagle's algorithm holds a small write back for up to 40ms waiting for more
    * data to coalesce with. That is a sensible default for bulk transfer and
