@@ -4,7 +4,6 @@ After=network-online.target postgresql.service
 Wants=postgresql.service
 
 [Service]
-User=icarusfalls
 WorkingDirectory=/opt/apps/Noggin
 EnvironmentFile=/etc/apps/noggin.env
 Environment=NODE_ENV=production NOGGIN_PORT=4332 NOGGIN_TRUST_PROXY=1
@@ -13,10 +12,42 @@ Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
 MemoryMax=512M
-NoNewPrivileges=yes
-ProtectSystem=full
+# data/ (file store, created even with Postgres) and uploads/ are bind-mounted from the
+# state directory; the rest of the tree stays read-only.
+StateDirectory=noggin/data noggin/uploads
+BindPaths=/var/lib/noggin/data:/opt/apps/Noggin/data /var/lib/noggin/uploads:/opt/apps/Noggin/uploads
+# --- least privilege: a throwaway user per start, no capabilities, read-only code ---
+DynamicUser=yes
+ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+PrivateDevices=yes
+PrivateIPC=yes
+NoNewPrivileges=yes
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# AF_NETLINK: os.networkInterfaces() (getifaddrs) needs it.
+RestrictAddressFamilies=AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+# A blocked call fails with EPERM instead of killing the process.
+SystemCallErrorNumber=EPERM
+UMask=0077
+# No MemoryDenyWriteExecute: V8's JIT needs writable+executable pages.
 
 [Install]
 WantedBy=multi-user.target

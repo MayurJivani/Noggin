@@ -1,5 +1,7 @@
 http://noggin.futile.studio {
 	import common
+	# Players can buzz by knocking, which needs the microphone on this origin.
+	header Permissions-Policy "camera=(), microphone=(self), geolocation=(), payment=(), usb=()"
 	# Buzzers and the host board share one WebSocket; buffered, the first buzz is not the first one shown.
 	reverse_proxy 127.0.0.1:4332 {
 		flush_interval -1
