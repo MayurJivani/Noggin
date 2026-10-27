@@ -61,8 +61,6 @@ npm prune --omit=dev
 git checkout -- package-lock.json
 # schema.sql is all IF NOT EXISTS: safe on every deploy, and it creates the tables on the first.
 PGOPTIONS='-c client_min_messages=warning' psql -q -v ON_ERROR_STOP=1 "$(sudo -n sed -n 's/^DATABASE_URL=//p' "$ENV")" -f server/schema.sql
-# Mount points for the unit's BindPaths (data/, uploads/ live in /var/lib/noggin).
-mkdir -p data uploads
 sudo -n systemctl restart "$NAME"
 
 # Come back and check through Caddy, rather than trusting that a restart meant "serving".

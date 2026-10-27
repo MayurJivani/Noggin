@@ -15,7 +15,8 @@ MemoryMax=512M
 # data/ (file store, created even with Postgres) and uploads/ are bind-mounted from the
 # state directory; the rest of the tree stays read-only.
 StateDirectory=noggin/data noggin/uploads
-BindPaths=/var/lib/noggin/data:/opt/apps/Noggin/data /var/lib/noggin/uploads:/opt/apps/Noggin/uploads
+# DynamicUser state dirs are only writable at their own /var/lib path, so the app is pointed there.
+Environment=NOGGIN_DATA_DIR=/var/lib/noggin/data/boards NOGGIN_ROOM_DIR=/var/lib/noggin/data/rooms NOGGIN_RESULT_DIR=/var/lib/noggin/data/results NOGGIN_CLUE_DIR=/var/lib/noggin/data/clues NOGGIN_USER_DIR=/var/lib/noggin/data/users NOGGIN_UPLOAD_DIR=/var/lib/noggin/uploads
 # --- least privilege: a throwaway user per start, no capabilities, read-only code ---
 DynamicUser=yes
 ProtectSystem=strict
