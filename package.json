@@ -23,7 +23,6 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "astro": "^7.3.8",
-    "nanoid": "^5.1.7",
     "postgres": "^3.4.9",
     "qrcode": "^1.5.4",
     "react": "^19.2.5",

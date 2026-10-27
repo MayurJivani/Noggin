@@ -1953,3 +1953,13 @@ test("a phone picks its own side on the way in", async (t) => {
     back.ws.close()
   })
 })
+
+test("a socket opened from another site is refused, cookie or not", async () => {
+  const ws = new WebSocket(URL, { headers: { cookie, origin: "https://evil.example" } })
+  const status = await new Promise((resolve) => {
+    ws.on("unexpected-response", (_req, res) => resolve(res.statusCode))
+    ws.on("open", () => resolve("open"))
+    ws.on("error", () => {})
+  })
+  assert.equal(status, 401)
+})

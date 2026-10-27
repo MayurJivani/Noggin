@@ -1218,7 +1218,29 @@ const wss = new WebSocketServer({
    * "let's turn on compression" from quietly taxing the buzzer.)
    */
   perMessageDeflate: false,
+  // The default is 100 MiB. The largest real frame is a whole board on
+  // board:set, which is bounded the same way an HTTP body is.
+  maxPayload: 4 * 1024 * 1024,
+  /*
+    The host and controller screens are authorized by the session cookie the
+    browser sends on the upgrade, and browsers do not apply same-origin rules
+    to a WebSocket. Without this, a page on any other site (or a sibling
+    subdomain, where SameSite=Lax still sends the cookie) could open a socket
+    as a signed-in host. Same rule as corsFor: same hostname, or no Origin at
+    all (not a browser).
+  */
+  verifyClient: ({ req }) => sameHostOrigin(req),
 })
+
+function sameHostOrigin(req) {
+  const origin = req.headers.origin
+  if (!origin) return true
+  try {
+    return new URL(origin).hostname === String(req.headers.host ?? "").split(":")[0]
+  } catch {
+    return false
+  }
+}
 
 /**
  * One bad frame from one phone must never take the game down mid-round. Room
@@ -1275,6 +1297,11 @@ wss.on("connection", (ws, req) => {
   })
 
   ws.on("message", (raw) => {
+    // Fixed window per socket, well above a host driving the board flat out;
+    // what it stops is a script hammering joins or buzzes.
+    const now = Date.now()
+    if (now - (ws.windowStart ?? 0) > 10_000) Object.assign(ws, { windowStart: now, windowCount: 0 })
+    if (++ws.windowCount > 200) return ws.close(1008, "Too many messages")
     let msg
     try {
       msg = JSON.parse(raw.toString())
