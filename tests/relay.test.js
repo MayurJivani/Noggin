@@ -732,17 +732,20 @@ test("the final plays out over real sockets", async (t) => {
     host.send("final:reveal")
     await settle()
     assert.deepEqual(host.state.final.order, [B, A], "Bob is behind, so Bob goes first")
-    assert.equal(screen.state.final.answer, "marble", "now the room may see it")
+    // The reveal does not open on the answer: the room learns it once someone has it (game.test.js).
+    assert.equal(screen.state.final.answer, null, "not before somebody has got it")
     assert.equal(screen.state.final.players.find((p) => p.id === A).answer, null, "Alice is still face down")
 
     host.send("final:judge", { correct: false })
     await settle()
     assert.equal(host.state.players.find((p) => p.id === B).score, 0, "800 staked and lost")
+    assert.equal(screen.state.final.answer, null, "a wrong answer is not the reveal")
     assert.equal(screen.state.final.players.find((p) => p.id === A).answer, "marble", "Alice is up now")
 
     host.send("final:judge", { correct: true })
     await settle()
     assert.equal(host.state.players.find((p) => p.id === A).score, 1700)
+    assert.equal(screen.state.final.answer, "marble", "now the room is owed it")
     assert.equal(screen.state.phase, "ended")
   })
 })
