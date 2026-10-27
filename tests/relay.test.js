@@ -151,6 +151,11 @@ const BOARD = {
   ],
 }
 
+test("/net hides LAN addresses from requests that came through Cloudflare", async () => {
+  const json = await (await fetch(`http://127.0.0.1:${PORT}/net`, { headers: { "cf-connecting-ip": "203.0.113.5" } })).json()
+  assert.deepEqual(json.ips, [])
+})
+
 test("a full round, over the wire", async (t) => {
   const host = client("host")
   await host.ready

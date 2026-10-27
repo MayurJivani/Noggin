@@ -421,7 +421,8 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/net") {
-    return json(res, 200, { ips: lanAddresses(), port: PORT })
+    // Through Cloudflare the box's LAN addresses help nobody and map the network for anyone.
+    return json(res, 200, { ips: req.headers["cf-connecting-ip"] ? [] : lanAddresses(), port: PORT })
   }
 
   const store = getStore()
