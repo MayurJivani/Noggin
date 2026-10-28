@@ -21,7 +21,7 @@ services:
       NOGGIN_USER_DIR: "/data/data/users"
       NOGGIN_UPLOAD_DIR: "/data/uploads"
     volumes:
-      - /var/lib/noggin:/data
+      - /var/lib/private/noggin:/data
     mem_limit: 512m
     read_only: true
     tmpfs:
