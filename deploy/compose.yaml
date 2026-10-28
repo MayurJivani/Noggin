@@ -1,0 +1,30 @@
+# Coolify on Jinx (FRC/DEPLOY.md). Host network: the app listens on 4332 like
+# its old systemd unit did, so its Caddy block, Postgres URL and env file are unchanged.
+services:
+  noggin:
+    image: ghcr.io/mayurjivani/noggin:latest
+    network_mode: host
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["node", "server/index.js"]
+    env_file:
+      - path: /etc/apps/noggin.env
+        required: false
+    environment:
+      NODE_ENV: "production"
+      NOGGIN_PORT: "4332"
+      NOGGIN_TRUST_PROXY: "1"
+      NOGGIN_DATA_DIR: "/data/data/boards"
+      NOGGIN_ROOM_DIR: "/data/data/rooms"
+      NOGGIN_RESULT_DIR: "/data/data/results"
+      NOGGIN_CLUE_DIR: "/data/data/clues"
+      NOGGIN_USER_DIR: "/data/data/users"
+      NOGGIN_UPLOAD_DIR: "/data/uploads"
+    volumes:
+      - /var/lib/noggin:/data
+    mem_limit: 512m
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
