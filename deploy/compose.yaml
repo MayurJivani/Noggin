@@ -3,6 +3,7 @@
 services:
   noggin:
     image: ghcr.io/mayurjivani/noggin:latest
+    pull_policy: always
     network_mode: host
     restart: unless-stopped
     user: "1000:1000"
