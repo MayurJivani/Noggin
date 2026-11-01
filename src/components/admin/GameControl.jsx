@@ -6,6 +6,7 @@ import { getRelayOrigin } from "../../lib/mediaUrl"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
 import { announceRoom } from "../../lib/knockJoin"
 import { nameOf, rows as sideRows } from "../../lib/sides"
+import { JoinCard } from "../ui/JoinCard"
 import { QrBlock } from "../ui/QrBlock"
 import { PlayerRoster } from "./PlayerRoster"
 
@@ -18,7 +19,7 @@ import { PlayerRoster } from "./PlayerRoster"
  */
 export function GameControl({ state, send, now, requests, code, savedAt, controllerKey }) {
   const { phase, board, clue, players, buzzer, timer, lifeline } = state
-  const round = board.round
+  const contenders = sideRows(state)
 
   const [soundBroadcasting, setSoundBroadcasting] = useState(false)
   const txRef = useRef(null)
@@ -110,29 +111,19 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
           Better for the drawer to scroll than for the roster to vanish.
         */}
         <div className="panel max-h-[58%] shrink-0 overflow-y-auto p-3">
-          <div className="flex items-baseline justify-between">
-            <div className="label">Room</div>
-            <span className="font-display brass-sm text-lg leading-none tracking-[0.2em]">{code}</span>
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between text-[11px] text-faint">
-            <span className="truncate">{round?.name}</span>
-            <span className="shrink-0 tabular-nums">
-              {state.roundIndex + 1}/{board.roundCount}
-            </span>
-          </div>
-
-          <button
-            className="btn mt-2.5 w-full py-1.5 text-[11px]"
-            disabled={phase !== "intermission" && phase !== "ended"}
-            onClick={() => send("round:next")}
-          >
-            Next round
-          </button>
-
           <TimerControls send={send} timer={timer} now={now} />
 
-          <Drawer title="Joining">
-            <SoundJoin on={soundBroadcasting} setOn={setSoundBroadcasting} />
+          <Drawer title="Invites and access">
+            <Toggle
+              on={soundBroadcasting}
+              onClick={() => setSoundBroadcasting(!soundBroadcasting)}
+              label="Play join tone here"
+              hint={
+                soundBroadcasting
+                  ? "This machine's speakers are carrying the code. The big screen does it too, in the lobby."
+                  : "Phones on the player page can hear the room code. Needs HTTPS on their side."
+              }
+            />
             {/*
               Streamer mode sits with the sound because they are one decision.
               Hiding the code with no other way in means reading it aloud to
@@ -143,7 +134,7 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
               className="mt-2"
               on={!!state.settings.streamer}
               onClick={() => send("settings:set", { settings: { streamer: !state.settings.streamer } })}
-              label={state.settings.streamer ? "Streamer mode on" : "Streamer mode off"}
+              label="Streamer mode"
               hint={
                 state.settings.streamer
                   ? "Code and QR withheld from the big screen, scoreboard and podiums."
@@ -159,7 +150,7 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
             suspicion that phones are being read instead of the screen — so it
             gets its own drawer rather than being buried under "Joining".
           */}
-          <Drawer title="Players' phones">
+          <Drawer title="Phone display">
             {/*
               First, because it decides whether the two below it mean anything.
               A host without a TV is not configuring a mirror — they are telling
@@ -168,11 +159,11 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
             <Toggle
               on={!!state.settings.noScreen}
               onClick={() => send("settings:set", { settings: { noScreen: !state.settings.noScreen } })}
-              label={state.settings.noScreen ? "No TV — phones are the board" : "Big screen in the room"}
+              label="No TV in the room"
               hint={
                 state.settings.noScreen
                   ? "Each phone draws the board, the standings and every clue."
-                  : "Phones are buzzers; the board lives on the big screen."
+                  : "Phones are buzzers. The board lives on the big screen."
               }
             />
             {/*
@@ -188,11 +179,11 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
                   className="mt-2"
                   on={state.settings.mirrorClue !== false}
                   onClick={() => send("settings:set", { settings: { mirrorClue: state.settings.mirrorClue === false } })}
-                  label={state.settings.mirrorClue !== false ? "Clue is on phones" : "Clue is hidden"}
+                  label="Clue on phones"
                   hint={
                     state.settings.mirrorClue !== false
                       ? "Anyone who can't see the TV can read along."
-                      : "Never sent to them — and their buzzer is bigger for it."
+                      : "Never sent to them, and their buzzer is bigger for it."
                   }
                 />
                 {/* Only worth offering when there is a clue on the phones to
@@ -202,10 +193,10 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
                     className="mt-2"
                     on={!!state.settings.hideOnBuzz}
                     onClick={() => send("settings:set", { settings: { hideOnBuzz: !state.settings.hideOnBuzz } })}
-                    label={state.settings.hideOnBuzz ? "Hidden once buzzed" : "Stays up when buzzed"}
+                    label="Hide clue once buzzed"
                     hint={
                       state.settings.hideOnBuzz
-                        ? "Buzz and the words go — you answer from memory. The big screen keeps it."
+                        ? "Buzz and the words go, so you answer from memory. The big screen keeps it."
                         : "Whoever buzzed can keep reading it while they think."
                     }
                   />
@@ -214,19 +205,28 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
             )}
           </Drawer>
 
-          <Drawer title="This game">
+          <Drawer title="Save and reset">
             {/* Only once there is something to take away. The relay writes the
                 record when the running order has nothing left to offer, which
                 is also when this becomes true. */}
             {phase === "ended" && <ResultsLink />}
             <SaveControls send={send} savedAt={savedAt} code={code} />
-            <button
-              className="btn mt-2 w-full py-1.5 text-[11px] hover:border-bad hover:text-bad"
-              onClick={() => confirm("Reset scores and reopen every clue?") && send("game:reset")}
-            >
-              Reset game
-            </button>
-            <DeleteRoom send={send} code={code} players={players.length} />
+            <div className="mt-2.5 space-y-1.5 border-t border-edge/60 pt-2.5">
+              <button
+                className="btn w-full py-1.5 text-[11px] hover:border-bad hover:text-bad"
+                disabled={contenders.length === 0}
+                onClick={() => confirm("Set every score to 0? Played clues stay played.") && contenders.forEach((c) => send("score:set", { playerId: c.id, score: 0 }))}
+              >
+                Zero all scores
+              </button>
+              <button
+                className="btn w-full py-1.5 text-[11px] hover:border-bad hover:text-bad"
+                onClick={() => confirm("Reset scores and reopen every clue?") && send("game:reset")}
+              >
+                Reset scores and clues
+              </button>
+              <DeleteRoom send={send} code={code} players={players.length} />
+            </div>
           </Drawer>
         </div>
       </div>
@@ -262,32 +262,13 @@ function Drawer({ title, children }) {
 function Toggle({ on, onClick, label, hint, className = "" }) {
   return (
     <div className={className}>
-      <button className={`btn w-full py-1.5 text-[11px] ${on ? "btn-gold" : ""}`} onClick={onClick} title={hint}>
+      <button role="switch" aria-checked={on} className="flex w-full items-center justify-between gap-2 py-1 text-left text-[12px] text-ink" onClick={onClick}>
         {label}
+        <span className={`flex h-4 w-7 shrink-0 items-center rounded-full border p-px transition-colors ${on ? "justify-end border-gold bg-gold/30" : "border-edge bg-black/30"}`}>
+          <span className={`h-3 w-3 rounded-full ${on ? "bg-gold" : "bg-faint"}`} />
+        </span>
       </button>
-      <div className="mt-1 text-[10px] leading-snug text-faint">{hint}</div>
-    </div>
-  )
-}
-
-/**
- * The host's own speakers playing the join tone.
- *
- * Worth having beside the big screen's, because the two are in different
- * places: a laptop on the desk reaches the people queuing at it, and the
- * projector reaches the room. Neither is reliably the right one.
- */
-function SoundJoin({ on, setOn }) {
-  return (
-    <div>
-      <button className={`btn w-full py-1.5 text-[11px] ${on ? "btn-gold" : ""}`} onClick={() => setOn(!on)}>
-        {on ? "Playing the join tone" : "Play the join tone here"}
-      </button>
-      <div className="mt-1 text-[10px] leading-snug text-faint">
-        {on
-          ? "This machine's speakers are carrying the code. The big screen does it too, in the lobby."
-          : "Phones on the player page can hear the room code. Needs HTTPS on their side."}
-      </div>
+      <div className="text-[10px] leading-snug text-faint">{hint}</div>
     </div>
   )
 }
@@ -385,6 +366,7 @@ function MiniBoard({ state, send }) {
           </button>
         )}
         <span className="label">{round.name}</span>
+        {all.length > 1 && <span className="text-[0.7rem] tabular-nums text-faint">{viewing + 1}/{all.length}</span>}
         {all.length > 1 && (
           <button
             className="text-[0.8rem] text-faint transition-colors hover:text-gold disabled:opacity-25"
@@ -509,8 +491,11 @@ function StagePanel({ state, send, now }) {
         <div className="w-full max-w-md text-center">
           <div className="font-display text-xl text-gold">Ready when you are.</div>
           <p className="mx-auto mt-2 max-w-sm text-[12px] text-muted">
-            Players join with the room code. Open the board when everyone's in — the big screen follows this desk.
+            Players join with the room code. Open the board when everyone's in. The big screen follows this desk.
           </p>
+          <div className="mt-4 flex justify-center">
+            <JoinCard code={state.code} size={120} compact />
+          </div>
           <BuzzerCheck state={state} send={send} />
         </div>
       </Empty>
@@ -628,7 +613,7 @@ function StagePanel({ state, send, now }) {
         <div className="text-center text-[12px] text-muted">
           Pick a tile from the grid.
           <div className="mt-2 text-[11px] text-faint">
-            <Kbd>space</Kbd> buzzer · <Kbd>y</Kbd>/<Kbd>n</Kbd> judge · <Kbd>r</Kbd> reveal · <Kbd>enter</Kbd> next
+            <Kbd>space</Kbd> buzzer · <Kbd>y</Kbd>/<Kbd>n</Kbd> judge · <Kbd>r</Kbd> reveal · <Kbd>enter</Kbd> close clue
           </div>
         </div>
       </Empty>
@@ -719,10 +704,10 @@ function StagePanel({ state, send, now }) {
           disabled={!wagerPlayer || wagerAmount === ""}
           onClick={() => send("wager:set", { playerId: wagerPlayer, amount: clampWager(wagerAmount, max) })}
         >
-          Lock it in
+          Lock in wager
         </button>
-        <button className="text-[11px] text-faint hover:text-muted" onClick={() => send("clue:close")}>
-          skip this clue
+        <button className="btn px-3 py-1 text-[11px]" onClick={() => send("clue:close")}>
+          Skip clue
         </button>
       </div>
     )
@@ -749,14 +734,14 @@ function StagePanel({ state, send, now }) {
         <div className="ml-auto flex gap-1.5">
           {state.canUndo && (
             <button className="btn hover:border-live hover:text-live" onClick={() => send("judge:undo")} title="Take back the last ruling">
-              ↩ Undo <Kbd>⌘z</Kbd>
+              ↩ Undo ruling <Kbd>⌘z</Kbd>
             </button>
           )}
           <button className="btn" onClick={() => send("clue:reveal")} disabled={state.revealed}>
-            Reveal <Kbd>r</Kbd>
+            Reveal answer <Kbd>r</Kbd>
           </button>
           <button className="btn btn-gold" onClick={() => send("clue:close")}>
-            Next <Kbd>⏎</Kbd>
+            Close clue <Kbd>⏎</Kbd>
           </button>
         </div>
       </div>
@@ -844,10 +829,10 @@ function TiebreakControls({ state, send }) {
         <span className="text-[11px] text-muted">{tb.contenders.map(name).join(" v ")}</span>
         <div className="ml-auto flex gap-1.5">
           <button className={`btn ${state.buzzer.armed ? "" : "btn-gold"}`} disabled={exhausted} onClick={() => send("buzzer:arm")}>
-            Arm <Kbd>space</Kbd>
+            Open buzzer <Kbd>space</Kbd>
           </button>
           <button className="btn" disabled={state.revealed} onClick={() => send("clue:reveal")}>
-            Reveal
+            Reveal answer
           </button>
         </div>
       </div>
@@ -1105,27 +1090,15 @@ function BuzzerPanel({ state, send, now }) {
           {state.paused ? "held" : buzzer.armed ? "open" : "locked"}
         </span>
 
-        <button className={`btn ${buzzer.armed ? "" : "btn-gold"}`} disabled={!live} onClick={() => send("buzzer:arm")}>
-          Arm <Kbd>space</Kbd>
-        </button>
-
-        {/*
-          Stopping the night rather than the clue. The clock is banked and comes
-          back with the time it had left, so a break does not silently cost
-          whoever had buzzed the seconds they were owed.
-        */}
         <button
-          className={`btn ${state.paused ? "btn-gold animate-pop" : ""}`}
-          onClick={() => send(state.paused ? "game:resume" : "game:pause")}
-          title={state.paused ? "Let the room go again" : "Freeze the room — buzzers off, clocks held"}
+          className={`btn ${buzzer.armed ? "" : "btn-gold"}`}
+          disabled={!buzzer.armed && !live}
+          onClick={() => send(buzzer.armed ? "buzzer:lock" : "buzzer:arm")}
         >
-          {state.paused ? "▶ Resume" : "❚❚ Pause"} <Kbd>p</Kbd>
+          {buzzer.armed ? "Lock buzzer" : "Open buzzer"} <Kbd>space</Kbd>
         </button>
-        <button className="btn" disabled={!buzzer.armed} onClick={() => send("buzzer:lock")}>
-          Lock
-        </button>
-        <button className="btn" disabled={!live} onClick={() => send("buzzer:reset")}>
-          Reset <Kbd>esc</Kbd>
+        <button className="btn" disabled={!live} onClick={() => send("buzzer:reset")} title="Forget this race and lock the buzzer">
+          Clear buzzes <Kbd>esc</Kbd>
         </button>
 
         {/* Re-testing between rounds: a phone that has gone flat or wandered
@@ -1156,7 +1129,7 @@ function BuzzerPanel({ state, send, now }) {
         )}
 
         {lifeline && (
-          <span className="ml-auto flex items-center gap-2 rounded-lg border border-amethyst bg-royal/30 px-2.5 py-1">
+          <span className="flex items-center gap-2 rounded-lg border border-amethyst bg-royal/30 px-2.5 py-1">
             <span className="text-[11px] text-amethyst">☎ {byId[lifeline.playerId]?.name}</span>
             {/* The clock waits for the friend to pick up — see `grantLifeline`.
                 Until then the host has a button, not a countdown. */}
@@ -1172,6 +1145,19 @@ function BuzzerPanel({ state, send, now }) {
             </button>
           </span>
         )}
+
+        {/*
+          Stopping the night rather than the clue. The clock is banked and comes
+          back with the time it had left, so a break does not silently cost
+          whoever had buzzed the seconds they were owed.
+        */}
+        <button
+          className={`btn ml-auto ${state.paused ? "btn-gold animate-pop" : ""}`}
+          onClick={() => send(state.paused ? "game:resume" : "game:pause")}
+          title={state.paused ? "Let the room go again" : "Freeze the room: buzzers off, clocks held"}
+        >
+          {state.paused ? "▶ Resume game" : "❚❚ Pause game"} <Kbd>p</Kbd>
+        </button>
       </div>
 
       {buzzer.order.length > 0 && (
@@ -1295,10 +1281,10 @@ function ControllerInvite({ send, controllerKey, code }) {
   return (
     <div className="mt-2.5">
       <div className="flex items-baseline justify-between">
-        <span className="label">Remote host</span>
+        <span className="text-[12px] text-ink">Remote host</span>
         {controllerKey && (
           <button className="text-[0.7rem] text-faint hover:text-bad" onClick={() => send("controller:revoke")}>
-            revoke
+            Revoke link
           </button>
         )}
       </div>
@@ -1306,10 +1292,10 @@ function ControllerInvite({ send, controllerKey, code }) {
       {!controllerKey ? (
         <>
           <button className="btn mt-1.5 w-full py-1.5 text-[11px]" onClick={() => send("controller:invite")}>
-            Create a host link
+            Create remote host link
           </button>
           <div className="mt-1 text-[10px] leading-snug text-faint">
-            A tablet to read from — the clue, the answer, and the verdict. No account needed.
+            A tablet to read from: the clue, the answer and the verdict. No account needed.
           </div>
         </>
       ) : (
@@ -1328,13 +1314,13 @@ function ControllerInvite({ send, controllerKey, code }) {
               {copied ? "Copied ✓" : "Copy link"}
             </button>
             <a className="btn px-2.5 py-1.5 text-[11px]" href={urls.cards || "#"} target="_blank" rel="noreferrer">
-              Open ↗
+              Open cue cards ↗
             </a>
           </div>
           {/* The in-depth desk is the same key — someone else driving the board
               while you read is still a thing people want, just not the default. */}
           <a className="block text-[10px] text-faint transition-colors hover:text-muted" href={urls.control || "#"} target="_blank" rel="noreferrer">
-            or the full controller ↗
+            Open full controller ↗
           </a>
         </div>
       )}
@@ -1361,7 +1347,7 @@ function SaveControls({ send, savedAt, code }) {
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <span className="label">Save for later</span>
+        <span className="text-[12px] text-ink">Save for later</span>
         {savedAt && <span className={`text-[10px] ${flash ? "text-good" : "text-faint"}`}>{flash ? "saved ✓" : `saved ${ago(savedAt)}`}</span>}
       </div>
       <div className="mt-1.5 flex gap-1.5">
@@ -1370,10 +1356,9 @@ function SaveControls({ send, savedAt, code }) {
         </button>
         <button
           className="btn px-2.5 py-1.5 text-[11px] hover:border-bad hover:text-bad"
-          title="Delete the saved copy"
-          onClick={() => confirm(`Forget the saved copy of ${code}?`) && send("room:forget")}
+          onClick={() => confirm(`Delete the saved copy of ${code}?`) && send("room:forget")}
         >
-          ✕
+          Delete save
         </button>
       </div>
       <div className="mt-1 text-[10px] leading-snug text-faint">
@@ -1390,7 +1375,7 @@ function SaveControls({ send, savedAt, code }) {
  */
 function DeleteRoom({ send, code, players }) {
   return (
-    <div className="mt-2">
+    <div>
       <button
         className="btn w-full py-1.5 text-[11px] hover:border-bad hover:text-bad"
         onClick={() => {
@@ -1417,19 +1402,20 @@ function ago(ts) {
 function TimerControls({ send, timer, now }) {
   const left = useCountdown(timer && timer.kind !== "answer" ? timer.endsAt : null, now)
   return (
-    <div className="mt-2.5 border-t border-edge/60 pt-2.5">
-      <div className="label mb-1.5">Clock</div>
+    <div>
+      <div className="label mb-1.5">Clock{left != null && <span className="ml-2 font-value text-sm text-gold tabular-nums">{Math.ceil(left / 1000)}</span>}</div>
       <div className="flex items-center gap-1.5">
         {[15, 30, 60].map((s) => (
           <button key={s} className="btn flex-1 px-1 py-1 text-[11px]" onClick={() => send("timer:start", { seconds: s, kind: "read" })}>
             {s}s
           </button>
         ))}
-        <button className="btn px-2 py-1 text-[11px]" onClick={() => send("timer:stop")}>
-          ✕
-        </button>
+        {left != null && (
+          <button className="btn px-2 py-1 text-[11px]" onClick={() => send("timer:stop")}>
+            Stop
+          </button>
+        )}
       </div>
-      {left != null && <div className="mt-1.5 text-center font-value text-xl text-gold tabular-nums">{Math.ceil(left / 1000)}</div>}
     </div>
   )
 }
@@ -1497,7 +1483,7 @@ function FinalControls({ state, send }) {
               Stop the clock
             </button>
             <button className="btn btn-gold px-5" onClick={() => send("final:reveal")}>
-              Start revealing
+              Reveal answers
             </button>
           </div>
         </div>
@@ -1715,7 +1701,7 @@ function SurveyControls({ state, send, f }) {
         <span className="text-[11px] text-faint">{left} left</span>
         <div className="ml-auto flex gap-1.5">
           <button className={`btn ${state.buzzer.armed ? "" : "btn-gold"}`} onClick={() => send("buzzer:arm")}>
-            Arm <Kbd>space</Kbd>
+            Open buzzer <Kbd>space</Kbd>
           </button>
           {!f.last && (
             <button className={`btn ${f.cleared ? "btn-gold animate-pop" : ""}`} onClick={() => send("survey:next")}>
@@ -1747,7 +1733,7 @@ function SurveyControls({ state, send, f }) {
           </div>
         </div>
       ) : (
-        <div className="mt-2 text-[11px] text-faint">Arm the buzzer and let them race for it.</div>
+        <div className="mt-2 text-[11px] text-faint">Open the buzzer and let them race for it.</div>
       )}
 
       {/* The board. Everything the host needs is one click away because the

@@ -16,7 +16,7 @@ media is *noted* rather than played, because the big screen is already playing i
 a second copy a second out of step from the host's tablet is the last thing the
 room needs.
 
-**Create a host link** on the run desk mints a key and hands you the URL. No
+**Create remote host link** on the run desk mints a key and hands you the URL. No
 account needed at the other end, and it dies with the room. The same key also
 opens the full controller below, for when someone else is driving.
 
@@ -67,7 +67,7 @@ clue or a blind final wager.
 banded across the top, their score filling the middle. Everything else it knows
 how to say (buzzed in, on the phone with the clock running, what they staked)
 is said by lighting the whole panel, because from across a room a badge is
-invisible and a colour is not. Open one per seat from the **▭** button beside
+invisible and a colour is not. Open one per seat from **Open podium**, under the **▸** beside
 each player on the host desk; it remembers which player it is showing, so a
 reload doesn't mean re-picking five tablets.
 
@@ -130,7 +130,7 @@ is on the wifi in the kitchen".
 **Run** is the desk during the show:
 
 - The mini board on the left is how you pick. The big screen follows.
-- **Arm** opens the buzzer. First press wins; everyone else's press is still
+- **Open buzzer** starts the race. First press wins; everyone else's press is still
   recorded with its margin, so a photo finish can be settled by eye.
 - **Correct** / **Wrong** rules on the player holding the floor. A miss deducts
   and reopens the buzzer for everyone who hasn't answered yet.
@@ -138,8 +138,9 @@ is on the wifi in the kitchen".
   of them are. Arming cannot help at that point, because a player who has answered is
   out for the rest of the clue, so the buzzer would open with nobody able to
   press it. This clears who is out and opens it in one move.
-- **▸** beside a score opens that player's history: every change, what it was
-  for, and the running total. "Why am I on 400?" now has an answer.
+- **▸** beside a score opens that player's history (every change, what it was
+  for, and the running total), plus their podium link and **Remove player**.
+  "Why am I on 400?" now has an answer.
 - Any score can be corrected by clicking it. Hosts make mistakes and arguing
   with software in front of an audience is not an option.
 - ☎ grants Phone a Friend. Players can ask from their phone; you still decide.

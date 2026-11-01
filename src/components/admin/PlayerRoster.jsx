@@ -54,11 +54,6 @@ export function PlayerRoster({ players, teams, send, buzzer, lifeline, requests,
     <div className="panel flex min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-edge px-3 py-2">
         <span className="label">Players · {players.length}</span>
-        {players.length > 0 && (
-          <button className="text-[10px] text-faint hover:text-bad" onClick={() => players.forEach((p) => send("score:set", { playerId: p.id, score: 0 }))}>
-            zero all
-          </button>
-        )}
       </div>
       <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
         {players.length === 0 && <div className="px-1 py-6 text-center text-[12px] text-faint">Waiting for phones to join…</div>}
@@ -220,7 +215,7 @@ function TeamCard({ team, teams, players, send, buzzer, lifeline, requests, stak
           <>
             <button
               className="shrink-0 px-1 text-[10px] text-faint transition-colors hover:text-gold"
-              title="Where this score came from"
+              title="Score history and more"
               onClick={() => setShowHistory((v) => !v)}
             >
               {showHistory ? "▾" : "▸"}
@@ -239,7 +234,28 @@ function TeamCard({ team, teams, players, send, buzzer, lifeline, requests, stak
         )}
       </div>
 
-      {showHistory && <ScoreHistory history={team.history} />}
+      {showHistory && (
+        <>
+          <ScoreHistory history={team.history} />
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {(team.lifelines?.phone ?? 0) === 0 && members[0] && (
+              <button className="btn px-1.5 py-0.5 text-[10px]" onClick={() => send("lifeline:restore", { playerId: members[0].id, lifeline: "phone" })}>
+                Give lifeline back
+              </button>
+            )}
+            <button className="btn px-1.5 py-0.5 text-[10px]" onClick={async () => window.open(await podiumUrl(code, team.name), "_blank", "noreferrer")}>
+              Open podium ↗
+            </button>
+            <button
+              className="btn px-1.5 py-0.5 text-[10px] hover:border-bad hover:text-bad"
+              title="Its players stay in the game"
+              onClick={() => confirm(`Delete ${team.name}? Its ${members.length} player(s) will need a new side.`) && send("team:delete", { teamId: team.id })}
+            >
+              Delete team
+            </button>
+          </div>
+        </>
+      )}
 
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         <button className="btn px-1.5 py-0.5 text-[10px]" onClick={() => send("score:adjust", { playerId: team.id, delta: stake || 100 })}>
@@ -257,30 +273,7 @@ function TeamCard({ team, teams, players, send, buzzer, lifeline, requests, stak
           onClick={() => send("lifeline:grant", { playerId: members.find((p) => requests.includes(p.id))?.id ?? members[0]?.id, lifeline: "phone" })}
           title="Start Phone a Friend for this team"
         >
-          ☎ {team.lifelines?.phone ?? 0}
-        </button>
-        {(team.lifelines?.phone ?? 0) === 0 && members[0] && (
-          <button
-            className="btn px-1.5 py-0.5 text-[10px]"
-            onClick={() => send("lifeline:restore", { playerId: members[0].id, lifeline: "phone" })}
-            title="Give the lifeline back"
-          >
-            ↺
-          </button>
-        )}
-        <button
-          className="btn ml-auto px-1.5 py-0.5 text-[10px]"
-          title="Open this team's podium screen"
-          onClick={async () => window.open(await podiumUrl(code, team.name), "_blank", "noreferrer")}
-        >
-          ▭
-        </button>
-        <button
-          className="btn px-1.5 py-0.5 text-[10px] hover:border-bad hover:text-bad"
-          title="Delete this team — its players stay in the game"
-          onClick={() => confirm(`Delete ${team.name}? Its ${members.length} player(s) will need a new side.`) && send("team:delete", { teamId: team.id })}
-        >
-          ✕
+          ☎ Lifeline {team.lifelines?.phone ?? 0}
         </button>
       </div>
 
@@ -382,7 +375,7 @@ function PlayerRow({ player, send, buzzer, lifeline, requested, stake, code }) {
           <>
             <button
               className="shrink-0 px-1 text-[10px] text-faint transition-colors hover:text-gold"
-              title="Where this score came from"
+              title="Score history and more"
               onClick={() => setShowHistory((v) => !v)}
             >
               {showHistory ? "▾" : "▸"}
@@ -403,7 +396,31 @@ function PlayerRow({ player, send, buzzer, lifeline, requested, stake, code }) {
 
       {/* "Why am I on 400?" is the most common question at a quiz, and until now
           the only answer was the number itself. */}
-      {showHistory && <ScoreHistory history={player.history} />}
+      {showHistory && (
+        <>
+          <ScoreHistory history={player.history} />
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {(player.lifelines?.phone ?? 0) === 0 && (
+              <button className="btn px-1.5 py-0.5 text-[10px]" onClick={() => send("lifeline:restore", { playerId: player.id, lifeline: "phone" })}>
+                Give lifeline back
+              </button>
+            )}
+            <button
+              className="btn px-1.5 py-0.5 text-[10px]"
+              title="Put it on the tablet in front of them"
+              onClick={async () => window.open(await podiumUrl(code, player.name), "_blank", "noreferrer")}
+            >
+              Open podium ↗
+            </button>
+            <button
+              className="btn px-1.5 py-0.5 text-[10px] hover:border-bad hover:text-bad"
+              onClick={() => confirm(`Remove ${player.name}?`) && send("player:kick", { playerId: player.id })}
+            >
+              Remove player
+            </button>
+          </div>
+        </>
+      )}
 
       <div className="mt-1.5 flex items-center gap-1">
         <button className="btn px-1.5 py-0.5 text-[10px]" onClick={() => send("score:adjust", { playerId: player.id, delta: stake || 100 })}>
@@ -419,30 +436,7 @@ function PlayerRow({ player, send, buzzer, lifeline, requested, stake, code }) {
           onClick={() => send("lifeline:grant", { playerId: player.id, lifeline: "phone" })}
           title="Start Phone a Friend"
         >
-          ☎ {player.lifelines?.phone ?? 0}
-        </button>
-        {(player.lifelines?.phone ?? 0) === 0 && (
-          <button
-            className="btn px-1.5 py-0.5 text-[10px]"
-            onClick={() => send("lifeline:restore", { playerId: player.id, lifeline: "phone" })}
-            title="Give the lifeline back"
-          >
-            ↺
-          </button>
-        )}
-
-        <button
-          className="btn ml-auto px-1.5 py-0.5 text-[10px]"
-          title="Open this player's podium screen — put it on the tablet in front of them"
-          onClick={async () => window.open(await podiumUrl(code, player.name), "_blank", "noreferrer")}
-        >
-          ▭
-        </button>
-        <button
-          className="btn px-1.5 py-0.5 text-[10px] hover:border-bad hover:text-bad"
-          onClick={() => confirm(`Remove ${player.name}?`) && send("player:kick", { playerId: player.id })}
-        >
-          ✕
+          ☎ Lifeline {player.lifelines?.phone ?? 0}
         </button>
       </div>
     </div>

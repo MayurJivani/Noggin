@@ -8,7 +8,6 @@ import { getRelayOrigin } from "../../lib/mediaUrl"
 import { displayUrl, podiumsUrl, putBoard, scoresUrl, watchUrl } from "../../lib/net"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
-import { JoinCard } from "../ui/JoinCard"
 import { LastCorrect, Operators } from "../ui/Operators"
 import { RoomSwitcher } from "./RoomSwitcher"
 import { Builder } from "./Builder"
@@ -311,12 +310,6 @@ function HostDesk({ auth }) {
           <div className="flex flex-1 items-center justify-center text-[13px] text-faint">Opening the room…</div>
         )}
       </main>
-
-      {tab === "run" && state?.phase === "lobby" && (
-        <div className="pointer-events-auto absolute bottom-4 right-4 z-20 panel p-3">
-          <JoinCard code={state.code} size={120} compact />
-        </div>
-      )}
     </div>
   )
 }

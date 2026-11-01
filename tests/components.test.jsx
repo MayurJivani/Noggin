@@ -4,6 +4,7 @@ import { attr, count, options, render, selected, shows, text } from "./dom.js"
 
 import { GameControl } from "../src/components/admin/GameControl.jsx"
 import { Builder } from "../src/components/admin/Builder.jsx"
+import { ClueCard } from "../src/components/display/ClueCard.jsx"
 import { makeBoard } from "../src/lib/board.js"
 
 /**
@@ -439,15 +440,15 @@ test("the clue comes back up the moment one is picked", async () => {
 
 test("the desk stops offering the two toggles that a room with no TV cannot obey", () => {
   const withTv = text(desk({}))
-  assert.ok(withTv.includes("Clue is on phones"), "both are offered in the usual setup")
-  assert.ok(withTv.includes("Stays up when buzzed"))
+  assert.ok(withTv.includes("Clue on phones"), "both are offered in the usual setup")
+  assert.ok(withTv.includes("Hide clue once buzzed"))
 
   // The relay overrides both while there is no big screen, so a desk that kept
   // offering them would be offering controls that do nothing.
   const without = text(desk({ settings: { mirrorClue: true, hideOnBuzz: false, streamer: false, teams: false, pingCorrection: false, noScreen: true } }))
   assert.ok(without.includes("No TV"), "and the mode says so plainly")
-  assert.ok(!without.includes("Clue is on phones"))
-  assert.ok(!without.includes("Stays up when buzzed"))
+  assert.ok(!without.includes("Clue on phones"))
+  assert.ok(!without.includes("Hide clue once buzzed"))
 })
 
 test("a nitro reaches the phone when there is no screen to put it on", async () => {
@@ -524,4 +525,11 @@ test("the ruling buttons say whether they are about to pay", () => {
   const held = text(tiebreakDesk({ buzzer: { armed: false, winner: "p0", spent: [], order: [], lockedUntil: {} } }))
   assert.ok(held.includes("Correct — wins"))
   assert.ok(held.includes("Wrong — out"))
+})
+
+test("the big screen never shows a clue's file name", () => {
+  for (const kind of ["image", "audio"]) {
+    const card = render(<ClueCard clue={{ id: "c", category: "Art", media: { kind, url: "https://x.test/m", alt: "the_answer.mp3" } }} stake={100} />)
+    assert.ok(!card.includes("the_answer"), kind)
+  }
 })

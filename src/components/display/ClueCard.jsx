@@ -195,14 +195,14 @@ function Media({ media }) {
     return (
       <img
         src={src}
-        alt={media.alt ?? ""}
+        alt=""
         className="max-h-full max-w-full rounded-[1vmin] border border-gold-deep/30 object-contain shadow-xl shadow-black/50 animate-rise"
         style={{ animationDelay: "300ms" }}
       />
     )
   }
   if (media.kind === "video") return <VideoClue src={src} />
-  return <AudioClue src={src} label={media.alt} />
+  return <AudioClue src={src} />
 }
 
 /**
@@ -244,7 +244,7 @@ function VideoClue({ src }) {
  * deliberately not tied to real analysis: one <audio> element feeding an
  * analyser across reloads is more failure than the effect is worth.
  */
-function AudioClue({ src, label }) {
+function AudioClue({ src }) {
   const audio = useRef(null)
   const [playing, setPlaying] = useState(false)
 
@@ -281,7 +281,7 @@ function AudioClue({ src, label }) {
         style={{ fontSize: "max(11px, calc(var(--stage) * 1.2))" }}
         onClick={() => (playing ? audio.current?.pause() : audio.current?.play())}
       >
-        {playing ? "❚❚ pause" : "▶ play"} {label ? <span className="ml-2 text-[0.75em] text-muted">{label}</span> : null}
+        {playing ? "❚❚ pause" : "▶ play"}
       </button>
     </div>
   )
