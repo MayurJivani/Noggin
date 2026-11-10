@@ -14,7 +14,7 @@ export const BoardGrid = forwardRef(function BoardGrid({ round, cellRef }, ref) 
     /* `--cols` so the stylesheet can do the sizing. It used to be an inline
        font-size, which beats any stylesheet rule and so silently defeated the
        container-query sizing below it. */
-    <div ref={ref} className="board flex h-full w-full flex-col gap-[0.7vmin] p-[1.5vmin]" style={{ "--cols": cols }}>
+    <div ref={ref} className={`board flex h-full w-full flex-col gap-[0.7vmin] p-[1.5vmin] ${cols >= 4 ? "board-many" : ""}`} style={{ "--cols": cols }}>
       <div className="grid gap-[0.7vmin]" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {round.categories.map((cat, ci) => (
           <div
@@ -22,7 +22,12 @@ export const BoardGrid = forwardRef(function BoardGrid({ round, cellRef }, ref) 
             className="flex items-center justify-center rounded-[0.8vmin] border border-gold-deep/45 bg-gradient-to-b from-onyx/85 to-void/90 px-[0.6vmin] py-[1.4vmin] text-center animate-tile-in"
             style={{ animationDelay: `${ci * 55}ms` }}
           >
-            <span className="board-category font-display uppercase leading-[1.05] text-gold brass-sm">
+            {/* `--shrink` scales the title down for a long single word, so
+                TRANSPORTATION fits its column instead of breaking mid-word. */}
+            <span
+              className="board-category font-display uppercase leading-[1.05] text-gold brass-sm"
+              style={{ "--shrink": Math.min(1, 10 / Math.max(10, ...String(cat.title ?? "").split(/\s+/).map((w) => w.length))) }}
+            >
               {cat.title || " "}
             </span>
           </div>

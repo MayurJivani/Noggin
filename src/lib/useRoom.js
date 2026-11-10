@@ -58,10 +58,20 @@ export function useRoom({ role, code, name, teamId, playerId, key, surface, onEf
   handlers.current = { onEffects, onError, onMessage }
   const joinRef = useRef({ role, code, name, teamId, playerId, key, surface })
   joinRef.current = { role, code, name, teamId, playerId, key, surface }
+  /*
+    The seat the relay handed us, which beats whatever the page passed in.
+
+    A first-time player has no saved id, so every reconnect used to send a name
+    alone. After a few seconds offline the relay still held the old socket open,
+    the name looked taken, and the player came back as "Alice 2".
+  */
+  const seatRef = useRef(null)
 
   useEffect(() => {
     if (!enabled) return
     if (role !== "host" && !code) return
+    // A seat belongs to one room and one join; a new code or a rejoin starts over.
+    seatRef.current = null
 
     let closed = false
     let retry = null
@@ -83,7 +93,7 @@ export function useRoom({ role, code, name, teamId, playerId, key, surface, onEf
         lastSeen = Date.now()
         setConnected(true)
         const j = joinRef.current
-        ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, teamId: j.teamId, playerId: j.playerId, key: j.key, surface: j.surface }))
+        ws.send(JSON.stringify({ type: "join", role: j.role, code: j.code, name: j.name, teamId: j.teamId, playerId: seatRef.current ?? j.playerId, key: j.key, surface: j.surface }))
 
         // Anything the player did while we were away, if it is still worth
         // saying. Sent after the join so the relay knows who is speaking.
@@ -131,6 +141,7 @@ export function useRoom({ role, code, name, teamId, playerId, key, surface, onEf
           return
         }
         if (msg.type === "joined") {
+          if (msg.playerId) seatRef.current = msg.playerId
           setIdentity({ playerId: msg.playerId ?? null, code: msg.code, role: msg.role })
           return
         }
@@ -257,13 +268,14 @@ export function useRoom({ role, code, name, teamId, playerId, key, surface, onEf
  * isn't. Countdown rings are the only thing in Noggin that needs a tick, and a
  * permanent interval on the display page would keep a projector's fan running.
  */
-export function useCountdown(endsAt, now) {
+export function useCountdown(endsAt, now, held = null) {
   const [, force] = useState(0)
   useEffect(() => {
     if (!endsAt) return
     const id = setInterval(() => force((n) => n + 1), 100)
     return () => clearInterval(id)
   }, [endsAt])
-  if (!endsAt) return null
+  // A clock on hold has no deadline, only the time it had left. See `holdTimer`.
+  if (!endsAt) return held ?? null
   return Math.max(0, endsAt - now())
 }

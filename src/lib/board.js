@@ -18,8 +18,9 @@ export const DEFAULT_VALUES = [200, 400, 600, 800, 1000]
 export const DEFAULT_SETTINGS = {
   earlyPenaltyMs: 500,
   answerSeconds: 8,
-  autoArm: false,
-  readSeconds: 0,
+  autoArm: true,
+  readSeconds: 2,
+  reactions: true,
   lifelines: { phone: 1 },
   penaltyForWrong: true,
   autoRebound: false,

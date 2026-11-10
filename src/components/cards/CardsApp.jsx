@@ -372,7 +372,8 @@ function FinalNotes({ state, send }) {
 }
 
 function AnswerClock({ timer, now }) {
-  const left = useCountdown(timer?.kind === "answer" ? timer.endsAt : null, now)
+  const mine = timer?.kind === "answer"
+  const left = useCountdown(mine ? timer.endsAt : null, now, mine ? timer.left : null)
   if (left == null) return null
   return <span className={`ml-2 font-value tabular-nums ${left < 3000 ? "text-bad" : "text-gold"}`}>{(left / 1000).toFixed(1)}s</span>
 }

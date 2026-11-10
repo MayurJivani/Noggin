@@ -103,7 +103,7 @@ const settle = (ms = 120) => sleep(ms)
 function client(role, joinExtra = {}, jar = cookie) {
   const privileged = role === "host" || role === "controller"
   const ws = new WebSocket(URL, privileged ? { headers: { Cookie: jar } } : undefined)
-  const c = { ws, state: null, effects: [], identity: null, errors: [] }
+  const c = { ws, state: null, effects: [], identity: null, errors: [], reacts: [] }
   c.ready = new Promise((resolve) => {
     ws.on("open", () => ws.send(JSON.stringify({ type: "join", role, ...joinExtra })))
     ws.on("message", (raw) => {
@@ -113,6 +113,7 @@ function client(role, joinExtra = {}, jar = cookie) {
         c.effects.push(...(m.effects ?? []))
         resolve(c)
       } else if (m.type === "joined") c.identity = m
+      else if (m.type === "react") c.reacts.push(m.emoji)
       else if (m.type === "error") {
         c.errors.push(m)
         resolve(c)
@@ -249,6 +250,17 @@ test("a full round, over the wire", async (t) => {
   })
 
   await t.test("a lifeline request reaches the host but changes nothing on its own", async () => {
+    // Asking before buzzing is ignored: a lifeline is only for the floor.
+    host.drain()
+    alice.send("lifeline:request", { lifeline: "phone" })
+    await settle()
+    assert.ok(!host.drain().includes("lifeline-request"), "nobody has the floor yet")
+
+    host.send("clue:select", { catIndex: 0, clueIndex: 0 })
+    host.send("buzzer:arm")
+    await settle()
+    alice.send("buzz")
+    await settle()
     host.drain()
     alice.send("lifeline:request", { lifeline: "phone" })
     await settle()
@@ -264,6 +276,39 @@ test("a full round, over the wire", async (t) => {
     host.send("lifeline:end")
     await settle()
     assert.equal(host.state.lifeline, null)
+    host.send("clue:close")
+    await settle()
+  })
+
+  await t.test("a reaction from the fixed set reaches the big screen, and nothing else does", async () => {
+    alice.send("react", { index: 3 })
+    alice.send("react", { index: 0 }) // inside the rate limit: dropped
+    bob.send("react", { index: 99 }) // not in the set: dropped
+    await settle()
+    assert.deepEqual(screen.reacts, ["🔥"])
+    assert.deepEqual(bob.reacts, [], "phones are not the screen while there is a TV")
+  })
+
+  /*
+    The "Alice 2" bug. A first-time phone joins by name alone; a few seconds
+    offline later it reconnects while the relay still holds the old socket open.
+    By name alone that is a second Alice. useRoom now resends the id the relay
+    handed back in `joined`, and this pins that the id is what keeps the seat.
+  */
+  await t.test("a reconnect carrying its seat id keeps the seat while the old socket lingers", async () => {
+    const carol = client("player", { code, name: "Carol" })
+    await carol.ready
+    const C = carol.identity.playerId
+    const back = client("player", { code, name: "Carol", playerId: C })
+    await back.ready
+    await settle()
+    assert.equal(back.identity.playerId, C)
+    assert.ok(!host.state.players.some((p) => p.name === "Carol 2"), "no second Carol")
+    carol.ws.close()
+    back.ws.close()
+    await settle()
+    host.send("player:kick", { playerId: C })
+    await settle()
   })
 
   await t.test("a player who drops off wifi comes back to the same seat", async () => {

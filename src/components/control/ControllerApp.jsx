@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
 import { useAuth } from "../../lib/useAuth"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
-import { holdsBuzz, isSpent, nameOf, rows as sideRows } from "../../lib/sides"
+import { holdsBuzz, isSpent, nameOf, onFloor, rows as sideRows } from "../../lib/sides"
 import { LastCorrect, Operators } from "../ui/Operators"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { AuthLoading, SignIn } from "../auth/SignIn"
@@ -170,6 +170,16 @@ function Console({ state, send, connected, auth, viaKey }) {
             </button>
           </Panel>
         )}
+        {!state.settings?.streamer && (
+          <Panel title="Join">
+            <button
+              className={`btn w-full py-2 text-xs ${state.showJoin ? "btn-gold" : ""}`}
+              onClick={() => send("join:show", { on: !state.showJoin })}
+            >
+              {state.showJoin ? "Hide join QR on the big screen" : "Show join QR on the big screen"}
+            </button>
+          </Panel>
+        )}
 
         <Panel title="Clock">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -182,6 +192,16 @@ function Console({ state, send, connected, auth, viaKey }) {
               stop
             </button>
           </div>
+          {/* Any clue clock, the answer clock included: stops time without
+              pausing the room. */}
+          {timer && ["answer", "read", "arm"].includes(timer.kind) && (
+            <button
+              className={`btn mt-2 w-full py-2 text-xs ${timer.endsAt ? "" : "btn-gold"}`}
+              onClick={() => send(timer.endsAt ? "timer:hold" : "timer:release")}
+            >
+              {timer.endsAt ? "❚❚ Hold the clock" : `▶ Run the clock · ${Math.ceil((timer.left ?? 0) / 1000)}s left`}
+            </button>
+          )}
           <Countdown timer={timer} now={now} />
           {lifeline && (
             <div className="mt-2 flex items-center gap-2 rounded-lg border border-amethyst bg-royal/30 px-3 py-2 text-xs">
@@ -353,7 +373,8 @@ function FinalConsole({ state, send }) {
 /** What the room is waiting on, and the answer only this screen and the host have. */
 function ClueStatus({ state, holderName, now }) {
   const { clue, buzzer, phase } = state
-  const answerClock = useCountdown(state.timer?.kind === "answer" ? state.timer.endsAt : null, now)
+  const answering = state.timer?.kind === "answer"
+  const answerClock = useCountdown(answering ? state.timer.endsAt : null, now, answering ? state.timer.left : null)
 
   if (!clue) {
     return (
@@ -461,7 +482,7 @@ function SideRow({ row, state, send }) {
   const stake = state.stake || 100
   const holds = holdsBuzz(row, state.buzzer)
   const spent = isSpent(row, state.buzzer)
-  const caller = row.members ? row.members[0] : row.id
+  const caller = holds ? state.buzzer.winner : row.members ? row.members[0] : row.id
 
   return (
     <div
@@ -486,7 +507,8 @@ function SideRow({ row, state, send }) {
         </button>
         <button
           className="btn px-2 py-1 text-[0.7rem]"
-          disabled={(row.lifelines?.phone ?? 0) <= 0 || !!state.lifeline || !caller}
+          disabled={(row.lifelines?.phone ?? 0) <= 0 || !caller || !onFloor(row, state)}
+          title="Phone a Friend: only once they have buzzed in"
           onClick={() => send("lifeline:grant", { playerId: caller, lifeline: "phone" })}
         >
           ☎ {row.lifelines?.phone ?? 0}

@@ -35,6 +35,10 @@ export function wagerOf(row, wager) {
   return null
 }
 
+/** Mirrors `holdsFloor` in server/game.js: only the side answering may phone a friend. */
+export const onFloor = (row, state) =>
+  state?.phase === "clue" && !state.lifeline && (holdsBuzz(row, state.buzzer) || wagerOf(row, state.wager) != null)
+
 /** How far behind the winner this row buzzed, or null if it was not in the race. */
 export function raceOf(row, buzzer) {
   if (!buzzer?.order?.length) return null

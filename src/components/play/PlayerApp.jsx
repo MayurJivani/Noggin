@@ -7,10 +7,10 @@ import { readJson, removeStore, writeJson } from "../../lib/storage"
 import { useWakeLock } from "../../lib/useWakeLock"
 import { Backdrop } from "../ui/Backdrop"
 import { Brand, BrandMark } from "../ui/Brand"
-import { nameOf } from "../../lib/sides"
+import { nameOf, onFloor, rowFor } from "../../lib/sides"
 import { BoardGrid } from "../display/BoardGrid"
 import { NitroWait, PausedCard } from "../display/DisplayStage"
-import { BuzzOverlay, LifelineOverlay, NitroSplash, TimerRing } from "../display/Overlays"
+import { BuzzOverlay, LifelineOverlay, NitroSplash, ReactionLayer, REACTIONS, TimerRing, useReactions } from "../display/Overlays"
 import { Diagnostics } from "./Diagnostics"
 import { FinalPanel } from "./FinalPanel"
 import { VeinLine } from "../ui/Vein"
@@ -97,6 +97,7 @@ export function PlayerApp() {
     [],
   )
 
+  const [reactions, onReact] = useReactions()
   const { state, connected, identity, send, rtt } = useRoom({
     role: "player",
     code,
@@ -105,6 +106,8 @@ export function PlayerApp() {
     playerId: saved.playerId,
     enabled: joined,
     onEffects,
+    // Only arrives on no-TV nights: then the phone is the screen. See "react".
+    onMessage: onReact,
     onError: (e) => {
       setError(e)
       if (e.code === "no-room" || e.code === "kicked") setJoined(false)
@@ -151,6 +154,7 @@ export function PlayerApp() {
       setPressed={setPressed}
       flash={flash}
       splash={splash}
+      reactions={reactions}
       onLeave={() => {
         removeStore(STORAGE)
         setJoined(false)
@@ -379,7 +383,7 @@ function Join({ code, setCode, name, setName, teamId, setTeamId, onJoin, error, 
   )
 }
 
-export function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, flash = null, splash = false, debug = false }) {
+export function Board({ state, me, connected, rtt, send, pressed, setPressed, onLeave, flash = null, splash = false, reactions = [], debug = false }) {
   const { phase, buzzer, clue, lifeline } = state
   const now = useCallback(() => Date.now(), [])
 
@@ -468,6 +472,9 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
 
   const live = (phase === "clue" || survey || (phase === "tiebreak" && inTiebreak && !tbOut)) && !!me && !state.paused
   const team = state.teams?.find((t) => t.members.includes(me?.id))
+  const myRow = rowFor(state, me?.id)
+  // A team shares one purse, so the count to show is the team's.
+  const myPurse = team ?? me
 
   /*
     The host is sound-checking. The button is live but the game is not: a press
@@ -720,6 +727,7 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
             size="58px"
           />
           <BuzzOverlay name={flash?.name} verdict={flash?.verdict} />
+          <ReactionLayer items={reactions} />
           {/* Bottom corner rather than the screen's top-right, which on a phone
               is the player's own name and score. */}
           <TimerRing timer={state.timer} now={now} className="pointer-events-none absolute bottom-[108px] right-3 z-20" size="58px" />
@@ -730,9 +738,30 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
       {debug && <Diagnostics log={log} state={state} me={me} connected={connected} rtt={rtt} wake={wake} />}
 
       <footer className="relative z-10 shrink-0 space-y-2 px-4 pb-5">
+        {/* Something to do for everyone not answering. Hidden from whoever
+            holds the buzz: their thumb belongs on the answer, not on 🔥. */}
+        {state.settings?.reactions !== false && phase !== "lobby" && !iHoldIt && (
+          <div className="flex justify-between gap-1" role="group" aria-label="React">
+            {REACTIONS.map((emoji, index) => (
+              <button
+                key={emoji}
+                type="button"
+                className="flex-1 rounded-lg border border-edge bg-black/25 py-1.5 text-[20px] leading-none active:scale-90 active:border-gold"
+                aria-label={`React ${emoji}`}
+                onClick={() => {
+                  send("react", { index })
+                  buzz(10)
+                }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
         <button
           className={`btn w-full py-2.5 ${lifeline?.playerId === me?.id ? "btn-gold" : ""}`}
-          disabled={(me?.lifelines?.phone ?? 0) <= 0 || !!lifeline}
+          // Only while this side is answering: a call is help with an answer.
+          disabled={(myPurse?.lifelines?.phone ?? 0) <= 0 || !onFloor(myRow, state)}
           onClick={() => {
             send("lifeline:request", { lifeline: "phone" })
             buzz(30)
@@ -740,7 +769,11 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
         >
           ☎ Phone a Friend
           <span className="ml-1.5 text-[11px] opacity-70">
-            {lifeline?.playerId === me?.id ? "· on the line" : `· ${me?.lifelines?.phone ?? 0} left`}
+            {lifeline?.playerId === me?.id
+              ? "· on the line"
+              : onFloor(myRow, state)
+                ? `· ${myPurse?.lifelines?.phone ?? 0} left`
+                : "· after you buzz"}
           </span>
         </button>
 

@@ -3,6 +3,7 @@ import { useCountdown, useRoom } from "../../lib/useRoom"
 import { holdsBuzz, isCalling, isSpent, nameOf, raceOf, rows as sideRows, wagerOf } from "../../lib/sides"
 import { scoreSize, useRolling } from "../../lib/useRolling"
 import { useWakeLock } from "../../lib/useWakeLock"
+import { openedWith, scrubCodeFromUrl } from "../../lib/roomCode"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
@@ -81,6 +82,7 @@ export function ScoreboardApp() {
             return (
               <SideCard
                 key={row.id}
+                k={densityFor(rows.length)}
                 row={row}
                 rank={i + 1}
                 buzzer={buzzer}
@@ -118,10 +120,16 @@ export function ScoreboardApp() {
 
 /** Keep cards big: few players means few columns, not a row of slivers. */
 const columnsFor = (n) => (n <= 2 ? Math.max(n, 1) : n <= 4 ? 2 : n <= 9 ? 3 : n <= 16 ? 4 : 5)
+/** Type scale for a card, by how many rows of them share the screen: twenty names spilled over their cards at full size. */
+const densityFor = (n) => {
+  const gridRows = Math.ceil(n / columnsFor(n))
+  return gridRows <= 2 ? 1 : gridRows <= 3 ? 0.8 : gridRows <= 4 ? 0.65 : 0.5
+}
 
 function StatusStrip({ state, holderName, now }) {
   const { buzzer, phase, final } = state
-  const answer = useCountdown(state.timer?.kind === "answer" ? state.timer.endsAt : null, now)
+  const answering = state.timer?.kind === "answer"
+  const answer = useCountdown(answering ? state.timer.endsAt : null, now, answering ? state.timer.left : null)
 
   let text = "Waiting"
   let tone = "border-edge text-faint"
@@ -168,7 +176,7 @@ function StatusStrip({ state, holderName, now }) {
   )
 }
 
-function SideCard({ row, rank, buzzer, onCall, callEndsAt, dimmed, final, wager, now }) {
+function SideCard({ row, rank, buzzer, onCall, callEndsAt, dimmed, final, wager, now, k = 1 }) {
   const holds = holdsBuzz(row, buzzer)
   const spent = isSpent(row, buzzer)
   const race = raceOf(row, buzzer)
@@ -192,7 +200,7 @@ function SideCard({ row, rank, buzzer, onCall, callEndsAt, dimmed, final, wager,
         </span>
         <span
           className="min-w-0 flex-1 truncate font-display uppercase text-ink"
-          style={{ fontSize: "max(13px, calc(var(--stage) * 2.4))", color: row.color ?? undefined }}
+          style={{ fontSize: `max(11px, calc(var(--stage) * ${2.4 * k}))`, color: row.color ?? undefined }}
         >
           {row.name}
         </span>
@@ -206,7 +214,7 @@ function SideCard({ row, rank, buzzer, onCall, callEndsAt, dimmed, final, wager,
       )}
 
       <div className="flex min-w-0 items-center gap-[1.5vmin]">
-        <Rolling value={row.score} />
+        <Rolling value={row.score} k={k} />
         {/* The call clock belongs on the side making it. As a full-screen
             overlay it hid every other score for thirty seconds, which is
             exactly when the room most wants to compare them. */}
@@ -230,12 +238,12 @@ function SideCard({ row, rank, buzzer, onCall, callEndsAt, dimmed, final, wager,
 }
 
 /** Scores roll rather than snap — a jump reads as a glitch from across a room. */
-function Rolling({ value }) {
+function Rolling({ value, k = 1 }) {
   const [shown] = useRolling(value)
   return (
     <div
       className={`max-w-full whitespace-nowrap font-value leading-none tabular-nums ${shown < 0 ? "text-bad" : "text-gold brass-sm"}`}
-      style={{ fontSize: scoreSize(shown, 5, 24) }}
+      style={{ fontSize: scoreSize(shown, 5 * k, Math.round(24 * k)) }}
     >
       {shown}
     </div>

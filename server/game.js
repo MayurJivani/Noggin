@@ -36,16 +36,19 @@ export const DEFAULTS = {
   answerSeconds: 8,
   /**
    * Open the buzzer by itself when a clue goes up, instead of waiting for the
-   * host to arm it. Off by default — arming is the host's cue that the room is
-   * ready, and taking it away surprises anyone used to the classic flow.
+   * host to arm it. On by default, paired with a short reading time, so a host
+   * reading aloud does not also have to remember to arm. The host can still arm
+   * early, or turn this off for the classic flow.
    */
-  autoArm: false,
+  autoArm: true,
   /**
    * With `autoArm`, how long the room gets to read before the buzzer opens.
    * Zero opens it the instant the clue appears, which favours whoever is
    * fastest rather than whoever knows it.
    */
-  readSeconds: 0,
+  readSeconds: 2,
+  /** Players may send emoji from `REACTIONS` to the big screen. */
+  reactions: true,
   /** Lifelines each player starts with. */
   lifelines: { phone: 1 },
   /** A wrong answer subtracts the clue value as well as failing to add it. */
@@ -1592,6 +1595,33 @@ export function stopTimer(room) {
 }
 
 /**
+ * Freeze the clock without freezing the room.
+ *
+ * Pause shuts the buzzer and covers the board; sometimes the host only needs
+ * the answer clock to stop while a player explains themselves. `endsAt: null`
+ * is what stops the relay's deadline; `left` is what comes back.
+ *
+ * Only the clue clocks. The phone clock has its own start and end on the
+ * lifeline, and the final and survey clocks lock answers when they run out.
+ */
+const HOLDABLE = new Set(["answer", "read", "arm"])
+
+export function holdTimer(room, now = Date.now()) {
+  const t = room.timer
+  if (!t?.endsAt || !HOLDABLE.has(t.kind)) return []
+  room.timer = { ...t, endsAt: null, left: Math.max(0, t.endsAt - now) }
+  return [{ kind: "timer-hold" }]
+}
+
+export function releaseTimer(room, now = Date.now()) {
+  const t = room.timer
+  if (!t || t.endsAt || t.left == null || room.paused) return []
+  const { left, ...rest } = t
+  room.timer = { ...rest, endsAt: now + left }
+  return [{ kind: "timer-release" }]
+}
+
+/**
  * Phone a friend. The clock is the point of the lifeline, so it takes over the
  * room's single timer slot and the buzzer stays shut until it's done.
  *
@@ -1603,10 +1633,42 @@ export function stopTimer(room) {
  * only takes it out of their purse and shuts the buzzer; the host starts the
  * clock when the friend actually picks up.
  */
+/**
+ * The only reactions a phone may send, by index. A fixed list rather than free
+ * text or any emoji: the big screen is in front of the whole room, so nothing
+ * a player sends can be something the host would not put up there.
+ */
+export const REACTIONS = ["👏", "😂", "😮", "🔥", "🤔", "😱", "🎉", "❤️"]
+const REACT_GAP_MS = 1500
+
+/** One reaction per player per REACT_GAP_MS; returns the emoji or null. */
+export function react(room, playerId, index, now = Date.now()) {
+  const player = room.players.get(playerId)
+  const emoji = REACTIONS[Number(index)]
+  if (!player || !emoji || room.settings.reactions === false) return null
+  if (now - (player.reactedAt ?? 0) < REACT_GAP_MS) return null
+  player.reactedAt = now
+  return emoji
+}
+
+/**
+ * Whether this phone's side is the one answering right now.
+ *
+ * A lifeline is help with an answer, so it only makes sense to whoever holds
+ * the floor: the buzz winner, or the side that found a nitro.
+ */
+export function holdsFloor(room, playerId) {
+  if (room.phase !== PHASE.CLUE || room.lifeline) return false
+  const holder = judgeTarget(room)
+  if (!holder || !room.players.has(playerId)) return false
+  return holder === playerId || sameSide(room, holder, playerId) || teamOf(room, playerId)?.id === holder
+}
+
 export function grantLifeline(room, playerId, type = "phone") {
   const player = room.players.get(playerId)
   const spec = LIFELINES[type]
   if (!player || !spec) return []
+  if (!holdsFloor(room, playerId)) return []
   // A team shares one purse, so five phones do not mean five phone calls.
   const purse = scorer(room, playerId) ?? player
   if ((purse.lifelines[type] ?? 0) <= 0) return []
@@ -1620,6 +1682,9 @@ export function grantLifeline(room, playerId, type = "phone") {
   */
   room.lifeline = { type, playerId, teamId: teamOf(room, playerId)?.id ?? null, seconds: spec.seconds, endsAt: null }
   room.buzzer.armed = false
+  // The answer clock stops for the call. Left running it would rule them wrong
+  // while the friend was still talking.
+  if (room.timer?.kind === "answer") room.timer = null
   return [{ kind: "lifeline-grant", type, playerId, seconds: spec.seconds }]
 }
 
@@ -1668,7 +1733,8 @@ export function pauseGame(room, now = Date.now()) {
     at: now,
     // The deadline lives on the relay and is keyed off `room.timer`, so
     // clearing the timer is what actually stops the clock.
-    timer: room.timer ? { ...room.timer, left: Math.max(0, room.timer.endsAt - now) } : null,
+    // A clock already on hold has no deadline, only what it had left.
+    timer: room.timer ? { ...room.timer, left: room.timer.endsAt ? Math.max(0, room.timer.endsAt - now) : (room.timer.left ?? 0) } : null,
   }
   room.timer = null
   room.buzzer.armed = false
@@ -2809,6 +2875,9 @@ export function projectState(room, role, viewerId = null) {
     serverNow: Date.now(),
     paused: !!room.paused,
     music: !!room.music,
+    // The join QR, put back on the big screen mid-game for anyone who dropped
+    // out or arrived late. Never under streamer mode: a QR on a stream is a code.
+    showJoin: !!room.showJoin && showCode,
     unit: unitId,
     // The whole board, every round, unredacted — host and controller only. The
     // builder needs this to adopt a resumed game's board, which it cannot

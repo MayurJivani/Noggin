@@ -53,6 +53,14 @@
   --animate-ripple: ripple 0.6s ease-out forwards;
   --animate-streak: streak 0.9s cubic-bezier(0.3, 0, 0.2, 1) backwards;
   --animate-settle: settle 0.55s cubic-bezier(0.2, 1.2, 0.3, 1) backwards;
+  --animate-bubble: bubble 2.6s ease-out forwards;
+}
+
+/* A reaction drifting up off the bottom edge and fading, like a live stream's. */
+@keyframes bubble {
+  0%   { opacity: 0; transform: translateY(0) scale(0.6); }
+  12%  { opacity: 1; transform: translateY(-8vh) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-46vh) scale(1); }
 }
 
 @keyframes tile-in {
@@ -414,7 +422,7 @@
     clipped every header by three pixels — a fix for a bug that was not there.
   */
   .board-category {
-    font-size: max(11px, calc(var(--stage) * (2.4 - var(--cols, 5) * 0.08)));
+    font-size: max(11px, calc(var(--stage) * (2.4 - var(--cols, 5) * 0.08) * var(--shrink, 1)));
 
     /*
       A title longer than its column breaks, rather than running out of it.
@@ -447,6 +455,27 @@
     */
     min-width: 0;
     max-width: 100%;
+  }
+
+  /*
+    A tall phone with a full board: the headers stand up.
+
+    Five or six columns on a 390px phone leave ~55px per title, so the break
+    above was cutting TRANSPORTATION into TRANSPORT / ATION, which reads as a
+    name cut in half. Portrait is short of width and has height to spare (the
+    tiles are taller than they are wide), so the title runs bottom to top, the
+    way a book spine does, and every word stays whole.
+  */
+  @media (orientation: portrait) and (max-width: 700px) {
+    .board-many .board-category {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      overflow-wrap: normal;
+      hyphens: manual;
+      max-height: 32vh;
+      font-size: max(11px, calc(var(--stage) * 1.9));
+      line-height: 1.1;
+    }
   }
 
   @supports not (container-type: size) {

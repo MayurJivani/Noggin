@@ -3,6 +3,7 @@ import { useCountdown, useRoom } from "../../lib/useRoom"
 import { holdsBuzz, isCalling, isSpent, rows as sideRows, wagerOf } from "../../lib/sides"
 import { scoreSize, useRolling } from "../../lib/useRolling"
 import { useWakeLock } from "../../lib/useWakeLock"
+import { openedWith, scrubCodeFromUrl } from "../../lib/roomCode"
 import { Backdrop } from "../ui/Backdrop"
 import { BrandMark } from "../ui/Brand"
 import { VeinLine } from "../ui/Vein"
@@ -79,7 +80,7 @@ export function PodiumApp() {
           style={{ gridTemplateColumns: `repeat(${columnsFor(players.length)}, minmax(0, 1fr))`, gridAutoRows: "minmax(0, 1fr)" }}
         >
           {players.map((row) => (
-            <Podium key={row.id} row={row} state={state} now={now} solo={!!only} code={code} />
+            <Podium key={row.id} row={row} state={state} now={now} solo={!!only} code={code} k={densityFor(players.length)} />
           ))}
         </div>
       </main>
@@ -104,8 +105,13 @@ export function PodiumApp() {
  * halving everyone's width.
  */
 const columnsFor = (n) => (n <= 1 ? 1 : n <= 2 ? 2 : n <= 6 ? 3 : n <= 12 ? 4 : 5)
+/** Type scale by rows of panels on screen: at five rows the score ran over the name. */
+const densityFor = (n) => {
+  const gridRows = Math.ceil(n / columnsFor(n))
+  return gridRows <= 1 ? 1 : gridRows <= 2 ? 0.75 : gridRows <= 3 ? 0.55 : 0.4
+}
 
-function Podium({ row, state, now, solo, code }) {
+function Podium({ row, state, now, solo, code, k = 1 }) {
   const holds = holdsBuzz(row, state.buzzer)
   const spent = isSpent(row, state.buzzer)
   const onCall = isCalling(row, state.lifeline)
@@ -131,7 +137,7 @@ function Podium({ row, state, now, solo, code }) {
       <div className="shrink-0 px-[2vmin] pt-[2vmin] text-center">
         <div
           className="truncate font-display uppercase leading-none text-ink"
-          style={{ fontSize: `max(16px, calc(var(--stage) * ${solo ? 5.5 : 3.2}))`, letterSpacing: "0.04em", color: row.color ?? undefined }}
+          style={{ fontSize: `max(12px, calc(var(--stage) * ${solo ? 5.5 : 3.2 * k}))`, letterSpacing: "0.04em", color: row.color ?? undefined }}
         >
           {row.name}
         </div>
@@ -140,11 +146,11 @@ function Podium({ row, state, now, solo, code }) {
             {row.memberNames.join(" · ")}
           </div>
         )}
-        <VeinLine className="mx-auto mt-[1.2vmin] w-[80%]" height={solo ? 16 : 12} />
+        {k >= 0.75 && <VeinLine className="mx-auto mt-[1.2vmin] w-[80%]" height={solo ? 16 : 12} />}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[1.2vmin] px-[1.5vmin]">
-        <Score value={row.score} solo={solo} />
+        <Score value={row.score} solo={solo} k={k} />
         <StatusLine
           holds={holds}
           spent={spent}
@@ -202,7 +208,7 @@ function Podium({ row, state, now, solo, code }) {
 }
 
 /** The number, rolling. It is most of the panel, so it gets most of the panel. */
-function Score({ value, solo }) {
+function Score({ value, solo, k = 1 }) {
   const [shown, moving] = useRolling(value)
   return (
     <div
@@ -210,7 +216,7 @@ function Score({ value, solo }) {
       // Sized against the value, not just the viewport — see `scoreSize`. The
       // rolling value rather than the target, so it shrinks as it grows into a
       // longer number instead of jumping a size at the end.
-      style={{ fontSize: scoreSize(shown, solo ? 16 : 8, solo ? 56 : 34) }}
+      style={{ fontSize: scoreSize(shown, solo ? 16 : 8 * k, solo ? 56 : Math.round(34 * k)) }}
     >
       {shown}
     </div>

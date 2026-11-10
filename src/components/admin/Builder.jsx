@@ -242,6 +242,7 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
           </div>
         </div>
 
+        {(roundIndex === -1 || roundIndex === -2) && <GrandFinale board={board} setBoard={setBoard} />}
         {roundIndex === -1 ? (
           <FinalEditor board={board} setBoard={setBoard} />
         ) : roundIndex === -2 ? (
@@ -572,6 +573,20 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
                 </span>
               </span>
             </label>
+            <label className="flex cursor-pointer items-start gap-2 text-[12px] text-muted">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={settings.reactions !== false}
+                onChange={(e) => onSettings({ reactions: e.target.checked })}
+              />
+              <span>
+                Emoji reactions
+                <span className="block text-[10px] text-faint">
+                  players can float a reaction onto the big screen · a fixed set, one every couple of seconds each
+                </span>
+              </span>
+            </label>
           </div>
         </div>
 
@@ -652,6 +667,45 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
       </div>
     </div>
     </>
+  )
+}
+
+/**
+ * How the night ends, as one choice.
+ *
+ * The final and the survey were two checkboxes on two tabs, so "end on a survey
+ * instead" meant finding both. This sets the same two flags; each tab still
+ * holds its own content.
+ */
+const FINALES = [
+  { id: "final", label: "Final clue", hint: "everyone bets, writes an answer" },
+  { id: "survey", label: "Survey", hint: "we asked a hundred people" },
+  { id: "both", label: "Both", hint: "final, then the survey" },
+  { id: "none", label: "None", hint: "ends when the board is clear" },
+]
+
+function GrandFinale({ board, setBoard }) {
+  const f = !!board.final?.enabled
+  const s = !!board.survey?.enabled
+  const current = f && s ? "both" : f ? "final" : s ? "survey" : "none"
+  const pick = (id) =>
+    setBoard({
+      ...board,
+      final: { ...(board.final ?? {}), enabled: id === "final" || id === "both" },
+      survey: { ...(board.survey ?? {}), enabled: id === "survey" || id === "both" },
+    })
+  return (
+    <div className="panel mb-3 p-3">
+      <div className="label mb-1.5">Grand finale</div>
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {FINALES.map((o) => (
+          <button key={o.id} className={`btn flex-col py-1.5 text-[11px] ${current === o.id ? "btn-gold" : ""}`} onClick={() => pick(o.id)}>
+            <span>{o.label}</span>
+            <span className="block text-[9px] opacity-70">{o.hint}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 

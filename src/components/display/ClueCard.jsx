@@ -143,7 +143,8 @@ export function ClueCard({ clue, revealed, stake, origin, wagerName, timer, now 
  * digits do.
  */
 function ClueClock({ timer, now }) {
-  const left = useCountdown(timer && timer.kind !== "lifeline" ? timer.endsAt : null, now ?? (() => Date.now()))
+  const mine = timer && timer.kind !== "lifeline"
+  const left = useCountdown(mine ? timer.endsAt : null, now ?? (() => Date.now()), mine ? timer.left : null)
   if (left == null) return null
 
   const seconds = Math.ceil(left / 1000)
@@ -177,7 +178,7 @@ function ClueClock({ timer, now }) {
         className={`absolute inset-0 flex items-center justify-center font-value tabular-nums ${urgent ? "text-bad animate-glow" : "text-gold"}`}
         style={{ fontSize: "max(15px, calc(var(--stage) * 2.1))" }}
       >
-        {seconds}
+        {timer.endsAt ? seconds : "❚❚"}
       </span>
     </span>
   )

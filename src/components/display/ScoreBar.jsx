@@ -10,10 +10,23 @@ import { scoreSize, useRolling } from "../../lib/useRolling"
  */
 export function ScoreBar({ rows, buzzer, lifeline, lastCorrect = null }) {
   if (!rows.length) return null
+  /*
+    How crowded the bar is. Each podium had a 15vmin floor, so past ten or so
+    the row was wider than the screen and the names ran off both edges. Now a
+    big room gets narrower podiums in smaller type, wrapping onto a second line
+    rather than leaving the screen.
+  */
+  const n = rows.length
+  const tier = n <= 8 ? 0 : n <= 14 ? 1 : 2
+  // Tier 2 wraps to a second line instead of slicing names to two letters.
+  const minW = ["15vmin", "11vmin", "12vmin"][tier]
+  const maxW = ["26vmin", "16vmin", "16vmin"][tier]
+  const nameSize = [1.5, 1.15, 0.95][tier]
+  const scoreStages = [3.4, 2.4, 1.8][tier]
   return (
     <div className="shrink-0">
       <LastCorrect entry={lastCorrect} />
-      <div className="flex items-end justify-center gap-[1vmin] px-[2vmin] pb-[1.5vmin]">
+      <div className={`flex flex-wrap items-end justify-center px-[2vmin] pb-[1.5vmin] ${tier ? "gap-[0.6vmin]" : "gap-[1vmin]"}`}>
       {rows.map((row) => {
         const holds = holdsBuzz(row, buzzer)
         const spent = isSpent(row, buzzer)
@@ -21,8 +34,8 @@ export function ScoreBar({ rows, buzzer, lifeline, lastCorrect = null }) {
         return (
           <div
             key={row.id}
-            style={holds && row.color ? { borderColor: row.color } : undefined}
-            className={`min-w-[15vmin] flex-1 max-w-[26vmin] rounded-t-[1vmin] border-t border-x px-[1.2vmin] py-[1vmin] text-center transition-all duration-300 ${
+            style={{ minWidth: minW, maxWidth: maxW, ...(holds && row.color ? { borderColor: row.color } : {}) }}
+            className={`min-w-0 flex-1 rounded-t-[1vmin] border-t border-x text-center transition-all duration-300 ${tier ? "px-[0.7vmin] py-[0.6vmin]" : "px-[1.2vmin] py-[1vmin]"} ${
               holds
                 ? "border-live bg-live/15 -translate-y-[0.8vmin]"
                 : calling
@@ -35,12 +48,16 @@ export function ScoreBar({ rows, buzzer, lifeline, lastCorrect = null }) {
             <div className="flex items-center justify-center gap-[0.6vmin]">
               {row.color && <span className="h-[0.9vmin] w-[0.9vmin] shrink-0 rounded-full" style={{ background: row.color }} />}
               {!row.connected && <span className="h-[0.8vmin] w-[0.8vmin] rounded-full bg-faint" title="away" />}
-              <div className="truncate font-display uppercase tracking-wide text-ink/90" style={{ fontSize: "max(10px, calc(var(--stage) * 1.5))" }}>
+              <div
+                className="min-w-0 truncate font-display uppercase tracking-wide text-ink/90"
+                style={{ fontSize: `max(9px, calc(var(--stage) * ${nameSize}))` }}
+                title={row.name}
+              >
                 {row.name}
               </div>
               {(row.lifelines?.phone ?? 0) > 0 && <span className="text-gold-dim" style={{ fontSize: "max(8px, calc(var(--stage) * 1))" }}>☎</span>}
             </div>
-            <Rolling value={row.score} />
+            <Rolling value={row.score} stages={scoreStages} />
             {/* Who is actually behind a team, in the smallest type on the
                 screen — enough to find your own side, not enough to compete
                 with the number above it. */}
@@ -92,12 +109,12 @@ function LastCorrect({ entry }) {
   )
 }
 
-function Rolling({ value }) {
+function Rolling({ value, stages = 3.4 }) {
   const [shown, moving] = useRolling(value)
   return (
     <div
       className={`max-w-full whitespace-nowrap font-value tabular-nums leading-none ${shown < 0 ? "text-bad" : "text-gold"} ${moving ? "" : "brass-sm"}`}
-      style={{ fontSize: scoreSize(shown, 3.4, 20) }}
+      style={{ fontSize: scoreSize(shown, stages, stages < 3 ? 13 : 20) }}
     >
       {shown}
     </div>

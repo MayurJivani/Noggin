@@ -269,9 +269,9 @@ function TeamCard({ team, teams, players, send, buzzer, lifeline, requests, stak
             member. The first one on the sheet is as good an answer as any. */}
         <button
           className={`btn px-1.5 py-0.5 text-[10px] ${asking ? "btn-gold" : ""}`}
-          disabled={(team.lifelines?.phone ?? 0) <= 0 || !!lifeline || members.length === 0}
-          onClick={() => send("lifeline:grant", { playerId: members.find((p) => requests.includes(p.id))?.id ?? members[0]?.id, lifeline: "phone" })}
-          title="Start Phone a Friend for this team"
+          disabled={(team.lifelines?.phone ?? 0) <= 0 || !!lifeline || members.length === 0 || !holdsBuzz(team, buzzer)}
+          onClick={() => send("lifeline:grant", { playerId: buzzer?.winner, lifeline: "phone" })}
+          title="Phone a Friend: only once this team has buzzed in"
         >
           ☎ Lifeline {team.lifelines?.phone ?? 0}
         </button>
@@ -432,9 +432,9 @@ function PlayerRow({ player, send, buzzer, lifeline, requested, stake, code }) {
 
         <button
           className={`btn px-1.5 py-0.5 text-[10px] ${requested ? "btn-gold" : ""}`}
-          disabled={(player.lifelines?.phone ?? 0) <= 0 || !!lifeline}
+          disabled={(player.lifelines?.phone ?? 0) <= 0 || !!lifeline || !holdsBuzz(player, buzzer)}
           onClick={() => send("lifeline:grant", { playerId: player.id, lifeline: "phone" })}
-          title="Start Phone a Friend"
+          title="Phone a Friend: only once they have buzzed in"
         >
           ☎ Lifeline {player.lifelines?.phone ?? 0}
         </button>

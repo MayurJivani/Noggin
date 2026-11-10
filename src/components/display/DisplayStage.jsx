@@ -13,7 +13,7 @@ import { BoardGrid } from "./BoardGrid"
 import { FinalStage, SurveyBoard } from "./FinalStage"
 import { ClueCard } from "./ClueCard"
 import { ScoreBar } from "./ScoreBar"
-import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, TimerRing } from "./Overlays"
+import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, ReactionLayer, TimerRing, useReactions } from "./Overlays"
 
 /**
  * The big screen. Read-only by design: it holds no game state of its own and
@@ -76,7 +76,8 @@ export function DisplayStage({ code: initialCode, spectator = false }) {
     }
   }, [])
 
-  const { state, connected, send } = useRoom({ role: "display", code, onEffects, onError: setError })
+  const [reactions, onMessage] = useReactions()
+  const { state, connected, send } = useRoom({ role: "display", code, onEffects, onError: setError, onMessage })
 
   /*
     Say the room code out loud, quietly, for as long as the lobby is open.
@@ -180,6 +181,7 @@ export function DisplayStage({ code: initialCode, spectator = false }) {
       splash={splash}
       origin={origin}
       cellRef={cellRef}
+      reactions={reactions}
     />
   )
 }
@@ -188,7 +190,7 @@ export function DisplayStage({ code: initialCode, spectator = false }) {
  * Split out so the music effect below can hang off `state` without the early
  * returns above making it a conditional hook.
  */
-function Stage({ code, state, connected, error, audioOn, spectator, broadcasting, flash, splash, origin, cellRef }) {
+function Stage({ code, state, connected, error, audioOn, spectator, broadcasting, flash, splash, origin, cellRef, reactions = [] }) {
   /*
     The bed follows the room rather than this screen.
 
@@ -321,6 +323,14 @@ function Stage({ code, state, connected, error, audioOn, spectator, broadcasting
         <BuzzOverlay name={flash?.name} verdict={flash?.verdict} />
         {!clue && <TimerRing timer={timer} now={() => Date.now()} />}
         <BuzzerBanner armed={buzzer.armed} />
+        <ReactionLayer items={reactions} />
+        {/* The way back in, mid-game, for whoever dropped out or turned up
+            late. Bottom-left so it covers neither the clue's value nor a clock. */}
+        {state.showJoin && phase !== "lobby" && !spectator && (
+          <div className="absolute bottom-[1.5vmin] left-[2vmin] z-30 rounded-[1.2vmin] border border-gold-deep/60 bg-void/90 p-[1.2vmin] animate-rise">
+            <JoinCard code={state.code} size={Math.round(Math.min(170, Math.max(110, window.innerWidth / 11)))} compact />
+          </div>
+        )}
         {state.paused && <PausedCard />}
       </main>
 
@@ -398,8 +408,8 @@ function HiddenJoin({ broadcasting }) {
 function Lobby({ code, codeHidden, spectator, broadcasting, players, teams, title, check }) {
   const heard = check ? players.filter((p) => check.hits?.[p.id]).length : 0
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[4vmin]">
-      <Brand size={Math.min(120, Math.max(48, window.innerWidth / 12))} />
+    <div className={`flex h-full flex-col items-center justify-center overflow-y-auto px-[4vmin] py-[2vmin] ${players.length > 12 ? "gap-[1.6vmin]" : "gap-[3vmin]"}`}>
+      <Brand size={Math.min(players.length > 12 ? 72 : 120, Math.max(48, window.innerWidth / 12))} />
       <VeinLine className="w-[46vmin]" height={18} />
       <div className="text-center font-display text-gold/85" style={{ fontSize: "max(16px, calc(var(--stage) * 2.6))" }}>
         {title}
@@ -502,12 +512,18 @@ function Lobby({ code, codeHidden, spectator, broadcasting, players, teams, titl
           ))}
         </div>
       ) : (
-        <div className="flex max-w-[80vw] flex-wrap justify-center gap-[1.2vmin]">
+        // Smaller chips as the room fills, so thirty names still fit under the QR.
+        <div className={`flex max-w-[88vw] flex-wrap justify-center ${players.length > 12 ? "gap-[0.7vmin]" : "gap-[1.2vmin]"}`}>
           {players.map((p, i) => (
             <div
               key={p.id}
-              className="rounded-full border border-gold-deep/40 bg-royal/40 px-[2.4vmin] py-[0.9vmin] font-display text-ink animate-tile-in"
-              style={{ fontSize: "max(12px, calc(var(--stage) * 1.7))", animationDelay: `${i * 60}ms` }}
+              className={`rounded-full border border-gold-deep/40 bg-royal/40 font-display text-ink animate-tile-in ${
+                players.length > 12 ? "px-[1.4vmin] py-[0.5vmin]" : "px-[2.4vmin] py-[0.9vmin]"
+              }`}
+              style={{
+                fontSize: `max(11px, calc(var(--stage) * ${players.length > 24 ? 1.05 : players.length > 12 ? 1.3 : 1.7}))`,
+                animationDelay: `${Math.min(i, 15) * 60}ms`,
+              }}
             >
               {p.name}
             </div>
@@ -640,10 +656,10 @@ function Interlude({ title, rows, sub, final = false, champion = null, tied = nu
     rather than losing its tail.
   */
   const n = rows.length
-  const size = n <= 6 ? 3.4 : n <= 10 ? 2.6 : n <= 16 ? 2 : 1.6
+  const size = n <= 6 ? 3.4 : n <= 10 ? 2.6 : n <= 24 ? 2 : 1.6
   const gap = n <= 10 ? 1.4 : 0.7
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-[3vmin]">
+    <div className="flex h-full flex-col items-center justify-center gap-[3vmin] overflow-y-auto py-[2vmin]">
       {sub && <div className="label" style={{ letterSpacing: "0.4em" }}>{sub}</div>}
       <div className="font-display text-gold brass" style={{ fontSize: "max(30px, calc(var(--stage) * 6))" }}>
         {title}
@@ -676,7 +692,16 @@ function Interlude({ title, rows, sub, final = false, champion = null, tied = nu
         </div>
       )}
 
-      <div className="flex flex-col items-center" style={{ gap: `${gap}vmin` }}>
+      {/* A long list goes into columns: one column of twenty names ran off the
+          bottom of a TV however small the type got. */}
+      <div
+        className={n > 10 ? "grid grid-flow-col" : "flex flex-col items-center"}
+        style={
+          n > 10
+            ? { gap: `${gap}vmin 6vmin`, gridTemplateRows: `repeat(${Math.ceil(n / (n > 24 ? 3 : 2))}, auto)` }
+            : { gap: `${gap}vmin` }
+        }
+      >
         {rows.map((row, i) => {
           // Survey points are a separate column and belong beside the score
           // rather than added to it — the round is won on them, and a board

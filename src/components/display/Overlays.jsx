@@ -1,5 +1,36 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
+
+/** Mirrors `REACTIONS` in server/game.js; the relay only accepts an index into it. */
+export const REACTIONS = ["👏", "😂", "😮", "🔥", "🤔", "😱", "🎉", "❤️"]
+
+/**
+ * Reactions in flight, plus the `onMessage` handler that feeds them.
+ * Capped so a room of forty mashing the buttons cannot pile up DOM nodes.
+ */
+export function useReactions() {
+  const [items, setItems] = useState([])
+  const onMessage = useCallback((msg) => {
+    if (msg.type !== "react") return
+    const item = { id: msg.id, emoji: msg.emoji, x: 6 + Math.random() * 88 }
+    setItems((list) => [...list.slice(-24), item])
+    setTimeout(() => setItems((list) => list.filter((i) => i !== item)), 2700)
+  }, [])
+  return [items, onMessage]
+}
+
+export function ReactionLayer({ items }) {
+  if (!items.length) return null
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden" aria-hidden="true">
+      {items.map((r) => (
+        <span key={r.id} className="absolute bottom-[8%] animate-bubble" style={{ left: `${r.x}%`, fontSize: "max(26px, 5vmin)" }}>
+          {r.emoji}
+        </span>
+      ))}
+    </div>
+  )
+}
 
 /** Someone got there first. Sits over everything for a beat, then clears. */
 export function BuzzOverlay({ name, verdict }) {
@@ -130,8 +161,9 @@ export function LifelineOverlay({ lifeline, playerName, now, className = "absolu
  * @param {string} [props.size] – edge length, as any CSS length.
  */
 export function TimerRing({ timer, now, className = "absolute right-[2.5vmin] top-[2.5vmin] z-20", size = "11vmin" }) {
-  const left = useCountdown(timer?.endsAt, now)
+  const left = useCountdown(timer?.endsAt, now, timer?.left)
   if (!timer || timer.kind === "lifeline" || left == null) return null
+  const held = !timer.endsAt
 
   const frac = Math.max(0, Math.min(1, left / (timer.duration * 1000)))
   const seconds = Math.ceil(left / 1000)
@@ -157,7 +189,7 @@ export function TimerRing({ timer, now, className = "absolute right-[2.5vmin] to
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
         <span className={`font-value tabular-nums ${seconds <= 5 ? "text-bad" : "text-gold"}`} style={{ fontSize: "max(13px, 3.6vmin)" }}>
-          {seconds}
+          {held ? "❚❚" : seconds}
         </span>
       </div>
     </div>

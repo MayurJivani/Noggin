@@ -1613,6 +1613,8 @@ const ACTION_LABELS = {
   "tiebreak:award": "awarded the tie-break",
   "lifeline:grant": "granted a phone call",
   "lifeline:start": "started the phone clock",
+  "timer:hold": "held the clock",
+  "timer:release": "restarted the clock",
   "game:reset": "reset the game",
   "room:delete": "deleted the game",
 }
@@ -1754,6 +1756,10 @@ function handleHostMessage(room, meta, ws, msg) {
       room.music = !!msg.on
       return apply(room, [{ kind: "music", on: room.music }])
     }
+    case "join:show": {
+      room.showJoin = !!msg.on
+      return apply(room, [])
+    }
     case "game:start":
       return apply(room, G.startGame(room))
     case "clue:select":
@@ -1831,6 +1837,10 @@ function handleHostMessage(room, meta, ws, msg) {
       return apply(room, G.startTimer(room, msg.seconds, msg.kind))
     case "timer:stop":
       return apply(room, G.stopTimer(room))
+    case "timer:hold":
+      return apply(room, G.holdTimer(room))
+    case "timer:release":
+      return apply(room, G.releaseTimer(room))
     case "lifeline:grant":
       return apply(room, G.grantLifeline(room, msg.playerId, msg.lifeline ?? "phone"))
     case "lifeline:start":
@@ -1901,12 +1911,29 @@ function handlePlayerMessage(room, meta, msg) {
       return apply(room, G.setFinalAnswer(room, meta.playerId, msg.text))
     case "survey:say":
       return apply(room, G.saySurvey(room, meta.playerId, msg.text))
+    /*
+      A reaction is noise, not state: it goes straight to the screens that draw
+      it, as its own small message, rather than redrawing the whole room for
+      every phone. The big screen always; phones only when they are the screen.
+    */
+    case "react": {
+      const emoji = G.react(room, meta.playerId, msg.index)
+      if (!emoji) return
+      const out = JSON.stringify({ type: "react", emoji, id: `${meta.playerId}:${Date.now()}` })
+      for (const [sock, m] of room.sockets) {
+        if (m.role === "display" || (room.settings.noScreen && m.role === "player")) {
+          if (sock.readyState === 1) sock.send(out)
+        }
+      }
+      return
+    }
     case "lifeline:request": {
       // The player asks; the host still has to grant it, so this is a signal,
       // not a mutation. Nothing about the game changes until the host acts.
       const player = room.players.get(meta.playerId)
       const type = msg.lifeline ?? "phone"
-      if (!player || (player.lifelines[type] ?? 0) <= 0) return
+      const purse = G.scorer(room, meta.playerId) ?? player
+      if (!player || (purse.lifelines?.[type] ?? 0) <= 0 || !G.holdsFloor(room, meta.playerId)) return
       return broadcast(room, [{ kind: "lifeline-request", playerId: meta.playerId, type }])
     }
   }

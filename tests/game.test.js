@@ -27,7 +27,7 @@ function setup(n = 3, settings = {}) {
 const kinds = (effects) => effects.map((e) => e.kind)
 
 test("selecting a clue puts it on screen and closes the buzzer", () => {
-  const room = setup()
+  const room = setup(3, { autoArm: false })
   const fx = G.selectClue(room, 1, 2)
   assert.equal(room.phase, G.PHASE.CLUE)
   assert.deepEqual(kinds(fx), ["clue-open"])
@@ -201,10 +201,24 @@ test("clearing the board rolls into the next round, then ends the game", () => {
   assert.equal(room.phase, G.PHASE.ENDED)
 })
 
+test("phone a friend is only for whoever has buzzed in", () => {
+  const room = setup()
+  G.selectClue(room, 0, 0)
+  assert.deepEqual(G.grantLifeline(room, "p2", "phone"), [], "nobody has the floor yet")
+  G.armBuzzer(room, 1000)
+  assert.deepEqual(G.grantLifeline(room, "p2", "phone"), [], "an open buzzer is not the floor")
+  G.buzz(room, "p1", 1100)
+  assert.deepEqual(G.grantLifeline(room, "p2", "phone"), [], "someone else's buzz is not yours")
+  assert.equal(room.players.get("p2").lifelines.phone, 1, "and the refusal costs nothing")
+  assert.deepEqual(kinds(G.grantLifeline(room, "p1", "phone")), ["lifeline-grant"])
+})
+
 test("phone a friend spends a charge, holds the clock, and shuts the buzzer", () => {
   const room = setup()
   G.selectClue(room, 0, 0)
   G.armBuzzer(room, 1000)
+  G.buzz(room, "p2", 1100)
+  assert.equal(room.timer.kind, "answer", "the answer clock is running")
 
   const fx = G.grantLifeline(room, "p2", "phone")
   assert.deepEqual(kinds(fx), ["lifeline-grant"])
@@ -214,7 +228,7 @@ test("phone a friend spends a charge, holds the clock, and shuts the buzzer", ()
   // Granted is not running: the friend has not picked up yet, and a clock
   // started here would be spent on a phone ringing.
   assert.equal(room.lifeline.endsAt, null)
-  assert.equal(room.timer, null, "nothing is counting down")
+  assert.equal(room.timer, null, "nothing is counting down — the answer clock stopped for the call")
   assert.equal(room.lifeline.seconds, 30, "the ring needs to know how long a full one is")
 
   assert.equal(G.grantLifeline(room, "p2", "phone").length, 0, "only one charge")
@@ -688,12 +702,20 @@ test("a final that was never written stays out of the way", () => {
   assert.equal(G.projectState(room, "host").final, null)
 })
 
-test("auto-arm opens the buzzer with the clue, when asked to", () => {
-  const off = setup()
-  assert.deepEqual(kinds(G.selectClue(off, 0, 0)), ["clue-open"])
-  assert.equal(off.buzzer.armed, false, "off by default — the host still arms")
+test("by default the buzzer opens by itself after two seconds of reading", () => {
+  const room = setup()
+  assert.deepEqual(kinds(G.selectClue(room, 0, 0)), ["clue-open", "arm-pending"])
+  assert.equal(room.buzzer.armed, false)
+  assert.equal(room.timer.kind, "arm")
+  assert.equal(room.timer.duration, 2)
+})
 
-  const on = setup(3, { autoArm: true })
+test("auto-arm opens the buzzer with the clue, when asked to", () => {
+  const off = setup(3, { autoArm: false })
+  assert.deepEqual(kinds(G.selectClue(off, 0, 0)), ["clue-open"])
+  assert.equal(off.buzzer.armed, false, "off, the host still arms")
+
+  const on = setup(3, { autoArm: true, readSeconds: 0 })
   assert.deepEqual(kinds(G.selectClue(on, 0, 0)), ["clue-open", "buzzer-open"])
   assert.equal(on.buzzer.armed, true)
 })
@@ -714,7 +736,7 @@ test("a reading delay holds the buzzer shut until the clock runs out", () => {
 })
 
 test("auto-arm leaves a nitro tile alone", () => {
-  const room = setup(3, { autoArm: true })
+  const room = setup(3, { autoArm: true, readSeconds: 0 })
   G.currentRound(room).categories[0].clues[0].nitro = true
   assert.deepEqual(kinds(G.selectClue(room, 0, 0)), ["nitro"])
   assert.equal(room.buzzer.armed, false, "there is no race to open")
@@ -1079,6 +1101,9 @@ test("a team shares one lifeline purse", () => {
   const { room } = teamed(4, { lifelines: { phone: 1 } })
   const team = G.teamOf(room, "p0")
   const mates = G.membersOf(room, team.id).map((p) => p.id)
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, mates[0], 10)
 
   assert.deepEqual(kinds(G.grantLifeline(room, mates[0], "phone")), ["lifeline-grant"])
   G.endLifeline(room)
@@ -1224,6 +1249,53 @@ test("pausing banks the clock and resuming gives back what was left", () => {
   G.resumeGame(room, 90_000)
   assert.equal(room.timer.endsAt, 90_000 + 7000, "the seven seconds that were left are still there")
   assert.equal(room.timer.kind, "answer")
+})
+
+test("the answer clock can be held and run again without pausing the room", () => {
+  const room = setup(2, { answerSeconds: 10 })
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 1000) // answer clock runs to 11000
+
+  assert.deepEqual(kinds(G.holdTimer(room, 4000)), ["timer-hold"])
+  assert.equal(room.timer.endsAt, null, "no deadline, so the relay cannot rule them out")
+  assert.equal(room.timer.left, 7000)
+  assert.equal(room.paused, null, "the room itself is not held")
+
+  assert.deepEqual(kinds(G.releaseTimer(room, 20_000)), ["timer-release"])
+  assert.equal(room.timer.endsAt, 27_000)
+  assert.equal(room.timer.left, undefined)
+})
+
+test("a pause on top of a held clock keeps its seconds", () => {
+  const room = setup(2, { answerSeconds: 10 })
+  G.selectClue(room, 0, 0)
+  G.armBuzzer(room, 0)
+  G.buzz(room, "p0", 1000)
+  G.holdTimer(room, 4000)
+  // Read as a null deadline this would have banked zero and ruled them out.
+  G.pauseGame(room, 5000)
+  G.resumeGame(room, 6000)
+  assert.equal(room.timer.endsAt, 13_000)
+})
+
+test("the final's clock cannot be held: it is what locks the answers", () => {
+  const room = setup(2)
+  G.startTimer(room, 30, "final", 0)
+  assert.deepEqual(G.holdTimer(room, 100), [])
+})
+
+test("reactions come from a fixed set, one at a time, and can be turned off", () => {
+  const room = setup(2)
+  const t = 1_700_000_000_000
+  assert.equal(G.react(room, "p0", 0, t), "👏")
+  assert.equal(G.react(room, "p0", 1, t + 200), null, "too soon")
+  assert.equal(G.react(room, "p0", 1, t + 2000), "😂")
+  assert.equal(G.react(room, "p1", 99, t), null, "not in the set")
+  assert.equal(G.react(room, "p1", "<script>", t), null)
+  assert.equal(G.react(room, "ghost", 0, t), null, "not a player")
+  room.settings.reactions = false
+  assert.equal(G.react(room, "p1", 0, t + 9000), null)
 })
 
 test("putting a clue up is itself a resume", () => {

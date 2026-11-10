@@ -65,12 +65,13 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
       }
       else if (e.key === "r" || e.key === "R") send("clue:reveal")
       else if (e.key === "p" || e.key === "P") send(state.paused ? "game:resume" : "game:pause")
+      else if ((e.key === "h" || e.key === "H") && state.timer) send(state.timer.endsAt ? "timer:hold" : "timer:release")
       else if (e.key === "Enter") send("clue:close")
       else if (e.key === "Escape") send("buzzer:reset")
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [send, buzzer.armed, state.paused])
+  }, [send, buzzer.armed, state.paused, state.timer])
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(300px,30%)_minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(380px,32%)_minmax(0,1fr)_minmax(340px,20%)]">
@@ -775,7 +776,7 @@ function StagePanel({ state, send, now }) {
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-live bg-live/10 px-4 py-3 animate-pop">
           <span className="font-display text-xl text-live 2xl:text-2xl">{holderName}</span>
           <span className="text-xs text-muted">has the floor</span>
-          <AnswerClock timer={state.timer} now={now} />
+          <AnswerClock timer={state.timer} now={now} send={send} />
           <div className="ml-auto flex gap-2">
             <button className="btn btn-good px-5 py-2.5 text-sm" onClick={() => send("judge", { correct: true })}>
               Correct <Kbd>y</Kbd>
@@ -1065,10 +1066,26 @@ function MediaPreview({ media }) {
   return <audio src={src} controls className="mt-3 w-full" preload="metadata" />
 }
 
-function AnswerClock({ timer, now }) {
-  const left = useCountdown(timer?.kind === "answer" ? timer.endsAt : null, now)
+function AnswerClock({ timer, now, send }) {
+  const mine = timer?.kind === "answer"
+  const left = useCountdown(mine ? timer.endsAt : null, now, mine ? timer.left : null)
   if (left == null) return null
-  return <span className={`font-value text-lg tabular-nums ${left < 3000 ? "text-bad" : "text-gold"}`}>{(left / 1000).toFixed(1)}s</span>
+  const held = !timer.endsAt
+  return (
+    <>
+      <span className={`font-value text-lg tabular-nums ${held ? "text-muted" : left < 3000 ? "text-bad" : "text-gold"}`}>{(left / 1000).toFixed(1)}s</span>
+      <HoldClock held={held} send={send} />
+    </>
+  )
+}
+
+/** Stop the clock without pausing the room. See `holdTimer`. */
+function HoldClock({ held, send }) {
+  return (
+    <button className="btn px-2 py-1 text-[11px]" onClick={() => send(held ? "timer:release" : "timer:hold")}>
+      {held ? "▶ Run clock" : "❚❚ Hold clock"} <Kbd>h</Kbd>
+    </button>
+  )
 }
 
 /** Arm, lock, reset — plus the race, so a photo finish can be adjudicated. */
@@ -1151,8 +1168,19 @@ function BuzzerPanel({ state, send, now }) {
           back with the time it had left, so a break does not silently cost
           whoever had buzzed the seconds they were owed.
         */}
+        {/* For whoever dropped out or turned up late. Hidden in streamer mode,
+            where a QR on screen is the code. */}
+        {!state.settings?.streamer && (
+          <button
+            className={`btn ml-auto ${state.showJoin ? "btn-gold" : ""}`}
+            onClick={() => send("join:show", { on: !state.showJoin })}
+            title="Put the join QR in a corner of the big screen"
+          >
+            {state.showJoin ? "Hide join QR" : "Show join QR"}
+          </button>
+        )}
         <button
-          className={`btn ml-auto ${state.paused ? "btn-gold animate-pop" : ""}`}
+          className={`btn ${state.settings?.streamer ? "ml-auto" : ""} ${state.paused ? "btn-gold animate-pop" : ""}`}
           onClick={() => send(state.paused ? "game:resume" : "game:pause")}
           title={state.paused ? "Let the room go again" : "Freeze the room: buzzers off, clocks held"}
         >
@@ -1400,10 +1428,14 @@ function ago(ts) {
 }
 
 function TimerControls({ send, timer, now }) {
-  const left = useCountdown(timer && timer.kind !== "answer" ? timer.endsAt : null, now)
+  const mine = timer && timer.kind !== "answer"
+  const left = useCountdown(mine ? timer.endsAt : null, now, mine ? timer.left : null)
   return (
     <div>
-      <div className="label mb-1.5">Clock{left != null && <span className="ml-2 font-value text-sm text-gold tabular-nums">{Math.ceil(left / 1000)}</span>}</div>
+      <div className="label mb-1.5 flex items-center gap-2">
+        Clock{left != null && <span className="font-value text-sm text-gold tabular-nums">{Math.ceil(left / 1000)}</span>}
+        {left != null && (timer.kind === "read" || timer.kind === "arm") && <HoldClock held={!timer.endsAt} send={send} />}
+      </div>
       <div className="flex items-center gap-1.5">
         {[15, 30, 60].map((s) => (
           <button key={s} className="btn flex-1 px-1 py-1 text-[11px]" onClick={() => send("timer:start", { seconds: s, kind: "read" })}>
