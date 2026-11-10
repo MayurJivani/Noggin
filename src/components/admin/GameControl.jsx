@@ -73,8 +73,9 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
     return () => window.removeEventListener("keydown", onKey)
   }, [send, buzzer.armed, state.paused, state.timer])
 
+  // Stacked on a phone, so it scrolls rather than squeezing every panel into one screen.
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(300px,30%)_minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(380px,32%)_minmax(0,1fr)_minmax(340px,20%)]">
+    <div className="grid min-h-0 flex-none grid-cols-1 gap-3 lg:flex-1 lg:grid-cols-[minmax(300px,30%)_minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(380px,32%)_minmax(0,1fr)_minmax(340px,20%)]">
       <MiniBoard state={state} send={send} />
 
       <div className="flex min-h-0 flex-col gap-3">
@@ -790,12 +791,14 @@ function StagePanel({ state, send, now }) {
             <div className="flex w-full flex-wrap items-center gap-2 border-t border-live/30 pt-2 text-xs">
               <span className="text-bad">Time's up.</span>
               <span className="text-muted">Deduct {state.stake}, or let it go and reopen?</span>
-              <button className="btn btn-bad ml-auto px-3 py-1.5 text-xs" onClick={() => send("judge", { correct: false })}>
-                Wrong, deduct <Kbd>n</Kbd>
-              </button>
-              <button className="btn px-3 py-1.5 text-xs" onClick={() => send("buzzer:reopen")}>
-                No deduction, reopen
-              </button>
+              <div className="ml-auto flex gap-2">
+                <button className="btn btn-bad px-3 py-1.5 text-xs" onClick={() => send("judge", { correct: false })}>
+                  Wrong, deduct <Kbd>n</Kbd>
+                </button>
+                <button className="btn px-3 py-1.5 text-xs" onClick={() => send("buzzer:reopen")}>
+                  No deduction, reopen
+                </button>
+              </div>
             </div>
           )}
         </div>
