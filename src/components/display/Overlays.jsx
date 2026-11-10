@@ -12,7 +12,11 @@ export function useReactions() {
   const [items, setItems] = useState([])
   const onMessage = useCallback((msg) => {
     if (msg.type !== "react") return
-    const item = { id: msg.id, emoji: msg.emoji, x: 6 + Math.random() * 88 }
+    // Out of the sender's own podium when there is one on this screen; a phone
+    // (no score bar) lets them rise from anywhere.
+    const anchor = document.querySelector(`[data-podium="${CSS.escape(msg.from ?? "")}"]`)?.getBoundingClientRect()
+    const x = anchor ? ((anchor.left + anchor.width / 2) / window.innerWidth) * 100 : 6 + Math.random() * 88
+    const item = { id: msg.id, emoji: msg.emoji, x }
     setItems((list) => [...list.slice(-24), item])
     setTimeout(() => setItems((list) => list.filter((i) => i !== item)), 2700)
   }, [])
@@ -24,7 +28,7 @@ export function ReactionLayer({ items }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden" aria-hidden="true">
       {items.map((r) => (
-        <span key={r.id} className="absolute bottom-[8%] animate-bubble" style={{ left: `${r.x}%`, fontSize: "max(26px, 5vmin)" }}>
+        <span key={r.id} className="absolute bottom-0 -translate-x-1/2 animate-bubble" style={{ left: `${r.x}%`, fontSize: "max(26px, 5vmin)" }}>
           {r.emoji}
         </span>
       ))}

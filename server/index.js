@@ -1163,6 +1163,11 @@ function scheduleDeadline(room) {
       effects = G.lockFinal(room)
     } else if (kind === "lifeline") {
       effects = G.endLifeline(room)
+    } else if (kind === "answer" && room.settings.timeoutAsk) {
+      // Time ran out, and the host asked to make the call themselves.
+      room.timer = null
+      room.timedOut = true
+      effects = []
     } else if (kind === "answer") {
       // Time ran out on a buzzed-in player: that counts as a miss.
       effects = G.judge(room, false)
@@ -1919,7 +1924,8 @@ function handlePlayerMessage(room, meta, msg) {
     case "react": {
       const emoji = G.react(room, meta.playerId, msg.index)
       if (!emoji) return
-      const out = JSON.stringify({ type: "react", emoji, id: `${meta.playerId}:${Date.now()}` })
+      // `from` is the podium it rises out of: the team's on team night.
+      const out = JSON.stringify({ type: "react", emoji, id: `${meta.playerId}:${Date.now()}`, from: G.scorer(room, meta.playerId)?.id ?? meta.playerId })
       for (const [sock, m] of room.sockets) {
         if (m.role === "display" || (room.settings.noScreen && m.role === "player")) {
           if (sock.readyState === 1) sock.send(out)
@@ -1934,7 +1940,9 @@ function handlePlayerMessage(room, meta, msg) {
       const type = msg.lifeline ?? "phone"
       const purse = G.scorer(room, meta.playerId) ?? player
       if (!player || (purse.lifelines?.[type] ?? 0) <= 0 || !G.holdsFloor(room, meta.playerId)) return
-      return broadcast(room, [{ kind: "lifeline-request", playerId: meta.playerId, type }])
+      // The clock stops the moment they ask: the host still has to grant it,
+      // and the seconds that takes are not the player's to lose.
+      return apply(room, [{ kind: "lifeline-request", playerId: meta.playerId, type }, ...G.holdTimer(room)])
     }
   }
 }

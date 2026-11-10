@@ -262,10 +262,12 @@ test("a full round, over the wire", async (t) => {
     alice.send("buzz")
     await settle()
     host.drain()
+    assert.ok(host.state.timer?.endsAt, "the answer clock is running")
     alice.send("lifeline:request", { lifeline: "phone" })
     await settle()
     assert.ok(host.drain().includes("lifeline-request"))
     assert.equal(host.state.lifeline, null, "asking is not taking")
+    assert.equal(host.state.timer?.endsAt, null, "but asking does stop the clock")
     assert.equal(host.state.players.find((p) => p.id === A).lifelines.phone, 1)
 
     host.send("lifeline:grant", { playerId: A, lifeline: "phone" })
@@ -277,6 +279,30 @@ test("a full round, over the wire", async (t) => {
     await settle()
     assert.equal(host.state.lifeline, null)
     host.send("clue:close")
+    await settle()
+  })
+
+  await t.test("with timeoutAsk the clock running out asks the host instead of ruling", async () => {
+    host.send("settings:set", { settings: { timeoutAsk: true, answerSeconds: 1 } })
+    host.send("clue:select", { catIndex: 1, clueIndex: 1 })
+    host.send("buzzer:arm")
+    await settle()
+    alice.send("buzz")
+    await settle()
+    const before = host.state.players.find((p) => p.id === A).score
+    await settle(1300)
+    assert.equal(host.state.timedOut, true)
+    assert.equal(host.state.buzzer.winner, A, "still has the floor")
+    assert.equal(host.state.players.find((p) => p.id === A).score, before, "nothing deducted yet")
+    host.send("judge", { correct: false })
+    await settle()
+    assert.equal(host.state.timedOut, false)
+    // Put the ledger back: later tests count on Alice's score.
+    host.send("judge:undo")
+    await settle()
+    assert.equal(host.state.players.find((p) => p.id === A).score, before)
+    host.send("clue:close")
+    host.send("settings:set", { settings: { timeoutAsk: false, answerSeconds: 8 } })
     await settle()
   })
 

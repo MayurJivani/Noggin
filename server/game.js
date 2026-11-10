@@ -35,6 +35,11 @@ export const DEFAULTS = {
   /** How long a player has to answer once they've buzzed in. 0 = untimed. */
   answerSeconds: 8,
   /**
+   * When the answer clock runs out, ask the host instead of ruling it wrong.
+   * Off, time-up is a miss on the spot, deduction and all.
+   */
+  timeoutAsk: false,
+  /**
    * Open the buzzer by itself when a clue goes up, instead of waiting for the
    * host to arm it. On by default, paired with a short reading time, so a host
    * reading aloud does not also have to remember to arm. The host can still arm
@@ -1081,6 +1086,7 @@ export function everyoneSpent(room) {
 }
 
 function resetBuzzerState(room) {
+  room.timedOut = false
   room.buzzer = { armed: false, opened: false, openedAt: 0, order: [], winner: null, winnerMs: null, lockedUntil: {}, spent: [], settleUntil: null }
 }
 
@@ -1203,6 +1209,7 @@ export function resolveBuzz(room, now = Date.now()) {
  */
 export function judge(room, correct, target = judgeTarget(room)) {
   if (room.phase !== PHASE.CLUE) return []
+  room.timedOut = false
   // The ledger being credited, which in team mode is not the thing being
   // judged: a player buzzes, their team is paid.
   const unit = scorer(room, target)
@@ -2908,6 +2915,8 @@ export function projectState(room, role, viewerId = null) {
     */
     lastCorrect: (room.log ?? []).findLast((e) => e.correct) ?? null,
     everyoneSpent: everyoneSpent(room),
+    /** The answer clock ran out and, with `timeoutAsk`, the host has not ruled yet. */
+    timedOut: !!room.timedOut,
     // The buzzer sound-check. Everyone sees it: a player needs to know their
     // press landed, and the big screen showing "testing" beats it showing a
     // lobby while the host is plainly doing something.

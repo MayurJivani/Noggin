@@ -479,6 +479,22 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
               min={0}
               max={120}
             />
+            {settings.answerSeconds > 0 && (
+              <label className="flex cursor-pointer items-start gap-2 pl-6 text-[12px] text-muted">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={!!settings.timeoutAsk}
+                  onChange={(e) => onSettings({ timeoutAsk: e.target.checked })}
+                />
+                <span>
+                  Ask me when the clock runs out
+                  <span className="block text-[10px] text-faint">
+                    you choose whether to deduct · off, time-up is a wrong answer on the spot
+                  </span>
+                </span>
+              </label>
+            )}
             <label className="flex cursor-pointer items-start gap-2 text-[12px] text-muted">
               <input
                 type="checkbox"

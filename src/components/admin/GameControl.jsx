@@ -785,6 +785,19 @@ function StagePanel({ state, send, now }) {
               Wrong <Kbd>n</Kbd>
             </button>
           </div>
+          {/* The clock ran out and the host asked to make this call (`timeoutAsk`). */}
+          {state.timedOut && (
+            <div className="flex w-full flex-wrap items-center gap-2 border-t border-live/30 pt-2 text-xs">
+              <span className="text-bad">Time's up.</span>
+              <span className="text-muted">Deduct {state.stake}, or let it go and reopen?</span>
+              <button className="btn btn-bad ml-auto px-3 py-1.5 text-xs" onClick={() => send("judge", { correct: false })}>
+                Wrong, deduct <Kbd>n</Kbd>
+              </button>
+              <button className="btn px-3 py-1.5 text-xs" onClick={() => send("buzzer:reopen")}>
+                No deduction, reopen
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -34,6 +34,7 @@ export function ScoreBar({ rows, buzzer, lifeline, lastCorrect = null }) {
         return (
           <div
             key={row.id}
+            data-podium={row.id}
             style={{ minWidth: minW, maxWidth: maxW, ...(holds && row.color ? { borderColor: row.color } : {}) }}
             className={`min-w-0 flex-1 rounded-t-[1vmin] border-t border-x text-center transition-all duration-300 ${tier ? "px-[0.7vmin] py-[0.6vmin]" : "px-[1.2vmin] py-[1vmin]"} ${
               holds

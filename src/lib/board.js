@@ -18,6 +18,7 @@ export const DEFAULT_VALUES = [200, 400, 600, 800, 1000]
 export const DEFAULT_SETTINGS = {
   earlyPenaltyMs: 500,
   answerSeconds: 8,
+  timeoutAsk: false,
   autoArm: true,
   readSeconds: 2,
   reactions: true,
