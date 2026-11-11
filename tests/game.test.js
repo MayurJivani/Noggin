@@ -1763,9 +1763,9 @@ function surveyed(n = 3, survey = {}) {
       { id: "q2", category: "HOLIDAYS", prompt: "Name something you always pack too many of", answers: [{ text: "Socks", points: 500 }] },
     ],
   }
-  // Distinct scores, so the cut is not in question — a contested one has its
-  // own tests. The top two go through; anyone below them is out of the round.
-  ;[...room.players.values()].forEach((p, i) => (p.score = 300 - i * 100))
+    // Distinct scores, so the cut is not in question — a contested one has its
+    // own tests. The top two go through; anyone below them is out of the round.
+    ;[...room.players.values()].forEach((p, i) => (p.score = 300 - i * 100))
   room.phase = G.PHASE.ENDED
   return room
 }
@@ -2603,169 +2603,183 @@ test("a board written before tie-breaks were a list keeps its clue", () => {
   assert.equal(board.tiebreaks[0].answer, "still here")
 })
 
-test("hideOnBuzz takes the clue off the phones, and only the phones", () => {
-  const room = setup(2, { hideOnBuzz: true })
-  G.selectClue(room, 0, 0)
-  G.armBuzzer(room, 0)
+  test("hideOnBuzz takes the clue off both the phones and the TV screen", () => {
+    const room = setup(2, { hideOnBuzz: true })
+    G.selectClue(room, 0, 0)
+    G.armBuzzer(room, 0)
 
-  // Before anyone presses, everybody can read it.
-  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
+    // Before anyone presses, everybody can read it.
+    assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
+    assert.equal(G.projectState(room, "display").clue.prompt, "prompt 0-0")
 
-  G.buzz(room, "p1", 10)
-  assert.equal(room.buzzer.winner, "p1")
+    G.buzz(room, "p1", 10)
+    assert.equal(room.buzzer.winner, "p1")
 
-  // Withheld, not merely hidden — the words are not on the wire at all.
-  const buzzed = G.projectState(room, "player", "p1")
-  assert.equal(buzzed.clue.prompt, "", "whoever buzzed answers from memory")
-  assert.equal(buzzed.clue.media, null)
-  assert.ok(!JSON.stringify(buzzed).includes("prompt 0-0"), "and it is nowhere else in the projection")
+    // Withheld, not merely hidden — the words are not on the wire at all.
+    const buzzed = G.projectState(room, "player", "p1")
+    assert.equal(buzzed.clue.prompt, "", "whoever buzzed answers from memory")
+    assert.equal(buzzed.clue.media, null)
+    assert.ok(!JSON.stringify(buzzed).includes("prompt 0-0"), "and it is nowhere else in the projection")
 
-  // Everyone else loses it too: they buzzed on the same question and would
-  // otherwise be reading it while the answer is given.
-  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "")
+    // Everyone else loses it too: they buzzed on the same question and would
+    // otherwise be reading it while the answer is given.
+    assert.equal(G.projectState(room, "player", "p0").clue.prompt, "")
 
-  // The room and the people driving keep it.
-  assert.equal(G.projectState(room, "display").clue.prompt, "prompt 0-0", "the big screen still shows it")
-  assert.equal(G.projectState(room, "host").clue.prompt, "prompt 0-0")
+    // The TV screen hides it too, so players cannot read off the wall.
+    const tv = G.projectState(room, "display")
+    assert.equal(tv.clue.prompt, "", "the big screen hides it while buzzed")
+    assert.equal(tv.clue.media, null)
+    assert.ok(!JSON.stringify(tv).includes("prompt 0-0"))
 
-  // A miss reopens the buzzer, and the words come back on their own.
-  G.judge(room, false)
-  assert.equal(room.buzzer.winner, null)
-  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0", "back for the rebound")
-})
+    // The host keeps it to judge the answer.
+    assert.equal(G.projectState(room, "host").clue.prompt, "prompt 0-0")
 
-test("with no TV the phone keeps the clue, whatever the phone settings say", () => {
-  // The two settings that take the clue off a phone both assume the big screen
-  // still has it. With no big screen, obeying them would leave the words
-  // nowhere at all — so they are overridden rather than combined.
-  const room = setup(2, { noScreen: true, mirrorClue: false, hideOnBuzz: true })
-  G.selectClue(room, 0, 0)
-  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
+    // A miss reopens the buzzer, and the words come back on their own.
+    G.judge(room, false)
+    assert.equal(room.buzzer.winner, null)
+    assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0", "back for the rebound")
+    assert.equal(G.projectState(room, "display").clue.prompt, "prompt 0-0", "back on TV for the rebound")
 
-  G.armBuzzer(room, 0)
-  G.buzz(room, "p1", 10)
-  assert.equal(G.projectState(room, "player", "p1").clue.prompt, "prompt 0-0", "answering from memory needs a memory")
-  assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
+    // Re-buzz and correct answer: prompt returns with the answer.
+    G.buzz(room, "p0", 20)
+    assert.equal(G.projectState(room, "display").clue.prompt, "")
+    G.judge(room, true)
+    assert.equal(G.projectState(room, "display").clue.prompt, "prompt 0-0")
+    assert.equal(G.projectState(room, "display").clue.answer, "answer 0-0")
+  })
 
-  G.revealAnswer(room)
-  assert.equal(G.projectState(room, "player", "p0").clue.answer, "answer 0-0", "and the answer has nowhere else to appear")
-})
+  test("with no TV the phone keeps the clue, whatever the phone settings say", () => {
+    // The two settings that take the clue off a phone both assume the big screen
+    // still has it. With no big screen, obeying them would leave the words
+    // nowhere at all — so they are overridden rather than combined.
+    const room = setup(2, { noScreen: true, mirrorClue: false, hideOnBuzz: true })
+    G.selectClue(room, 0, 0)
+    assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
 
-test("the board reaches a phone without leaking what is on the tiles", () => {
-  // Drawing the board on a phone is a client-side change resting on this: the
-  // grid was always sent, and it must stay as redacted as it was on the TV.
-  const room = setup(2, { noScreen: true })
-  const mine = G.projectState(room, "player", "p0")
-  assert.ok(mine.board.round.categories.length >= 2)
-  assert.equal(mine.board.round.categories[0].clues[0].value, 200)
-  assert.equal(mine.board.round.categories[0].clues[0].prompt, undefined, "an unplayed tile keeps its contents")
-  assert.ok(!JSON.stringify(mine.board).includes("prompt 0-0"))
-})
+    G.armBuzzer(room, 0)
+    G.buzz(room, "p1", 10)
+    assert.equal(G.projectState(room, "player", "p1").clue.prompt, "prompt 0-0", "answering from memory needs a memory")
+    assert.equal(G.projectState(room, "player", "p0").clue.prompt, "prompt 0-0")
 
-test("hideOnBuzz is off unless asked for", () => {
-  const room = setup(2)
-  G.selectClue(room, 0, 0)
-  G.armBuzzer(room, 0)
-  G.buzz(room, "p1", 10)
-  assert.equal(G.projectState(room, "player", "p1").clue.prompt, "prompt 0-0", "the default keeps it up")
-})
+    G.revealAnswer(room)
+    assert.equal(G.projectState(room, "player", "p0").clue.answer, "answer 0-0", "and the answer has nowhere else to appear")
+  })
 
-/**
- * The builder works on a local copy of a board and renders before the room's
- * first snapshot arrives, so `src/lib/board.js` keeps its own copy of the
- * shapes. Two copies drift, and this one has twice: settings added on the
- * relay went missing from the builder's defaults, and tie-breaks became a list
- * on one side and stayed a single clue on the other — which showed up as being
- * allowed only one tie-break question, with the one already written invisible.
- */
-test("the builder's mirror of the rules matches the relay's", async () => {
-  const board = await import("../src/lib/board.js")
-  assert.deepEqual(
-    Object.keys(board.DEFAULT_SETTINGS).sort(),
-    Object.keys(G.DEFAULTS).sort(),
-    "a setting the builder does not know about renders as an uncontrolled input",
-  )
-})
+  test("the board reaches a phone without leaking what is on the tiles", () => {
+    // Drawing the board on a phone is a client-side change resting on this: the
+    // grid was always sent, and it must stay as redacted as it was on the TV.
+    const room = setup(2, { noScreen: true })
+    const mine = G.projectState(room, "player", "p0")
+    assert.ok(mine.board.round.categories.length >= 2)
+    assert.equal(mine.board.round.categories[0].clues[0].value, 200)
+    assert.equal(mine.board.round.categories[0].clues[0].prompt, undefined, "an unplayed tile keeps its contents")
+    assert.ok(!JSON.stringify(mine.board).includes("prompt 0-0"))
+  })
 
-test("the builder's board shape matches the relay's", async () => {
-  const board = await import("../src/lib/board.js")
-  const mine = board.makeBoard()
-  const theirs = G.makeBoard()
+  test("hideOnBuzz is off unless asked for", () => {
+    const room = setup(2)
+    G.selectClue(room, 0, 0)
+    G.armBuzzer(room, 0)
+    G.buzz(room, "p1", 10)
+    assert.equal(G.projectState(room, "player", "p1").clue.prompt, "prompt 0-0", "the default keeps it up")
+  })
 
-  // `final` is added by the relay's normaliser rather than its constructor, so
-  // compare what both sides actually build.
-  const keys = (o) => Object.keys(o).sort()
-  assert.deepEqual(keys(mine).filter((k) => k !== "final"), keys(theirs).filter((k) => k !== "final"))
-  assert.ok(Array.isArray(mine.tiebreaks), "tie-breaks are a list on both sides")
-  assert.equal(board.MAX_TIEBREAKS, G.MAX_TIEBREAKS)
-})
+  /**
+   * The builder works on a local copy of a board and renders before the room's
+   * first snapshot arrives, so `src/lib/board.js` keeps its own copy of the
+   * shapes. Two copies drift, and this one has twice: settings added on the
+   * relay went missing from the builder's defaults, and tie-breaks became a list
+   * on one side and stayed a single clue on the other — which showed up as being
+   * allowed only one tie-break question, with the one already written invisible.
+   */
+  test("the builder's mirror of the rules matches the relay's", async () => {
+    const board = await import("../src/lib/board.js")
+    assert.deepEqual(
+      Object.keys(board.DEFAULT_SETTINGS).sort(),
+      Object.keys(G.DEFAULTS).sort(),
+      "a setting the builder does not know about renders as an uncontrolled input",
+    )
+  })
 
-test("a board still carrying the old single tie-break shows it, rather than an empty box", async () => {
-  const { tiebreaksOf } = await import("../src/lib/board.js")
-  const legacy = { tiebreak: { prompt: "Written before this was a list", answer: "still here" } }
-  assert.deepEqual(tiebreaksOf(legacy), [legacy.tiebreak], "the question already written is what you see")
+  test("the builder's board shape matches the relay's", async () => {
+    const board = await import("../src/lib/board.js")
+    const mine = board.makeBoard()
+    const theirs = G.makeBoard()
 
-  // A new board, and one whose legacy slot was never filled, both start with a
-  // single empty slot to type into.
-  assert.equal(tiebreaksOf({}).length, 1)
-  assert.equal(tiebreaksOf({ tiebreak: { prompt: "", answer: "" } })[0].prompt, "")
-  // And the list wins once it exists.
-  assert.equal(tiebreaksOf({ tiebreaks: [{ prompt: "a" }, { prompt: "b" }], tiebreak: { prompt: "old" } }).length, 2)
-})
+    // `final` is added by the relay's normaliser rather than its constructor, so
+    // compare what both sides actually build.
+    const keys = (o) => Object.keys(o).sort()
+    assert.deepEqual(keys(mine).filter((k) => k !== "final"), keys(theirs).filter((k) => k !== "final"))
+    assert.ok(Array.isArray(mine.tiebreaks), "tie-breaks are a list on both sides")
+    assert.equal(board.MAX_TIEBREAKS, G.MAX_TIEBREAKS)
+  })
 
-test("a tie-break slot is labelled by what it is for, not just its number", async () => {
-  const { tiebreakRole } = await import("../src/lib/board.js")
+  test("a board still carrying the old single tie-break shows it, rather than an empty box", async () => {
+    const { tiebreaksOf } = await import("../src/lib/board.js")
+    const legacy = { tiebreak: { prompt: "Written before this was a list", answer: "still here" } }
+    assert.deepEqual(tiebreaksOf(legacy), [legacy.tiebreak], "the question already written is what you see")
 
-  // With a survey there are two play-offs, and the slots are drawn in order.
-  const withSurvey = { survey: { enabled: true } }
-  assert.match(tiebreakRole(withSurvey, 0), /after the final.*seat in the survey/)
-  assert.match(tiebreakRole(withSurvey, 1), /after the survey.*for the win/)
-  assert.match(tiebreakRole(withSurvey, 2), /spare/)
+    // A new board, and one whose legacy slot was never filled, both start with a
+    // single empty slot to type into.
+    assert.equal(tiebreaksOf({}).length, 1)
+    assert.equal(tiebreaksOf({ tiebreak: { prompt: "", answer: "" } })[0].prompt, "")
+    // And the list wins once it exists.
+    assert.equal(tiebreaksOf({ tiebreaks: [{ prompt: "a" }, { prompt: "b" }], tiebreak: { prompt: "old" } }).length, 2)
+  })
 
-  // Without one there is only ever the play-off for the win.
-  const noSurvey = { survey: { enabled: false } }
-  assert.match(tiebreakRole(noSurvey, 0), /after the final.*for the win/)
-  assert.match(tiebreakRole(noSurvey, 1), /spare/)
+  test("a tie-break slot is labelled by what it is for, not just its number", async () => {
+    const { tiebreakRole } = await import("../src/lib/board.js")
 
-  // Past the named ones everything is a spare rather than undefined.
-  assert.match(tiebreakRole(withSurvey, 9), /spare/)
-})
+    // With a survey there are two play-offs, and the slots are drawn in order.
+    const withSurvey = { survey: { enabled: true } }
+    assert.match(tiebreakRole(withSurvey, 0), /after the final.*seat in the survey/)
+    assert.match(tiebreakRole(withSurvey, 1), /after the survey.*for the win/)
+    assert.match(tiebreakRole(withSurvey, 2), /spare/)
 
-/**
- * The clue bank.
- *
- * A source, not a dependency. Boards are self-contained documents everywhere
- * else here and results name the clues that were played, so a bank entry must
- * never reach backwards into a board somebody already ran.
- */
-test("a clue taken from the bank is a copy, not a reference", () => {
-  const entry = G.bankClue(
-    { prompt: "Black, veined with gold", answer: "marble", value: 400, media: null, answerMedia: null },
-    { category: "STONE", ownerId: "u1" },
-  )
-  assert.equal(entry.category, "STONE")
-  assert.equal(entry.ownerId, "u1")
+    // Without one there is only ever the play-off for the win.
+    const noSurvey = { survey: { enabled: false } }
+    assert.match(tiebreakRole(noSurvey, 0), /after the final.*for the win/)
+    assert.match(tiebreakRole(noSurvey, 1), /spare/)
 
-  const clue = G.clueFromBank(entry, 600)
-  assert.notEqual(clue.id, entry.id, "its own identity, or editing one would edit both")
-  assert.equal(clue.value, 600, "the tile's value wins over the one it was saved at")
-  assert.equal(clue.status, "open")
-  assert.equal(clue.nitro, false, "nitro belongs to the board's shape, not the question")
+    // Past the named ones everything is a spare rather than undefined.
+    assert.match(tiebreakRole(withSurvey, 9), /spare/)
+  })
 
-  // Editing the copy leaves the bank alone, which is the whole point.
-  clue.prompt = "Something else entirely"
-  assert.equal(entry.prompt, "Black, veined with gold")
-})
+  /**
+   * The clue bank.
+   *
+   * A source, not a dependency. Boards are self-contained documents everywhere
+   * else here and results name the clues that were played, so a bank entry must
+   * never reach backwards into a board somebody already ran.
+   */
+  test("a clue taken from the bank is a copy, not a reference", () => {
+    const entry = G.bankClue(
+      { prompt: "Black, veined with gold", answer: "marble", value: 400, media: null, answerMedia: null },
+      { category: "STONE", ownerId: "u1" },
+    )
+    assert.equal(entry.category, "STONE")
+    assert.equal(entry.ownerId, "u1")
 
-test("a clue with no question is not worth keeping", () => {
-  assert.equal(G.bankClue({ prompt: "   ", answer: "marble" }), null)
-  assert.equal(G.bankClue(null), null)
-  assert.equal(G.bankClue(undefined, { category: "STONE" }), null)
-})
+    const clue = G.clueFromBank(entry, 600)
+    assert.notEqual(clue.id, entry.id, "its own identity, or editing one would edit both")
+    assert.equal(clue.value, 600, "the tile's value wins over the one it was saved at")
+    assert.equal(clue.status, "open")
+    assert.equal(clue.nitro, false, "nitro belongs to the board's shape, not the question")
 
-test("a board remembers which shelf it is on", () => {
-  const board = G.normaliseBoard({ id: "b", title: "Pub night", folder: "The Crown", rounds: [] })
-  assert.equal(board.folder, "The Crown")
-  // Unfiled is the default, not an error.
-  assert.equal(G.normaliseBoard({ id: "b", title: "t", rounds: [] }).folder, "")
-})
+    // Editing the copy leaves the bank alone, which is the whole point.
+    clue.prompt = "Something else entirely"
+    assert.equal(entry.prompt, "Black, veined with gold")
+  })
+
+  test("a clue with no question is not worth keeping", () => {
+    assert.equal(G.bankClue({ prompt: "   ", answer: "marble" }), null)
+    assert.equal(G.bankClue(null), null)
+    assert.equal(G.bankClue(undefined, { category: "STONE" }), null)
+  })
+
+  test("a board remembers which shelf it is on", () => {
+    const board = G.normaliseBoard({ id: "b", title: "Pub night", folder: "The Crown", rounds: [] })
+    assert.equal(board.folder, "The Crown")
+    // Unfiled is the default, not an error.
+    assert.equal(G.normaliseBoard({ id: "b", title: "t", rounds: [] }).folder, "")
+  })

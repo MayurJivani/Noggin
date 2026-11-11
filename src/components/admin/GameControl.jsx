@@ -198,8 +198,8 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
                     label="Hide clue once buzzed"
                     hint={
                       state.settings.hideOnBuzz
-                        ? "Buzz and the words go, so you answer from memory. The big screen keeps it."
-                        : "Whoever buzzed can keep reading it while they think."
+                          ? "Buzz and the words go from both the TV and phones, so you answer from memory."
+                          : "Whoever buzzed can keep reading it while they think."
                     }
                   />
                 )}
@@ -291,7 +291,7 @@ function ResultsLink() {
     fetch(`${getRelayOrigin()}/results`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => live && setResult(j?.results?.[0] ?? null))
-      .catch(() => {})
+      .catch(() => { })
     return () => {
       live = false
     }
@@ -432,15 +432,14 @@ function MiniBoard({ state, send }) {
                   onClick={() => send("clue:select", { catIndex: ci, clueIndex: qi })}
                   title={clue.prompt || ""}
                   style={{ fontSize: `clamp(12px, ${Math.max(0.7, 1.7 - cols * 0.08)}vw, 26px)` }}
-                  className={`relative min-h-[2rem] rounded font-value tabular-nums transition-colors ${
-                    active
+                  className={`relative min-h-[2rem] rounded font-value tabular-nums transition-colors ${active
                       ? "bg-gold text-onyx"
                       : played
                         ? "bg-black/30 text-gold-dim/40 line-through decoration-gold-dim/30"
                         : live
                           ? "bg-panel-2 text-gold/85 hover:bg-royal hover:text-gold"
                           : "bg-panel-2 text-gold/40"
-                  }`}
+                    }`}
                 >
                   {clue.value}
                   {clue.nitro && !played && <span className="absolute right-1 top-0.5 text-[0.6rem] text-live">✦</span>}
@@ -1024,9 +1023,8 @@ function BuzzerCheck({ state, send }) {
         {waiting.map((p) => (
           <div
             key={p.id}
-            className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] ${
-              p.connected ? "border-edge" : "border-bad/50 bg-bad/5"
-            }`}
+            className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] ${p.connected ? "border-edge" : "border-bad/50 bg-bad/5"
+              }`}
           >
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.connected ? "bg-good" : "bg-bad"}`} />
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
@@ -1116,9 +1114,8 @@ function BuzzerPanel({ state, send, now }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="label">Buzzer</span>
         <span
-          className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-            state.paused ? "bg-gold/20 text-gold" : buzzer.armed ? "bg-good/20 text-good animate-glow" : "bg-black/30 text-faint"
-          }`}
+          className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${state.paused ? "bg-gold/20 text-gold" : buzzer.armed ? "bg-good/20 text-good animate-glow" : "bg-black/30 text-faint"
+            }`}
         >
           {state.paused ? "held" : buzzer.armed ? "open" : "locked"}
         </span>
@@ -1209,9 +1206,8 @@ function BuzzerPanel({ state, send, now }) {
           {buzzer.order.map((e, i) => (
             <button
               key={e.playerId}
-              className={`rounded-md border px-2 py-1 text-[11px] ${
-                i === 0 ? "border-live text-live" : "border-edge text-muted hover:border-violet"
-              }`}
+              className={`rounded-md border px-2 py-1 text-[11px] ${i === 0 ? "border-live text-live" : "border-edge text-muted hover:border-violet"
+                }`}
               title="Give this player the floor instead"
               onClick={() => send("judge", { correct: true, playerId: e.playerId })}
             >
@@ -1285,9 +1281,8 @@ function Soundboard({ state, send }) {
         {BOARD_CUES.map((cue) => (
           <button
             key={cue.id}
-            className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 transition-colors ${
-              flash === cue.id ? "border-gold bg-royal/60" : "border-edge hover:border-gold-dim"
-            }`}
+            className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 transition-colors ${flash === cue.id ? "border-gold bg-royal/60" : "border-edge hover:border-gold-dim"
+              }`}
             onClick={() => fire(cue.id)}
             title={cue.label}
           >
@@ -1677,9 +1672,8 @@ function SurveyTurnControls({ state, send, f, now = () => Date.now() }) {
           return (
             <div
               key={a.index}
-              className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
-                by ? "border-good/50 bg-good/10" : "border-edge"
-              }`}
+              className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${by ? "border-good/50 bg-good/10" : "border-edge"
+                }`}
             >
               <span className="w-5 shrink-0 text-center font-value text-[13px] text-gold-dim">{a.index + 1}</span>
               <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{a.text}</span>
@@ -1695,9 +1689,8 @@ function SurveyTurnControls({ state, send, f, now = () => Date.now() }) {
                   <button
                     key={id}
                     onClick={() => send("survey:mark", { q: f.index, index: a.index, unitId: id })}
-                    className={`rounded-md border px-2 py-1 text-[10px] ${
-                      by === id ? "border-good bg-good/20 text-good" : "border-edge text-muted hover:border-gold hover:text-gold"
-                    }`}
+                    className={`rounded-md border px-2 py-1 text-[10px] ${by === id ? "border-good bg-good/20 text-good" : "border-edge text-muted hover:border-gold hover:text-gold"
+                      }`}
                   >
                     {name(id)}
                   </button>
@@ -1792,9 +1785,8 @@ function SurveyControls({ state, send, f }) {
             key={a.index}
             disabled={a.open}
             onClick={() => send("survey:reveal", { index: a.index })}
-            className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
-              a.open ? "border-good/50 bg-good/10" : "border-edge hover:border-gold"
-            }`}
+            className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${a.open ? "border-good/50 bg-good/10" : "border-edge hover:border-gold"
+              }`}
           >
             <span className="w-5 shrink-0 text-center font-value text-[13px] text-gold-dim">{a.index + 1}</span>
             <span className={`min-w-0 flex-1 truncate text-[13px] ${a.open ? "text-muted line-through" : "text-ink"}`}>{a.text}</span>

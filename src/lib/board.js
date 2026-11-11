@@ -17,7 +17,7 @@ export const DEFAULT_VALUES = [200, 400, 600, 800, 1000]
  */
 export const DEFAULT_SETTINGS = {
   earlyPenaltyMs: 500,
-  answerSeconds: 8,
+  answerSeconds: 15,
   timeoutAsk: false,
   autoArm: true,
   readSeconds: 2,
@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS = {
   autoRebound: false,
   teams: false,
   teamBuzz: "side",
-  mirrorClue: true,
+  mirrorClue: false,
   hideOnBuzz: false,
   noScreen: false,
   pingCorrection: false,
@@ -193,13 +193,13 @@ export function patchClue(board, roundIndex, catIndex, clueIndex, patch) {
       ri !== roundIndex
         ? round
         : {
-            ...round,
-            categories: round.categories.map((cat, ci) =>
-              ci !== catIndex
-                ? cat
-                : { ...cat, clues: cat.clues.map((clue, qi) => (qi === clueIndex ? { ...clue, ...patch } : clue)) },
-            ),
-          },
+          ...round,
+          categories: round.categories.map((cat, ci) =>
+            ci !== catIndex
+              ? cat
+              : { ...cat, clues: cat.clues.map((clue, qi) => (qi === clueIndex ? { ...clue, ...patch } : clue)) },
+          ),
+        },
     ),
   }
 }

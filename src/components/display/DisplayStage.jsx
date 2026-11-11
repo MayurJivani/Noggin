@@ -313,6 +313,7 @@ function Stage({ code, state, connected, error, audioOn, spectator, broadcasting
                 wagerName={wagerName}
                 timer={timer}
                 now={() => Date.now()}
+                clueHidden={!state.revealed && !!state.settings?.hideOnBuzz && !!buzzer?.winner}
               />
             )}
           </div>
@@ -419,9 +420,8 @@ function Lobby({ code, codeHidden, spectator, broadcasting, players, teams, titl
           told what — and be able to see it landing. */}
       {check && (
         <div
-          className={`rounded-[1.2vmin] border-[0.3vmin] px-[3vmin] py-[1.4vmin] text-center ${
-            check.complete ? "border-good bg-good/10" : "border-live bg-live/10 animate-glow"
-          }`}
+          className={`rounded-[1.2vmin] border-[0.3vmin] px-[3vmin] py-[1.4vmin] text-center ${check.complete ? "border-good bg-good/10" : "border-live bg-live/10 animate-glow"
+            }`}
         >
           <div className="font-display uppercase tracking-[0.2em] text-ink" style={{ fontSize: "max(14px, calc(var(--stage) * 2.4))" }}>
             {check.complete ? "All buzzers working" : "Press your buzzer"}
@@ -447,9 +447,8 @@ function Lobby({ code, codeHidden, spectator, broadcasting, players, teams, titl
                 return (
                   <span
                     key={r.id}
-                    className={`rounded-full border px-[1.6vmin] py-[0.5vmin] font-display animate-tile-in ${
-                      r.place === 1 ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"
-                    }`}
+                    className={`rounded-full border px-[1.6vmin] py-[0.5vmin] font-display animate-tile-in ${r.place === 1 ? "border-gold bg-gold/15 text-gold" : "border-edge text-muted"
+                      }`}
                     style={{ fontSize: "max(10px, calc(var(--stage) * 1.5))", animationDelay: `${(r.place - 1) * 90}ms` }}
                   >
                     {r.place}. {who.name}
@@ -517,9 +516,8 @@ function Lobby({ code, codeHidden, spectator, broadcasting, players, teams, titl
           {players.map((p, i) => (
             <div
               key={p.id}
-              className={`rounded-full border border-gold-deep/40 bg-royal/40 font-display text-ink animate-tile-in ${
-                players.length > 12 ? "px-[1.4vmin] py-[0.5vmin]" : "px-[2.4vmin] py-[0.9vmin]"
-              }`}
+              className={`rounded-full border border-gold-deep/40 bg-royal/40 font-display text-ink animate-tile-in ${players.length > 12 ? "px-[1.4vmin] py-[0.5vmin]" : "px-[2.4vmin] py-[0.9vmin]"
+                }`}
               style={{
                 fontSize: `max(11px, calc(var(--stage) * ${players.length > 24 ? 1.05 : players.length > 12 ? 1.3 : 1.7}))`,
                 animationDelay: `${Math.min(i, 15) * 60}ms`,
@@ -546,6 +544,7 @@ function Lobby({ code, codeHidden, spectator, broadcasting, players, teams, titl
 function Tiebreak({ state, rows }) {
   const tb = state.tiebreak
   const name = (id) => rows.find((r) => r.id === id)?.name ?? "?"
+  const clueHidden = !state.revealed && !!state.settings?.hideOnBuzz && !!state.buzzer?.winner
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-[3vmin] px-[6vmin] text-center">
@@ -559,9 +558,8 @@ function Tiebreak({ state, rows }) {
           return (
             <div
               key={id}
-              className={`rounded-[1.2vmin] border-[0.35vmin] px-[3vmin] py-[1.2vmin] font-display uppercase transition-all ${
-                out ? "border-edge text-faint opacity-50 line-through" : "border-gold bg-royal/40 text-gold"
-              }`}
+              className={`rounded-[1.2vmin] border-[0.35vmin] px-[3vmin] py-[1.2vmin] font-display uppercase transition-all ${out ? "border-edge text-faint opacity-50 line-through" : "border-gold bg-royal/40 text-gold"
+                }`}
               style={{ fontSize: "max(14px, calc(var(--stage) * 2.6))" }}
             >
               {name(id)}
@@ -572,14 +570,18 @@ function Tiebreak({ state, rows }) {
 
       <VeinLine className="w-[40vmin]" height={16} />
 
-      {state.clue?.prompt ? (
-        <p className="max-w-[42ch] font-display leading-[1.16] text-ink" style={{ fontSize: "max(20px, calc(var(--stage) * 4))" }}>
-          {state.clue.prompt}
-        </p>
+        {!clueHidden && state.clue?.prompt ? (
+      <p className="max-w-[42ch] font-display leading-[1.16] text-ink" style={{ fontSize: "max(20px, calc(var(--stage) * 4))" }}>
+        {state.clue.prompt}
+      </p>
+      ) : clueHidden && !state.revealed ? (
+      <p className="font-display tracking-[0.25em] uppercase text-faint animate-rise text-center" style={{ fontSize: "max(14px, calc(var(--stage) * 2))" }}>
+        Question hidden
+      </p>
       ) : (
-        <p className="text-muted" style={{ fontSize: "max(13px, calc(var(--stage) * 2))" }}>
-          First correct answer takes it.
-        </p>
+      <p className="text-muted" style={{ fontSize: "max(13px, calc(var(--stage) * 2))" }}>
+        First correct answer takes it.
+      </p>
       )}
 
       {state.revealed && state.clue?.answer && (

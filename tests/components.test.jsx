@@ -533,3 +533,14 @@ test("the big screen never shows a clue's file name", () => {
     assert.ok(!card.includes("the_answer"), kind)
   }
 })
+
+test("ClueCard hides the question and media when someone buzzed with hideOnBuzz", () => {
+  const card = text(<ClueCard clue={{ id: "c", category: "Science", prompt: "Secret question", media: { kind: "image", url: "https://x.test/img.png" } }} stake={200} clueHidden={true} revealed={false} />)
+  assert.ok(!card.includes("Secret question"))
+  assert.ok(card.includes("Question hidden"))
+
+  // When revealed, it shows the question and answer
+  const revealedCard = text(<ClueCard clue={{ id: "c", category: "Science", prompt: "Secret question", answer: "Secret answer" }} stake={200} clueHidden={true} revealed={true} />)
+  assert.ok(revealedCard.includes("Secret question"))
+  assert.ok(revealedCard.includes("Secret answer"))
+})

@@ -593,6 +593,20 @@ export function Builder({ board, setBoard, roundIndex, setRoundIndex, settings, 
               <input
                 type="checkbox"
                 className="mt-0.5"
+                checked={!!settings.hideOnBuzz}
+                onChange={(e) => onSettings({ hideOnBuzz: e.target.checked })}
+              />
+              <span>
+                Hide clue once buzzed
+                <span className="block text-[10px] text-faint">
+                  buzz and the words go from both the TV and phones, so players answer from memory
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-[12px] text-muted">
+              <input
+                type="checkbox"
+                className="mt-0.5"
                 checked={settings.reactions !== false}
                 onChange={(e) => onSettings({ reactions: e.target.checked })}
               />

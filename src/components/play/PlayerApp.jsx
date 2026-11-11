@@ -500,60 +500,60 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
         ? { text: "Survey — that's the round", tone: "dim" }
         : { text: "Survey — next side up", tone: "dim" }
     : survey
-    ? iHoldIt
-      ? { text: "You're in — type it", tone: "live" }
-      : buzzer.armed
-        ? { text: "Survey — buzz to answer", tone: "good" }
-        : { text: "Survey — wait for it", tone: "dim" }
-    : tb
-    ? !inTiebreak
-      ? { text: "Tie-break: watch", tone: "dim" }
-      : tbOut
-        ? { text: "Out of the tie-break", tone: "dim" }
-        : iHoldIt
-          ? { text: "You're in — to win it", tone: "live" }
-          : buzzer.armed
-            ? { text: "Sudden death — buzz!", tone: "live" }
-            : { text: "Tie-break: wait for it", tone: "good" }
-    : testing
-    ? heard
-      ? { text: "Buzzer works ✓", tone: "good" }
-      : { text: "Buzzer test — press it", tone: "live" }
-    : settling
-    ? { text: "In: settling the race", tone: "live" }
-    : state.paused
-    ? { text: "Paused", tone: "dim" }
-    : iHoldIt
-    ? { text: "You're in — answer!", tone: "live" }
-    : spent
-      ? { text: team ? "Your team is out this clue" : "Out this clue", tone: "dim" }
-      : onPenalty
-        ? { text: "Too early", tone: "bad" }
-        : lifeline
-          ? {
-              // "Go" would be a lie while the clock is still waiting on the
-              // friend to pick up — see `grantLifeline`.
-              text:
-                lifeline.playerId === me?.id
-                  ? lifeline.endsAt
-                    ? "Your call — go"
-                    : "Dial — your clock starts when they answer"
-                  : "Someone's on the phone",
-              tone: "amethyst",
-            }
-          : buzzer.armed
-            ? { text: "Buzzers open", tone: "good" }
-            : phase === "clue"
-              ? { text: "Wait for it…", tone: "dim" }
-              : phase === "lobby"
-                ? { text: "Waiting to start", tone: "dim" }
-                : phase === "ended"
-                  ? { text: "That's the game", tone: "dim" }
-                  // "Watch the screen" is a lie in a room without one, and the
-                  // phone it is written on is the screen being talked about.
-                  : noScreen
-                    ? { text: "The host is picking", tone: "dim" }
-                    : { text: "Watch the screen", tone: "dim" }
+      ? iHoldIt
+        ? { text: "You're in — type it", tone: "live" }
+        : buzzer.armed
+          ? { text: "Survey — buzz to answer", tone: "good" }
+          : { text: "Survey — wait for it", tone: "dim" }
+      : tb
+        ? !inTiebreak
+          ? { text: "Tie-break: watch", tone: "dim" }
+          : tbOut
+            ? { text: "Out of the tie-break", tone: "dim" }
+            : iHoldIt
+              ? { text: "You're in — to win it", tone: "live" }
+              : buzzer.armed
+                ? { text: "Sudden death — buzz!", tone: "live" }
+                : { text: "Tie-break: wait for it", tone: "good" }
+        : testing
+          ? heard
+            ? { text: "Buzzer works ✓", tone: "good" }
+            : { text: "Buzzer test — press it", tone: "live" }
+          : settling
+            ? { text: "In: settling the race", tone: "live" }
+            : state.paused
+              ? { text: "Paused", tone: "dim" }
+              : iHoldIt
+                ? { text: "You're in — answer!", tone: "live" }
+                : spent
+                  ? { text: team ? "Your team is out this clue" : "Out this clue", tone: "dim" }
+                  : onPenalty
+                    ? { text: "Too early", tone: "bad" }
+                    : lifeline
+                      ? {
+                        // "Go" would be a lie while the clock is still waiting on the
+                        // friend to pick up — see `grantLifeline`.
+                        text:
+                          lifeline.playerId === me?.id
+                            ? lifeline.endsAt
+                              ? "Your call — go"
+                              : "Dial — your clock starts when they answer"
+                            : "Someone's on the phone",
+                        tone: "amethyst",
+                      }
+                      : buzzer.armed
+                        ? { text: "Buzzers open", tone: "good" }
+                        : phase === "clue"
+                          ? { text: "Wait for it…", tone: "dim" }
+                          : phase === "lobby"
+                            ? { text: "Waiting to start", tone: "dim" }
+                            : phase === "ended"
+                              ? { text: "That's the game", tone: "dim" }
+                              // "Watch the screen" is a lie in a room without one, and the
+                              // phone it is written on is the screen being talked about.
+                              : noScreen
+                                ? { text: "The host is picking", tone: "dim" }
+                                : { text: "Watch the screen", tone: "dim" }
 
   const tone = {
     live: "text-live",
@@ -660,7 +660,7 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
           ) : (
             clueHidden && (
               <div className="font-display text-[14px] leading-snug text-muted">
-                {iHoldIt ? "Answer from memory — it's still on the big screen." : "Hidden while someone answers."}
+                {iHoldIt ? "Answer from memory." : "Hidden while someone answers."}
               </div>
             )
           )}
@@ -687,18 +687,18 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
             <NitroWait clue={clue} name={nameOf(state, state.wager?.teamId ?? state.wager?.playerId)} stake={state.stake} />
           </div>
         ) : (
-        <BuzzerButton
-          canBuzz={canBuzz && connected}
-          iHoldIt={iHoldIt || heard}
-          label={testing ? (heard ? "✓" : "TEST") : iHoldIt ? "GO" : "BUZZ"}
-          watching={!!tb && !inTiebreak}
-          disabled={!testing && (spent || onPenalty)}
-          pressed={pressed}
-          onPress={press}
-          onEvent={note}
-          offline={!connected}
-          roomy={!showClue}
-        />
+          <BuzzerButton
+            canBuzz={canBuzz && connected}
+            iHoldIt={iHoldIt || heard}
+            label={testing ? (heard ? "✓" : "TEST") : iHoldIt ? "GO" : "BUZZ"}
+            watching={!!tb && !inTiebreak}
+            disabled={!testing && (spent || onPenalty)}
+            pressed={pressed}
+            onPress={press}
+            onEvent={note}
+            offline={!connected}
+            roomy={!showClue}
+          />
         )}
       </div>
 
@@ -837,9 +837,8 @@ function Standing({ players, teams, me }) {
         {rows.map((row, i) => (
           <div
             key={row.id}
-            className={`flex shrink-0 items-baseline gap-1.5 rounded-lg border px-2 py-1 ${
-              row.id === mine ? "border-gold-dim/60 bg-gold/10" : "border-edge bg-black/25"
-            }`}
+            className={`flex shrink-0 items-baseline gap-1.5 rounded-lg border px-2 py-1 ${row.id === mine ? "border-gold-dim/60 bg-gold/10" : "border-edge bg-black/25"
+              }`}
           >
             <span className="text-[10px] tabular-nums text-faint">{i + 1}</span>
             <span className="max-w-[9ch] truncate text-[11px] text-ink">{row.name}</span>
@@ -922,11 +921,9 @@ function BuzzerButton({ canBuzz, iHoldIt, disabled, pressed, onPress, onEvent, o
       onTouchStart={fire}
       onClick={fire}
       onContextMenu={(e) => e.preventDefault()}
-      className={`relative aspect-square ${
-        roomy ? "w-[min(78vw,42vh,26rem)]" : "w-[min(72vw,30vh,20rem)]"
-      } max-h-full select-none rounded-full border-4 bg-gradient-to-b shadow-2xl shadow-black/50 transition-transform duration-75 ${face} ${
-        pressed ? "scale-95" : "active:scale-95"
-      }`}
+      className={`relative aspect-square ${roomy ? "w-[min(78vw,42vh,26rem)]" : "w-[min(72vw,30vh,20rem)]"
+        } max-h-full select-none rounded-full border-4 bg-gradient-to-b shadow-2xl shadow-black/50 transition-transform duration-75 ${face} ${pressed ? "scale-95" : "active:scale-95"
+        }`}
       style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTapHighlightColor: "transparent" }}
     >
       {canBuzz && <span className="pointer-events-none absolute inset-0 rounded-full border-2 border-gold animate-pulse-ring" />}

@@ -89,17 +89,16 @@ export const DEFAULTS = {
    */
   mirrorClue: true,
   /**
-   * Take the clue off the phones the moment somebody buzzes.
+   * Take the clue off the TV screen and phones the moment somebody buzzes.
    *
    * Off by default, because it changes what the game rewards. On, you answer
    * from memory: buzzing is a commitment made *before* you have the words in
-   * front of you, and the stall-and-read is over. It only touches phones — the
-   * big screen keeps the clue up, because the room has to be able to follow
-   * what is being answered, and hiding it there would punish everybody for one
-   * person's buzz.
+   * front of you, and the stall-and-read is over. It hides the clue from both
+   * the big screen and players' phones.
    *
    * The clue comes back on its own when the buzzer reopens after a miss, since
-   * this keys on somebody actually holding the buzz.
+   * this keys on somebody actually holding the buzz. Once revealed, the prompt
+   * returns alongside the answer.
    */
   hideOnBuzz: false,
   /**
@@ -2828,36 +2827,37 @@ export function projectState(room, role, viewerId = null) {
   const mirrored = privileged || role !== "player" || noScreen || room.settings.mirrorClue !== false
   /*
     Withheld while somebody holds the buzz — see `hideOnBuzz`. Enforced here
-    rather than by the phone hiding what it was sent, for the same reason
+    rather than by the phone/screen hiding what it was sent, for the same reason
     `mirrorClue` is: "hidden" that is one devtools panel away is not hidden.
+    When enabled, it withholds the clue from both the phones and the TV screen.
   */
-  const buzzedOut = !privileged && role === "player" && !noScreen && !!room.settings.hideOnBuzz && !!room.buzzer.winner
+  const buzzedOut = !privileged && (role === "player" || role === "display") && !noScreen && !!room.settings.hideOnBuzz && !!room.buzzer.winner && !room.revealed
   const hidden = !mirrored || buzzedOut || (room.phase === PHASE.WAGER && !privileged)
   const clue = tb
     ? {
-        id: "tiebreak",
-        value: 0,
-        prompt: hidden ? "" : tb.prompt,
-        media: hidden ? null : tb.media,
-        nitro: false,
-        answer: showAnswer && mirrored ? tb.answer : null,
-        answerMedia: showAnswer && mirrored ? tb.answerMedia : null,
-        catIndex: -1,
-        clueIndex: -1,
-        category: "Tie-break",
-      }
+      id: "tiebreak",
+      value: 0,
+      prompt: hidden ? "" : tb.prompt,
+      media: hidden ? null : tb.media,
+      nitro: false,
+      answer: showAnswer && mirrored ? tb.answer : null,
+      answerMedia: showAnswer && mirrored ? tb.answerMedia : null,
+      catIndex: -1,
+      clueIndex: -1,
+      category: "Tie-break",
+    }
     : active && {
-    id: active.id,
-    value: active.value,
-    prompt: hidden ? "" : active.prompt,
-    media: hidden ? null : active.media,
-    nitro: active.nitro,
-    answer: showAnswer && mirrored ? active.answer : null,
-    answerMedia: showAnswer && mirrored ? active.answerMedia : null,
-    catIndex: room.active.catIndex,
-    clueIndex: room.active.clueIndex,
-    category: round?.categories[room.active.catIndex]?.title ?? "",
-  }
+      id: active.id,
+      value: active.value,
+      prompt: hidden ? "" : active.prompt,
+      media: hidden ? null : active.media,
+      nitro: active.nitro,
+      answer: showAnswer && mirrored ? active.answer : null,
+      answerMedia: showAnswer && mirrored ? active.answerMedia : null,
+      catIndex: room.active.catIndex,
+      clueIndex: room.active.clueIndex,
+      category: round?.categories[room.active.catIndex]?.title ?? "",
+    }
 
   /*
     The viewer's own side. A player's phone needs this to find itself in the
@@ -2930,12 +2930,12 @@ export function projectState(room, role, viewerId = null) {
     tiebreak:
       room.tiebreak && room.phase === PHASE.TIEBREAK
         ? {
-            ...room.tiebreak,
-            hasClue: !!tiebreakClue(room)?.prompt?.trim(),
-            /** Which of the board's sudden-death clues is up, and how many are left. */
-            clueIndex: room.tiebreakIndex ?? 0,
-            spare: Math.max(0, tiebreaksLeft(room) - 1),
-          }
+          ...room.tiebreak,
+          hasClue: !!tiebreakClue(room)?.prompt?.trim(),
+          /** Which of the board's sudden-death clues is up, and how many are left. */
+          clueIndex: room.tiebreakIndex ?? 0,
+          spare: Math.max(0, tiebreaksLeft(room) - 1),
+        }
         : null,
     /*
       A tie is only worth breaking once the scores are final.
@@ -3004,22 +3004,22 @@ export function projectState(room, role, viewerId = null) {
     */
     teams: room.settings.teams
       ? [...room.teams.values()]
-          .map((t) => {
-            const members = membersOf(room, t.id)
-            return {
-              id: t.id,
-              name: t.name,
-              color: t.color,
-              score: t.score,
-              // A team is "here" while any one of its phones is.
-              connected: members.some((p) => p.connected),
-              lifelines: t.lifelines,
-              members: members.map((p) => p.id),
-              memberNames: members.map((p) => p.name),
-              history: (t.history ?? []).slice(-12),
-            }
-          })
-          .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+        .map((t) => {
+          const members = membersOf(room, t.id)
+          return {
+            id: t.id,
+            name: t.name,
+            color: t.color,
+            score: t.score,
+            // A team is "here" while any one of its phones is.
+            connected: members.some((p) => p.connected),
+            lifelines: t.lifelines,
+            members: members.map((p) => p.id),
+            memberNames: members.map((p) => p.name),
+            history: (t.history ?? []).slice(-12),
+          }
+        })
+        .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
       : null,
     players: [...room.players.values()]
       .map((p) => {
@@ -3125,13 +3125,13 @@ function projectSurvey(room, privileged) {
     // each — none of which anybody else may see.
     questions: privileged
       ? questions.map((qq) => ({
-          id: qq.id,
-          category: qq.category,
-          prompt: qq.prompt,
-          answers: qq.answers,
-          responses: (room.responses ?? []).filter((r) => r.q === qq.id).length,
-          tally: tallyResponses(room, qq.id),
-        }))
+        id: qq.id,
+        category: qq.category,
+        prompt: qq.prompt,
+        answers: qq.answers,
+        responses: (room.responses ?? []).filter((r) => r.q === qq.id).length,
+        tally: tallyResponses(room, qq.id),
+      }))
       : undefined,
     responses: (room.responses ?? []).length,
   }
