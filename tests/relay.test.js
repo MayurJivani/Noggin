@@ -1093,6 +1093,12 @@ test("the soundboard reaches the big screen without changing the game", async ()
   assert.equal(JSON.stringify(screen.state.players), before, "a cue is a noise, not a move")
 
   screen.drain()
+  host.send("media:control", { action: "pause" })
+  host.send("media:control", { action: "rm -rf" })
+  await settle()
+  assert.deepEqual(screen.effects.filter((e) => e.kind === "media").map((e) => e.action), ["pause"])
+
+  screen.drain()
   host.send("music:set", { on: true })
   await settle()
   assert.equal(screen.state.music, true, "the bed is state, so a reload comes back to it")

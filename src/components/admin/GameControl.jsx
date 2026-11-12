@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useCountdown } from "../../lib/useRoom"
-import { resolveMediaUrl } from "../../lib/mediaUrl"
+import { resolveMediaUrl, youtubeEmbed } from "../../lib/mediaUrl"
 import { controllerUrl, cardsUrl } from "../../lib/net"
 import { getRelayOrigin } from "../../lib/mediaUrl"
 import { BOARD_CUES, SAMPLES_ENABLED } from "../../lib/sfx"
@@ -769,6 +769,20 @@ function StagePanel({ state, send, now }) {
             </div>
           </div>
           {clue.answerMedia && <MediaPreview media={clue.answerMedia} />}
+          {[clue.media, clue.answerMedia].some((m) => m && m.kind !== "image") && (
+            <div className="mt-3 flex items-center gap-1.5">
+              <span className="label mr-1">Big screen</span>
+              {[
+                ["play", "▶ Play"],
+                ["pause", "❚❚ Pause"],
+                ["restart", "⟲ Restart"],
+              ].map(([action, text]) => (
+                <button key={action} className="btn px-2.5 py-1.5 text-[11px]" onClick={() => send("media:control", { action })}>
+                  {text}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1076,6 +1090,8 @@ function MediaPreview({ media }) {
   if (media.kind === "image") return <img src={src} alt={media.alt ?? ""} className="mt-3 max-h-40 rounded-lg border border-edge object-contain" />
   // Muted: the desk is in the same room as the speakers playing it on the big
   // screen, and two copies half a second apart is worse than none.
+  const yt = media.kind === "video" && youtubeEmbed(media.url, "&mute=1")
+  if (yt) return <iframe src={yt} title="Video clue" allow="encrypted-media; fullscreen" allowFullScreen className="mt-3 aspect-video max-h-40 rounded-lg border border-edge bg-black" />
   if (media.kind === "video") return <video src={src} controls muted playsInline className="mt-3 max-h-40 rounded-lg border border-edge bg-black" />
   return <audio src={src} controls className="mt-3 w-full" preload="metadata" />
 }

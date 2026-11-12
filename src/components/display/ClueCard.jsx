@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { resolveMediaUrl } from "../../lib/mediaUrl"
+import { resolveMediaUrl, youtubeEmbed } from "../../lib/mediaUrl"
 import { useCountdown } from "../../lib/useRoom"
 import { CornerVein, VeinLine } from "../ui/Vein"
 
@@ -207,6 +207,20 @@ import { CornerVein, VeinLine } from "../ui/Vein"
         />
       )
     }
+    const yt = media.kind === "video" && youtubeEmbed(media.url, "&autoplay=1&enablejsapi=1")
+    if (yt) {
+      return (
+        <iframe
+          data-clue-media
+          src={yt}
+          title="Video clue"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          allowFullScreen
+          className="aspect-video h-full max-h-full max-w-full rounded-[1vmin] border border-gold-deep/30 bg-black shadow-xl shadow-black/50 animate-rise"
+          style={{ animationDelay: "300ms" }}
+        />
+      )
+    }
     if (media.kind === "video") return <VideoClue src={src} />
     return <AudioClue src={src} />
   }
@@ -234,6 +248,7 @@ import { CornerVein, VeinLine } from "../ui/Vein"
 
     return (
       <video
+        data-clue-media
         ref={el}
         src={src}
         controls
@@ -268,7 +283,7 @@ import { CornerVein, VeinLine } from "../ui/Vein"
 
     return (
       <div className="flex max-h-full flex-col items-center justify-center gap-[2vmin] animate-rise" style={{ animationDelay: "260ms" }}>
-        <audio ref={audio} src={src} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
+        <audio data-clue-media ref={audio} src={src} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
         <div className="flex h-[12vmin] items-end gap-[0.8vmin]">
           {Array.from({ length: 13 }).map((_, i) => (
             <span

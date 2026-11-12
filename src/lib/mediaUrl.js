@@ -86,6 +86,44 @@ export async function uploadMedia(file, onProgress) {
   return url
 }
 
+/**
+ * Embed URL for a YouTube link, or null. Built from the parsed id only, so a
+ * pasted `javascript:` or any other page can never end up in an iframe.
+ */
+export function youtubeEmbed(url, params = "") {
+  let u
+  try {
+    u = new URL(url)
+  } catch {
+    return null
+  }
+  const host = u.hostname.replace(/^(www|m|music)\./, "")
+  const id =
+    host === "youtu.be" ? u.pathname.slice(1) : host === "youtube.com" ? (u.searchParams.get("v") ?? u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]+)/)?.[1]) : null
+  if (!/^[\w-]{11}$/.test(id ?? "")) return null
+  const start = parseInt(u.searchParams.get("t") ?? u.searchParams.get("start") ?? "", 10)
+  return `https://www.youtube-nocookie.com/embed/${id}?playsinline=1${start > 0 ? `&start=${start}` : ""}${params}`
+}
+
+/**
+ * A pasted link as board media. Deezer tracks are stored as `/deezer/<id>`
+ * rather than the preview URL, because Deezer signs those to expire in 15
+ * minutes; the relay swaps in a fresh one each time it is played.
+ */
+export function mediaFromLink(text) {
+  let u
+  try {
+    u = new URL(text.trim())
+  } catch {
+    return null
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null
+  const track = /(^|\.)deezer\.com$/.test(u.hostname) && u.pathname.match(/\/track\/(\d+)/)
+  if (track) return { kind: "audio", url: `/deezer/${track[1]}`, alt: `Deezer track ${track[1]}` }
+  if (youtubeEmbed(u.href)) return { kind: "video", url: u.href, alt: u.href }
+  return { kind: kindOf({ type: "", name: u.pathname }), url: u.href, alt: decodeURIComponent(u.pathname.split("/").pop() || u.hostname) }
+}
+
 /** Guess how a file wants to be presented on the board. */
 export function kindOf(file) {
   if (file.type.startsWith("audio/")) return "audio"

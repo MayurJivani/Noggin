@@ -16,6 +16,24 @@ import { ScoreBar } from "./ScoreBar"
 import { BuzzerBanner, BuzzOverlay, NitroSplash, LifelineOverlay, ReactionLayer, TimerRing, useReactions } from "./Overlays"
 
 /**
+ * The host's play/pause/restart, applied to every clip on screen. YouTube is
+ * driven through its iframe API, which is why those embeds ask for enablejsapi.
+ */
+function controlClueMedia(action) {
+  for (const el of document.querySelectorAll("[data-clue-media]")) {
+    if (el.tagName === "IFRAME") {
+      const call = (func, args = []) => el.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), "*")
+      if (action === "restart") call("seekTo", [0, true])
+      call(action === "pause" ? "pauseVideo" : "playVideo")
+      continue
+    }
+    if (action === "restart") el.currentTime = 0
+    if (action === "pause") el.pause()
+    else el.play().catch(() => {})
+  }
+}
+
+/**
  * The big screen. Read-only by design: it holds no game state of its own and
  * takes no input, so it can be reloaded at any point in the night and land
  * exactly where the room is.
@@ -53,6 +71,7 @@ export function DisplayStage({ code: initialCode, spectator = false }) {
   const onEffects = useCallback((effects, next) => {
     for (const fx of effects) {
       playForEffect(fx)
+      if (fx.kind === "media") controlClueMedia(fx.action)
 
       if (fx.kind === "clue-open" || fx.kind === "nitro") {
         const el = cells.current.get(`${fx.catIndex}:${fx.clueIndex}`)

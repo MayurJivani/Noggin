@@ -383,6 +383,22 @@ const http = createServer((req, res) => {
   })
 })
 
+// A full room pressing play is a burst of identical lookups; Deezer rate-limits
+// at 50 per 5 seconds. Kept well inside the 15-minute signature.
+const deezerCache = new Map()
+const DEEZER_TTL_MS = 10 * 60 * 1000
+
+async function deezerPreview(id, now = Date.now()) {
+  const hit = deezerCache.get(id)
+  if (hit && now - hit.at < DEEZER_TTL_MS) return hit.url
+  const res = await fetch(`https://api.deezer.com/track/${id}`, { signal: AbortSignal.timeout(5000) })
+  const preview = (await res.json())?.preview
+  if (typeof preview !== "string" || !preview.startsWith("https://")) return null
+  if (deezerCache.size > 2000) deezerCache.clear()
+  deezerCache.set(id, { url: preview, at: now })
+  return preview
+}
+
 async function handleRequest(req, res) {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`)
   const json = jsonFor(req)
@@ -682,6 +698,19 @@ async function handleRequest(req, res) {
       return
     }
     return serveFile(req, res, file, UPLOAD_HEADERS)
+  }
+
+  // A Deezer 30-second preview. Its URL is signed for 15 minutes, so boards keep
+  // the track id and every play is redirected to a fresh one.
+  const track = req.method === "GET" && url.pathname.match(/^\/deezer\/(\d{1,15})$/)
+  if (track) {
+    const preview = await deezerPreview(track[1]).catch(() => null)
+    if (!preview) {
+      res.writeHead(404, CORS).end("no preview")
+      return
+    }
+    res.writeHead(302, { ...CORS, Location: preview, "Cache-Control": "no-store" }).end()
+    return
   }
 
   // Last: the built site. Checked after the API routes so a page can never
@@ -1754,6 +1783,13 @@ function handleHostMessage(room, meta, ws, msg) {
     */
     case "sfx:play":
       return broadcast(room, [{ kind: "sfx", cue: String(msg.cue ?? "").slice(0, 24) }])
+
+    // Play, pause or restart whatever clip the big screen is showing. Transient
+    // for the same reason as a cue: a reloaded screen autoplays it anyway.
+    case "media:control": {
+      const action = ["play", "pause", "restart"].includes(msg.action) ? msg.action : null
+      return action && broadcast(room, [{ kind: "media", action }])
+    }
 
     // Music, by contrast, is a state: a display that reloads mid-round should
     // come back with the bed still playing rather than in silence.

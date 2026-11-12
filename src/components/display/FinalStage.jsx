@@ -1,5 +1,5 @@
 import { useCountdown } from "../../lib/useRoom"
-import { resolveMediaUrl } from "../../lib/mediaUrl"
+import { resolveMediaUrl, youtubeEmbed } from "../../lib/mediaUrl"
 import { VeinLine } from "../ui/Vein"
 
 /**
@@ -73,8 +73,19 @@ function Writing({ final, timer, now }) {
       {final.media?.kind === "image" && (
         <img src={resolveMediaUrl(final.media.url)} alt="" className="max-h-[38vh] rounded-[1vmin] border border-gold-deep/30 object-contain" />
       )}
-      {final.media?.kind === "video" && (
+      {final.media?.kind === "video" && youtubeEmbed(final.media.url) && (
+        <iframe
+          data-clue-media
+          src={youtubeEmbed(final.media.url, "&autoplay=1&enablejsapi=1")}
+          title="Video clue"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          allowFullScreen
+          className="aspect-video h-[38vh] max-w-full rounded-[1vmin] border border-gold-deep/30 bg-black"
+        />
+      )}
+      {final.media?.kind === "video" && !youtubeEmbed(final.media.url) && (
         <video
+          data-clue-media
           src={resolveMediaUrl(final.media.url)}
           autoPlay
           controls
@@ -82,7 +93,7 @@ function Writing({ final, timer, now }) {
           className="max-h-[38vh] rounded-[1vmin] border border-gold-deep/30 bg-black object-contain"
         />
       )}
-      {final.media?.kind === "audio" && <audio src={resolveMediaUrl(final.media.url)} autoPlay controls className="w-[50vmin]" />}
+      {final.media?.kind === "audio" && <audio data-clue-media src={resolveMediaUrl(final.media.url)} autoPlay controls className="w-[50vmin]" />}
 
       {seconds != null && (
         <div

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { kindOf, resolveMediaUrl, stripToRelayPath, uploadMedia } from "../../lib/mediaUrl"
+import { kindOf, mediaFromLink, resolveMediaUrl, stripToRelayPath, uploadMedia, youtubeEmbed } from "../../lib/mediaUrl"
 
 /**
  * Attach a picture, a sound or a clip to a clue.
@@ -35,7 +35,7 @@ export function MediaField({ value, onChange, label = "Media" }) {
         <div className="label">{label}</div>
         <div className="flex items-center gap-2 rounded-lg border border-edge bg-black/25 p-2">
           {value.kind === "image" && <img src={resolveMediaUrl(value.url)} alt={value.alt ?? ""} className="h-14 w-14 rounded object-cover" />}
-          {value.kind === "video" && (
+          {value.kind === "video" && !youtubeEmbed(value.url) && (
             // Muted and unplayed by default: the builder is often open with the
             // big screen already live in the next room.
             <video src={resolveMediaUrl(value.url)} className="h-14 w-24 rounded bg-black object-contain" controls muted preload="metadata" />
@@ -81,6 +81,18 @@ export function MediaField({ value, onChange, label = "Media" }) {
           }}
         />
       </div>
+      <input
+        className="field text-[11px]"
+        placeholder="…or paste a Deezer track, YouTube or file link"
+        aria-label={`${label} link`}
+        onPaste={(e) => {
+          const m = mediaFromLink(e.clipboardData.getData("text"))
+          if (!m) return setError("Not a link Noggin can play.")
+          e.preventDefault()
+          setError(null)
+          onChange(m)
+        }}
+      />
       {error && <div className="text-[11px] text-bad">{error}</div>}
     </div>
   )

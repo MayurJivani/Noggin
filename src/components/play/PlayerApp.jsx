@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useCountdown, useRoom } from "../../lib/useRoom"
-import { getRelayOrigin, resolveMediaUrl } from "../../lib/mediaUrl"
+import { getRelayOrigin, resolveMediaUrl, youtubeEmbed } from "../../lib/mediaUrl"
 import { unlock, sfx } from "../../lib/sfx"
 import { listenForRoom } from "../../lib/knockJoin"
 import { readJson, removeStore, writeJson } from "../../lib/storage"
@@ -678,7 +678,10 @@ export function Board({ state, me, connected, rtt, send, pressed, setPressed, on
           {clue.media?.kind === "audio" && <audio src={resolveMediaUrl(clue.media.url)} controls className="mt-2 w-full" preload="none" />}
           {/* Not autoplayed. Everyone is looking at the TV; a dozen phones each
               playing the same clip a second out of step is the worst outcome. */}
-          {clue.media?.kind === "video" && (
+          {clue.media?.kind === "video" && youtubeEmbed(clue.media.url) && (
+            <iframe src={youtubeEmbed(clue.media.url)} title="Video clue" allow="encrypted-media; fullscreen" allowFullScreen className="mt-2 aspect-video w-full rounded-lg bg-black" />
+          )}
+          {clue.media?.kind === "video" && !youtubeEmbed(clue.media.url) && (
             <video src={resolveMediaUrl(clue.media.url)} controls playsInline preload="none" className="mt-2 max-h-40 w-full rounded-lg bg-black" />
           )}
           {state.revealed && clue.answer && (
