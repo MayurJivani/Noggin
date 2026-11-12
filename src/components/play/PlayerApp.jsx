@@ -31,9 +31,12 @@ export function PlayerApp() {
 
   const [debug] = useState(() => params.get("debug") === "1")
   const [code, setCode] = useState((params.get("code") ?? saved.code ?? "").toUpperCase())
-  const [name, setName] = useState(saved.name ?? "")
+  // Shaam links carry ?code=&name= so a player who already joined the party skips the form.
+  const autoName = params.get("code") ? (params.get("name") ?? "").trim().slice(0, 16) : ""
+  const autoJoin = useRef(false)
+  const [name, setName] = useState(autoName || (saved.name ?? ""))
   /** The side this phone asked for, on team night. "" = let the host place me. */
-  const [teamId, setTeamId] = useState(saved.teamId ?? "")
+  const [teamId, setTeamId] = useState(autoName ? "" : (saved.teamId ?? ""))
   const [joined, setJoined] = useState(false)
   const [error, setError] = useState(null)
   /** Local echo so the button reacts on touch, not on the round trip. */
@@ -110,12 +113,19 @@ export function PlayerApp() {
     onMessage: onReact,
     onError: (e) => {
       setError(e)
-      if (e.code === "no-room" || e.code === "kicked") setJoined(false)
+      if (e.code === "no-room" || e.code === "kicked" || (autoJoin.current && !identityRef.current)) setJoined(false)
     },
   })
 
   const identityRef = useRef(identity)
   identityRef.current = identity
+
+  useEffect(() => {
+    if (autoName && code.trim().length >= 3 && !autoJoin.current) {
+      autoJoin.current = true
+      setJoined(true)
+    }
+  }, [])
 
   useEffect(() => {
     if (identity?.playerId) writeJson(STORAGE, { playerId: identity.playerId, name, code: identity.code, teamId })
