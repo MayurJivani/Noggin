@@ -72,6 +72,7 @@ export function DisplayStage({ code: initialCode, spectator = false }) {
     for (const fx of effects) {
       playForEffect(fx)
       if (fx.kind === "media") controlClueMedia(fx.action)
+      if (fx.kind === "buzz-in" && next?.settings?.pauseOnBuzz) controlClueMedia("pause")
 
       if (fx.kind === "clue-open" || fx.kind === "nitro") {
         const el = cells.current.get(`${fx.catIndex}:${fx.clueIndex}`)

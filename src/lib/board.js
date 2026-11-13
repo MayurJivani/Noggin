@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS = {
   teamBuzz: "side",
   mirrorClue: false,
   hideOnBuzz: false,
+  pauseOnBuzz: false,
   noScreen: false,
   pingCorrection: false,
   streamer: false,

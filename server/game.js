@@ -88,6 +88,8 @@ export const DEFAULTS = {
    * and then the phones are not *hiding* the clue, they are never sent it.
    */
   mirrorClue: true,
+  /** Pause the clue's audio or video on the big screen when somebody buzzes in. */
+  pauseOnBuzz: false,
   /**
    * Take the clue off the TV screen and phones the moment somebody buzzes.
    *

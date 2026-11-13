@@ -123,7 +123,8 @@ import { CornerVein, VeinLine } from "../ui/Vein"
                 {clue.answer}
               </p>
               {clue.answerMedia && (
-                <div className="flex max-h-[22vh] min-h-0 items-center justify-center">
+                // A video has no size of its own to fall back on, so it gets a definite box.
+                <div className={`flex min-h-0 items-center justify-center ${clue.answerMedia.kind === "video" ? "h-[22vh]" : "max-h-[22vh]"}`}>
                   <Media media={clue.answerMedia} />
                 </div>
               )}

@@ -203,6 +203,17 @@ export function GameControl({ state, send, now, requests, code, savedAt, control
                     }
                   />
                 )}
+                <Toggle
+                  className="mt-2"
+                  on={!state.settings.pauseOnBuzz}
+                  onClick={() => send("settings:set", { settings: { pauseOnBuzz: !state.settings.pauseOnBuzz } })}
+                  label="Keep media playing on buzz"
+                  hint={
+                    state.settings.pauseOnBuzz
+                      ? "A buzz pauses the clip on the TV. Big screen ▶ Play carries on."
+                      : "The clip plays on while they answer."
+                  }
+                />
               </>
             )}
           </Drawer>
