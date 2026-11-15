@@ -12,11 +12,13 @@ import { VeinLine } from "../ui/Vein"
  * an open service; the copy says so rather than leaving a dead tab.
  */
 export function SignIn({ auth, what = "host a game" }) {
-  const [mode, setMode] = useState(auth.signupOpen ? "signup" : "login")
-  const [email, setEmail] = useState("")
+  // Reset links from /admin carry the code in the fragment, so it never reaches server logs.
+  const [link] = useState(() => new URLSearchParams(location.hash.slice(1)))
+  const [mode, setMode] = useState(link.get("reset") ? "forgot" : auth.signupOpen ? "signup" : "login")
+  const [email, setEmail] = useState(link.get("email") ?? "")
   const [name, setName] = useState("")
   const [password, setPassword] = useState("")
-  const [code, setCode] = useState("")
+  const [code, setCode] = useState(link.get("reset") ?? "")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   /**

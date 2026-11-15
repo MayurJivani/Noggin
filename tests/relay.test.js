@@ -1305,6 +1305,27 @@ test("a reset turns out the sessions that were already open", async () => {
   assert.equal((await me()).user, null, "a reset that leaves the old session alive has reset nothing")
 })
 
+test("only the admin can mint a reset link, and it works", async () => {
+  const email = "locked-out@example.com"
+  await signUp(email, "lost password")
+  const mint = (jar) =>
+    asHost("/auth/reset-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) }, jar)
+
+  assert.equal((await mint(cookie)).status, 403, "a plain host cannot")
+  assert.equal((await mint("")).status, 403, "nor can nobody")
+
+  const res = await mint(await signUp("mayur@futile.studio", "admin password"))
+  assert.equal(res.status, 200)
+  const { code } = await res.json()
+
+  const reset = await fetch(`http://127.0.0.1:${PORT}/auth/forgot`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code, password: "found password" }),
+  })
+  assert.equal(reset.status, 200)
+})
+
 test("a tie after the final is played off, over the wire", async (t) => {
   const host = client("host", { surface: "desk" })
   await host.ready

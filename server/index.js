@@ -769,6 +769,8 @@ async function startSession(res, req, userId, body) {
  * honest people, and `clientIp` returns null rather than lumping everyone
  * together when it cannot tell them apart.
  */
+const ADMIN_EMAIL = "mayur@futile.studio"
+
 const loginLimit = new Throttle({ limit: 8, windowMs: 15 * 60_000 })
 const addressLimit = new Throttle({ limit: 40, windowMs: 15 * 60_000 })
 
@@ -929,6 +931,24 @@ async function handleAuth(req, res, url, me) {
     }
     recordSuccess(keys)
     return startSession(res, req, user.id, { user: publicUser(user) })
+  }
+
+  // Admin-only: mints a fresh recovery code for someone else and hands it back
+  // for a reset link. Same effect as scripts/recovery-code.js, without a shell.
+  if (route === "reset-link" && req.method === "POST") {
+    if (me?.email !== ADMIN_EMAIL) return json(res, 403, { error: "Admins only." })
+    let payload
+    try {
+      payload = JSON.parse(await readBody(req, 8 * 1024))
+    } catch {
+      return json(res, 400, { error: "Bad request." })
+    }
+    const user = await store.findUserByEmail(String(payload?.email ?? "").trim().toLowerCase())
+    if (!user) return json(res, 404, { error: "No account with that email." })
+    const code = newRecoveryCode()
+    await store.updateUser(user.id, { recoveryHash: await hashRecoveryCode(code) })
+    console.log(`[auth] reset link minted for ${user.email} by ${me.email}`)
+    return json(res, 200, { email: user.email, code })
   }
 
   if (route === "logout" && req.method === "POST") {

@@ -1,0 +1,9 @@
+---
+import Layout from "../layouts/Layout.astro"
+import { ResetLinks } from "../components/admin/ResetLinks"
+import "../styles/global.css"
+---
+
+<Layout title="NOGGIN’ — admin">
+  <ResetLinks client:only="react" />
+</Layout>
