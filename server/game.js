@@ -2833,7 +2833,7 @@ export function projectState(room, role, viewerId = null) {
     `mirrorClue` is: "hidden" that is one devtools panel away is not hidden.
     When enabled, it withholds the clue from both the phones and the TV screen.
   */
-  const buzzedOut = !privileged && (role === "player" || role === "display") && !noScreen && !!room.settings.hideOnBuzz && !!room.buzzer.winner && !room.revealed
+  const buzzedOut = !privileged && (role === "player" || role === "display") && !noScreen && !!room.settings.hideOnBuzz && !!room.buzzer.winner && !room.revealed && !room.wager
   const hidden = !mirrored || buzzedOut || (room.phase === PHASE.WAGER && !privileged)
   const clue = tb
     ? {

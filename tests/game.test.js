@@ -2676,6 +2676,16 @@ test("a board written before tie-breaks were a list keeps its clue", () => {
     assert.ok(!JSON.stringify(mine.board).includes("prompt 0-0"))
   })
 
+  test("hideOnBuzz does not hide a nitro clue once the wager is locked", () => {
+    const room = setup(2, { hideOnBuzz: true })
+    room.board.rounds[0].categories[0].clues[0].nitro = true
+    G.selectClue(room, 0, 0)
+    assert.equal(G.projectState(room, "display").clue.prompt, "", "still blind while the bet is placed")
+    G.setWager(room, "p1", 100)
+    assert.equal(G.projectState(room, "display").clue.prompt, "prompt 0-0")
+    assert.equal(G.projectState(room, "player", "p1").clue.prompt, "prompt 0-0")
+  })
+
   test("hideOnBuzz is off unless asked for", () => {
     const room = setup(2)
     G.selectClue(room, 0, 0)
